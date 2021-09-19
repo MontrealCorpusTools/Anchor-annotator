@@ -1,0 +1,12 @@
+praatio~=4.1
+numpy
+tqdm
+pyyaml
+soundfile
+librosa
+pyqt5
+pyqtgraph
+requests
+sklearn
+joblib
+montreal-forced-aligner
