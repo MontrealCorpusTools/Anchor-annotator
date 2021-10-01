@@ -1769,6 +1769,7 @@ class HighlightDelegate(QtWidgets.QStyledItemDelegate):
         color_config = config.color_options
         font = config.font_options
         self.doc.setDefaultFont(font['font'])
+        self.keyword_color = color_config['keyword_color']
         self.keyword_text_color = color_config['keyword_text_color']
         self.underline_color =  color_config['underline_color']
         self.selection_color =  color_config['selection_color']

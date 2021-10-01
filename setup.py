@@ -50,7 +50,7 @@ if __name__ == '__main__':
           author_email='michael.e.mcauliffe@gmail.com',
           packages=['anchor'],
           install_requires=[
-              'praatio ~= 4.1',
+              'praatio ~= 5.0',
               'numpy',
               'tqdm',
               'pyyaml',

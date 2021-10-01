@@ -1,4 +1,4 @@
-praatio~=4.1
+praatio~=5.0
 numpy
 tqdm
 pyyaml

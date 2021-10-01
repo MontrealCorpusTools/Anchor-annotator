@@ -211,8 +211,8 @@ class ConfigurationOptions(object):
                 'table_text_color': black,
 
                 'underline_color': '#DC0806',
-                'keyword_color': '#0078D7',
-                'keyword_text_color': white,
+                'keyword_color': '#FAF205',
+                'keyword_text_color': black,
                 'selection_color': '#0078D7',
                 'selection_text_color': white,
                 'text_edit_color': black,
@@ -725,7 +725,9 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             id = QtGui.QFontDatabase.addApplicationFont(f":fonts/{font}.ttf")
         self.config_path = os.path.join(TEMP_DIR, 'config.yaml')
         self.history_path = os.path.join(TEMP_DIR, 'search_history')
+        self.corpus_history_path = os.path.join(TEMP_DIR, 'corpus_history')
         self.corpus = None
+        self.current_corpus_path = None
         self.dictionary = None
         self.acoustic_model = None
         self.g2p_model = None
@@ -751,6 +753,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.setup_key_binds()
         self.load_config()
         self.load_search_history()
+        self.load_corpus_history()
         if self.config['is_maximized']:
             self.setWindowState(QtCore.Qt.WindowState.WindowMaximized)
         else:
@@ -773,6 +776,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.detail_widget.createUtterance.connect(self.list_widget.create_utterance)
         self.detail_widget.utteranceUpdated.connect(self.list_widget.update_utterance_text)
         self.detail_widget.utteranceChanged.connect(self.setFileSaveable)
+        self.detail_widget.refreshCorpus.connect(self.setFileSaveable)
         self.detail_widget.audioPlaying.connect(self.updateAudioState)
         self.corpusLoaded.connect(self.information_widget.speaker_widget.update_corpus)
         self.corpusLoaded.connect(self.information_widget.search_widget.update_corpus)
@@ -958,6 +962,9 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         base_font = self.config.font_options['font']
         big_font = self.config.font_options['big_font']
         self.menuBar().setFont(base_font)
+        self.corpus_menu.setFont(base_font)
+        for a in self.corpus_menu.actions():
+            a.setFont(base_font)
         self.dictionary_menu.setFont(base_font)
         for a in self.dictionary_menu.actions():
             a.setFont(base_font)
@@ -1001,6 +1008,11 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             for query in self.information_widget.search_widget.history:
                 f.write(f"{query[0]}\t{query[1]}\t{query[2]}\n")
 
+    def save_corpus_history(self):
+        with open(self.corpus_history_path, 'w', encoding='utf8') as f:
+            for path in self.corpus_history:
+                f.write(f"{path}\n")
+
     def load_search_history(self):
         history = []
         if os.path.exists(self.history_path):
@@ -1015,6 +1027,36 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                     if line not in history:
                         history.append(line)
         self.information_widget.search_widget.load_history(history)
+
+    def load_corpus_history(self):
+        self.corpus_history = []
+        if os.path.exists(self.corpus_history_path):
+            with open(self.corpus_history_path, 'r', encoding='utf8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if line not in self.corpus_history:
+                        self.corpus_history.append(line)
+        self.refresh_corpus_history()
+
+    def refresh_corpus_history(self):
+        self.open_recent_menu.clear()
+        if not self.corpus_history or self.corpus_history[0] != self.current_corpus_path:
+            self.corpus_history.insert(0, self.current_corpus_path)
+        for i, corpus in enumerate(self.corpus_history):
+            if corpus == self.current_corpus_path:
+                continue
+            history_action = QtWidgets.QAction(parent=self, text=os.path.basename(corpus),
+                                               triggered=lambda: self.load_corpus_path(corpus))
+            self.open_recent_menu.addAction(history_action)
+            if i == 6:
+                break
+        if len(self.corpus_history) <= 1:
+            self.open_recent_menu.setEnabled(False)
+        else:
+            self.open_recent_menu.setEnabled(True)
+        self.corpus_history = self.corpus_history[:6]
 
     def save_config(self):
         self.refresh_fonts()
@@ -1588,6 +1630,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.options_act.setEnabled(True)
             self.cancel_load_corpus_act.setEnabled(True)
             self.load_corpus_act.setEnabled(False)
+            self.open_recent_menu.setEnabled(False)
             self.close_corpus_act.setEnabled(False)
             self.load_acoustic_model_act.setEnabled(False)
             self.load_dictionary_act.setEnabled(False)
@@ -1605,6 +1648,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.options_act.setEnabled(True)
             self.cancel_load_corpus_act.setEnabled(False)
             self.load_corpus_act.setEnabled(True)
+            self.open_recent_menu.setEnabled(True)
             self.close_corpus_act.setEnabled(True)
             self.load_acoustic_model_act.setEnabled(True)
             self.load_dictionary_act.setEnabled(True)
@@ -1623,6 +1667,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.options_act.setEnabled(True)
             self.cancel_load_corpus_act.setEnabled(False)
             self.load_corpus_act.setEnabled(True)
+            self.open_recent_menu.setEnabled(True)
             self.close_corpus_act.setEnabled(False)
             self.load_acoustic_model_act.setEnabled(True)
             self.load_dictionary_act.setEnabled(True)
@@ -1802,6 +1847,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
     def create_menus(self):
         self.corpus_menu = self.menuBar().addMenu("Corpus")
         self.corpus_menu.addAction(self.load_corpus_act)
+        self.open_recent_menu = self.corpus_menu.addMenu("Load recent corpus")
+
         self.corpus_menu.addAction(self.close_corpus_act)
 
         self.file_menu = self.menuBar().addMenu("Edit")
@@ -1875,6 +1922,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.information_widget.setVisible(False)
         self.loading_label.setVisible(False)
         self.corpus = None
+        self.current_corpus_path = None
         self.config['current_corpus_path'] = ''
         self.corpusLoaded.emit(None)
         self.configUpdated.emit(self.config)
@@ -1889,13 +1937,16 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.information_widget.setVisible(False)
             self.loading_label.setVisible(False)
             return
+        self.load_corpus_path(directory)
+
+    def load_corpus_path(self, directory):
+        self.current_corpus_path = directory
         self.set_application_state('loading')
 
         self.corpusLoaded.emit(None)
         self.loading_label.setCorpusName(f'Loading {directory}...')
         self.corpus_worker.setParams(directory, self.config['temp_directory'])
         self.corpus_worker.start()
-
 
 
     def cancel_corpus_load(self):
@@ -1906,12 +1957,12 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
     def finish_cancelling(self):
         self.loading_corpus = False
         self.corpus = None
+        self.current_corpus_path = None
 
         self.set_application_state('unloaded')
 
         self.corpusLoaded.emit(self.corpus)
         self.set_current_utterance(None, False)
-
 
     def finalize_load_corpus(self, corpus):
         self.corpus = corpus
