@@ -2,56 +2,50 @@ import yaml
 import os
 import sys
 import traceback
-import re
-from PyQt5 import QtGui, QtCore, QtWidgets, QtSvg
+from PySide6 import QtGui, QtCore, QtWidgets, QtMultimedia, QtSvg, QtSvgWidgets
 
-from montreal_forced_aligner.config import TEMP_DIR
+from montreal_forced_aligner.config import get_temporary_directory
 
-from montreal_forced_aligner.dictionary import Dictionary
-from montreal_forced_aligner.models import G2PModel, AcousticModel, LanguageModel, IvectorExtractor
-from montreal_forced_aligner.utils import get_available_g2p_languages, get_pretrained_g2p_path, \
-    get_available_acoustic_languages, get_pretrained_acoustic_path, \
-    get_available_dict_languages, get_dictionary_path, \
-    get_available_ivector_languages, get_pretrained_ivector_path, \
-    get_available_lm_languages, get_pretrained_language_model_path
+from montreal_forced_aligner.dictionary import PronunciationDictionary
+from montreal_forced_aligner.models import G2PModel, AcousticModel, LanguageModel, IvectorExtractorModel, DictionaryModel
 
-from montreal_forced_aligner.helper import setup_logger
+from anchor.widgets import UtteranceListWidget, UtteranceDetailWidget, \
+    DetailedMessageBox, DefaultAction, AnchorAction, create_icon, HelpDropDown, \
+    MediaPlayer, DictionaryWidget, SpeakerWidget
+from anchor.models import CorpusModel, CorpusSelectionModel, CorpusProxy
 
-from .widgets import UtteranceListWidget, UtteranceDetailWidget, InformationWidget, \
-    DetailedMessageBox, DefaultAction, AnchorAction, create_icon, HorizontalSpacer
 
-from .workers import ImportCorpusWorker
+from anchor.workers import ImportCorpusWorker
 
 
 class ColorEdit(QtWidgets.QPushButton): # pragma: no cover
     def __init__(self, color, parent=None):
         super(ColorEdit, self).__init__(parent=parent)
         self._color = color
-        self.updateIcon()
-        self.clicked.connect(self.openDialog)
+        self.update_icon()
+        self.clicked.connect(self.open_dialog)
 
-    def updateIcon(self):
+    def update_icon(self):
         pixmap = QtGui.QPixmap(100, 100)
         pixmap.fill(self._color)
         icon = QtGui.QIcon(pixmap)
-        icon.addPixmap(pixmap, QtGui.QIcon.Disabled)
+        icon.addPixmap(pixmap, QtGui.QIcon.Mode.Disabled)
         self.setIcon(icon)
 
     @property
     def color(self):
         return self._color.name()
 
-    def openDialog(self):
+    def open_dialog(self):
         color = QtWidgets.QColorDialog.getColor()
         if color.isValid():
             self._color = color
-            self.updateIcon()
+            self.update_icon()
 
 
 class FontDialog(QtWidgets.QFontDialog):
     def __init__(self, *args):
         super(FontDialog, self).__init__(*args)
-        print(dir(self))
 
 
 class FontEdit(QtWidgets.QPushButton): # pragma: no cover
@@ -62,27 +56,26 @@ class FontEdit(QtWidgets.QPushButton): # pragma: no cover
     """
     def __init__(self, font, parent=None):
         super(FontEdit, self).__init__(parent=parent)
-        print(font)
         self.font = font
-        self.updateIcon()
-        self.clicked.connect(self.openDialog)
+        self.update_icon()
+        self.clicked.connect(self.open_dialog)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
 
-    def updateIcon(self):
+    def update_icon(self):
         self.setFont(self.font)
         self.setText(self.font.key().split(',',maxsplit=1)[0])
 
-    def openDialog(self):
+    def open_dialog(self):
         font, ok = FontDialog.getFont(self.font)
 
         if ok:
             self.font = font
-            self.updateIcon()
+            self.update_icon()
 
 class ConfigurationOptions(object):
     def __init__(self, data):
         self.data = {
-            'temp_directory': TEMP_DIR,
+            'temp_directory': get_temporary_directory(),
             'current_corpus_path': None,
             'current_acoustic_model_path': None,
             'current_dictionary_path': None,
@@ -102,6 +95,8 @@ class ConfigurationOptions(object):
             'zoom_out_keybind': 'Ctrl+O',
             'pan_left_keybind': 'Left',
             'pan_right_keybind': 'Right',
+            'undo_keybind': 'Ctrl+Z',
+            'redo_keybind': 'Shift+Ctrl+Z',
 
             'font': QtGui.QFont('Noto Sans', 12).toString(),
             'plot_text_width': 400,
@@ -174,28 +169,28 @@ class ConfigurationOptions(object):
 
     @property
     def mfa_color_palettes(self):
-        yellows = {'very_very_light': '#EFCE2B',
-                   'very_light': '#FFE819',
-                   'light': '#F9D213',
-                   'base': '#F2BC0C',
-                   'dark': '#BD9105',
-                   'very_dark': '#A07A00',
+        yellows = {'very_light': '#F2CD49',
+                   'light': '#FFD60A',
+                   'base': '#FFC300',
+                   'dark': '#E3930D',
+                   'very_dark': '#7A4E03',
                    }
         blues = {
-            'very_very_light': '#49A4F7',
-            'very_light': '#1265B2',
-            'light': '#0A4B89',
-            'base': '#053561',
-            'dark': '#01192F',
-            'very_dark': '#000C17',
+            'very_light': '#7AB5E6',
+            'light': '#0E63B3',
+            'base': '#003566',
+            'dark': '#001D3D',
+            'very_dark': '#000814',
                    }
-        reds = {'very_light': '#FF4619',
-                   'light': '#D43610',
-                   'base': '#AA2809',
-                   'dark': '#761A03',
-                   'very_dark': '#5C1200',
+        reds = {'very_light': '#DC4432',
+                   'light': '#C63623',
+                   'base': '#B32300',
+                   'dark': '#891800',
+                   'very_dark': '#620E00',
                    }
-        return yellows, blues, reds
+        white = '#EDDDD4'
+        black = blues['very_dark']
+        return yellows, blues, reds, white, black
 
     @property
     def praat_like_color_theme(self):
@@ -220,6 +215,8 @@ class ConfigurationOptions(object):
                 'error_text_color': '#DC0806',
                 'error_background_color': white,
                 'text_edit_background_color': white,
+                'line_edit_color': black,
+                'line_edit_background_color': white,
 
                 'main_widget_border_color': 'none',
                 'main_widget_background_color': white,
@@ -272,29 +269,30 @@ class ConfigurationOptions(object):
 
     @property
     def mfa_color_theme(self):
-        yellows, blues, reds = self.mfa_color_palettes
-        white = '#EDDDD4'
-        black = blues['very_dark']
+        yellows, blues, reds, white, black = self.mfa_color_palettes
         return {
                 'background_color': blues['base'],
 
                 'table_header_color': white,
                 'table_header_background_color': blues['light'],
-                'table_even_color': yellows['very_very_light'],
-                'table_odd_color': blues['very_very_light'],
+                'table_even_color': yellows['very_light'],
+                'table_odd_color': blues['very_light'],
                 'table_text_color': black,
 
                 'underline_color': reds['very_light'],
                 'keyword_color': yellows['light'],
                 'keyword_text_color': black,
-                'selection_color': blues['very_light'],
-                'text_edit_color': white,
+                'selection_color': blues['light'],
                 'error_color': reds['very_light'],
                 'error_text_color': yellows['dark'],
                 'error_background_color': reds['light'],
-                'text_edit_background_color': black,
 
-                'main_widget_border_color': blues['very_very_light'],
+                'text_edit_color': white,
+                'text_edit_background_color': black,
+                'line_edit_color': black,
+                'line_edit_background_color': white,
+
+                'main_widget_border_color': blues['light'],
                 'main_widget_background_color': black,
 
                 'checked_background_color': black,
@@ -309,11 +307,11 @@ class ConfigurationOptions(object):
 
                 'active_color': yellows['very_light'],
                 'active_background_color': blues['dark'],
-                'active_border_color': blues['very_very_light'],
+                'active_border_color': blues['light'],
 
-                'hover_text_color': yellows['very_light'],
-                'hover_background_color': blues['very_very_light'],
-                'hover_border_color': blues['base'],
+                'hover_text_color': yellows['light'],
+                'hover_background_color': blues['light'],
+                'hover_border_color': blues['very_dark'],
 
                 'disabled_text_color': reds['very_light'],
                 'disabled_background_color': blues['dark'],
@@ -326,15 +324,14 @@ class ConfigurationOptions(object):
 
     @property
     def mfa_plot_theme(self):
-        yellows, blues, reds = self.mfa_color_palettes
-        white = '#EDDDD4'
-        black = blues['very_dark']
+        yellows, blues, reds, white, black = self.mfa_color_palettes
         return {
             'background_color': black,
             'play_line_color': reds['very_light'],
             'selected_range_color': blues['very_light'],
             'selected_interval_color': blues['base'],
-            'selected_line_color': yellows['light'],
+            'hover_line_color': blues['very_light'],
+            'moving_line_color': reds['light'],
             'break_line_color': yellows['light'],
             'wave_line_color': white,
             'text_color': white,
@@ -486,69 +483,69 @@ class OptionsDialog(QtWidgets.QDialog): # pragma: no cover
         self.appearance_widget.setLayout(appearance_layout)
 
         self.key_bind_widget = QtWidgets.QWidget()
-        self.key_bind_widget.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.key_bind_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         self.tab_widget.addTab(self.key_bind_widget, 'Key shortcuts')
 
         key_bind_layout = QtWidgets.QFormLayout()
 
         self.autosave_edit = QtWidgets.QCheckBox()
         self.autosave_edit.setChecked(self.base_config['autosave'])
-        self.autosave_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.autosave_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Autosave on exit', self.autosave_edit)
 
         self.autoload_edit = QtWidgets.QCheckBox()
         self.autoload_edit.setChecked(self.base_config['autoload'])
-        self.autoload_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.autoload_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Autoload last used corpus', self.autoload_edit)
 
         self.play_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.play_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['play_keybind']))
-        self.play_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.play_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Play audio', self.play_key_bind_edit)
 
         self.zoom_in_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.zoom_in_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['zoom_in_keybind']))
-        self.zoom_in_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.zoom_in_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Zoom in', self.zoom_in_key_bind_edit)
 
         self.zoom_out_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.zoom_out_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['zoom_out_keybind']))
-        self.zoom_out_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.zoom_out_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Zoom out', self.zoom_out_key_bind_edit)
 
         self.pan_left_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.pan_left_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['pan_left_keybind']))
-        self.pan_left_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.pan_left_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Pan left', self.pan_left_key_bind_edit)
 
         self.pan_right_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.pan_right_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['pan_right_keybind']))
-        self.pan_right_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.pan_right_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Pan right', self.pan_right_key_bind_edit)
 
         self.merge_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.merge_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['merge_keybind']))
-        self.merge_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.merge_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Merge utterances', self.merge_key_bind_edit)
 
         self.split_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.split_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['split_keybind']))
-        self.split_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.split_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Split utterances', self.split_key_bind_edit)
 
         self.delete_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.delete_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['delete_keybind']))
-        self.delete_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.delete_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Delete utterance', self.delete_key_bind_edit)
 
         self.save_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.save_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['save_keybind']))
-        self.save_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.save_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Save current file', self.save_key_bind_edit)
 
         self.search_key_bind_edit = QtWidgets.QKeySequenceEdit()
         self.search_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['search_keybind']))
-        self.search_key_bind_edit.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.search_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
         key_bind_layout.addRow('Search within the corpus', self.search_key_bind_edit)
 
         self.key_bind_widget.setLayout(key_bind_layout)
@@ -605,11 +602,12 @@ class OptionsDialog(QtWidgets.QDialog): # pragma: no cover
 
 
 class Application(QtWidgets.QApplication): # pragma: no cover
-    def notify(self, receiver, e):
+    pass
+    #def notify(self, receiver, e):
         #if e and e.type() == QtCore.QEvent.KeyPress:
         #    if e.key() == QtCore.Qt.Key_Tab:
         #        return False
-        return super(Application, self).notify(receiver, e)
+    #    return super(Application, self).notify(receiver, e)
 
 
 class WarningLabel(QtWidgets.QLabel):
@@ -682,7 +680,7 @@ class TitleScreen(QtWidgets.QWidget):
         super(TitleScreen, self).__init__( *args)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QtWidgets.QVBoxLayout()
-        self.logo_widget = QtSvg.QSvgWidget(':splash_screen.svg')
+        self.logo_widget = QtSvgWidgets.QSvgWidget(':splash_screen.svg')
         self.setMinimumSize(720, 720)
         self.setMaximumSize(720, 720)
 
@@ -695,26 +693,33 @@ class TitleScreen(QtWidgets.QWidget):
     def update_config(self, config):
         font_config = config.font_options
 
+class DockWidget(QtWidgets.QDockWidget):
+    def __init__(self, *args, **kwargs):
+        super(DockWidget, self).__init__(*args, **kwargs)
+        #self.setFeatures(QtWidgets.QDockWidget.AllDockWidgetFeatures)
+        self.setContentsMargins(0,0,0,0)
 
 class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
-    configUpdated = QtCore.pyqtSignal(object)
-    corpusLoaded = QtCore.pyqtSignal(object)
-    dictionaryLoaded = QtCore.pyqtSignal(object)
-    g2pLoaded = QtCore.pyqtSignal(object)
-    ivectorExtractorLoaded = QtCore.pyqtSignal(object)
-    acousticModelLoaded = QtCore.pyqtSignal(object)
-    languageModelLoaded = QtCore.pyqtSignal(object)
-    saveCompleted = QtCore.pyqtSignal(object)
-    newSpeaker = QtCore.pyqtSignal(object)
+    configUpdated = QtCore.Signal(object)
+    corpusLoaded = QtCore.Signal()
+    dictionaryLoaded = QtCore.Signal(object)
+    g2pLoaded = QtCore.Signal(object)
+    ivectorExtractorLoaded = QtCore.Signal(object)
+    acousticModelLoaded = QtCore.Signal(object)
+    languageModelLoaded = QtCore.Signal(object)
+    newSpeaker = QtCore.Signal(object)
 
     def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key.Key_Tab:
+        if event.key() == QtCore.Qt.Key_Tab:
             event.ignore()
             return
         super(MainWindow, self).keyPressEvent(event)
 
     def __init__(self):
         super(MainWindow, self).__init__()
+        QtCore.QCoreApplication.setOrganizationName('Montreal Corpus Tools')
+        QtCore.QCoreApplication.setApplicationName('Anchor')
+
         fonts = ['GentiumPlus', 'CharisSIL',
                  'NotoSans-Black', 'NotoSans-Bold', 'NotoSans-BoldItalic', 'NotoSans-Italic', 'NotoSans-Light',
                  'NotoSans-Medium', 'NotoSans-MediumItalic', 'NotoSans-Regular', 'NotoSans-Thin',
@@ -723,75 +728,28 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                  ]
         for font in fonts:
             id = QtGui.QFontDatabase.addApplicationFont(f":fonts/{font}.ttf")
-        self.config_path = os.path.join(TEMP_DIR, 'config.yaml')
-        self.history_path = os.path.join(TEMP_DIR, 'search_history')
-        self.corpus_history_path = os.path.join(TEMP_DIR, 'corpus_history')
+        if not os.path.exists(os.path.join(get_temporary_directory(), 'Anchor')):
+            os.makedirs(os.path.join(get_temporary_directory(), 'Anchor'))
+        self.config_path = os.path.join(get_temporary_directory(), 'Anchor', 'config.yaml')
+        self.history_path = os.path.join(get_temporary_directory(), 'Anchor', 'search_history')
+        self.corpus_history_path = os.path.join(get_temporary_directory(), 'Anchor', 'corpus_history')
         self.corpus = None
+        self.corpus_model = CorpusModel()
+        self.proxy_model = CorpusProxy(self.corpus_model)
+        self.proxy_model.setSourceModel(self.corpus_model)
+        self.selection_model = CorpusSelectionModel(self.proxy_model)
+        self.selection_model.currentChanged.connect(self.change_utterance)
+        self.corpus_model.fileSaveable.connect(self.setFileSaveable)
         self.current_corpus_path = None
         self.dictionary = None
         self.acoustic_model = None
         self.g2p_model = None
         self.language_model = None
         self.waiting_on_close = False
+        self.media_player = MediaPlayer(self.corpus_model, self.selection_model)
+        self.media_player.playbackStateChanged.connect(self.handleAudioState)
 
-        self.list_widget = UtteranceListWidget(self)
-        self.detail_widget = UtteranceDetailWidget(self)
-        self.detail_widget.text_widget.installEventFilter(self)
-        self.information_widget = InformationWidget(self)
-        self.loading_label = LoadingScreen(self)
-        self.title_screen = TitleScreen(self)
         self.status_bar = QtWidgets.QStatusBar()
-        self.configUpdated.connect(self.detail_widget.update_config)
-        self.configUpdated.connect(self.list_widget.update_config)
-        self.configUpdated.connect(self.information_widget.update_config)
-        self.configUpdated.connect(self.loading_label.update_config)
-        self.configUpdated.connect(self.title_screen.update_config)
-        self.resize_timer = QtCore.QTimer(self)
-        self.resize_timer.timeout.connect(self.doneResizing)
-        self.create_actions()
-        self.create_menus()
-        self.setup_key_binds()
-        self.load_config()
-        self.load_search_history()
-        self.load_corpus_history()
-        if self.config['is_maximized']:
-            self.setWindowState(QtCore.Qt.WindowState.WindowMaximized)
-        else:
-            self.resize(self.config['width'], self.config['height'])
-        self.configUpdated.connect(self.save_config)
-        self.current_utterance = None
-
-        self.corpusLoaded.connect(self.detail_widget.update_corpus)
-        self.corpusLoaded.connect(self.list_widget.update_corpus)
-        self.dictionaryLoaded.connect(self.detail_widget.update_dictionary)
-        self.list_widget.utteranceChanged.connect(self.set_current_utterance)
-        self.list_widget.updateView.connect(self.detail_widget.update_plot)
-        self.list_widget.utteranceMerged.connect(self.detail_widget.refresh_view)
-        self.list_widget.utteranceDeleted.connect(self.detail_widget.refresh_view)
-        self.list_widget.utteranceDeleted.connect(self.setFileSaveable)
-        self.list_widget.fileChanged.connect(self.update_file_name)
-        self.detail_widget.selectUtterance.connect(self.set_current_utterance)
-        self.information_widget.search_widget.showUtterance.connect(self.set_current_utterance)
-        self.detail_widget.refreshCorpus.connect(self.list_widget.refresh_corpus)
-        self.detail_widget.createUtterance.connect(self.list_widget.create_utterance)
-        self.detail_widget.utteranceUpdated.connect(self.list_widget.update_utterance_text)
-        self.detail_widget.utteranceChanged.connect(self.setFileSaveable)
-        self.detail_widget.refreshCorpus.connect(self.setFileSaveable)
-        self.detail_widget.audioPlaying.connect(self.updateAudioState)
-        self.corpusLoaded.connect(self.information_widget.speaker_widget.update_corpus)
-        self.corpusLoaded.connect(self.information_widget.search_widget.update_corpus)
-        self.dictionaryLoaded.connect(self.list_widget.update_dictionary)
-        self.dictionaryLoaded.connect(self.information_widget.dictionary_widget.update_dictionary)
-        self.g2pLoaded.connect(self.information_widget.dictionary_widget.update_g2p)
-        self.detail_widget.lookUpWord.connect(self.information_widget.dictionary_widget.look_up_word)
-        self.detail_widget.createWord.connect(self.information_widget.dictionary_widget.create_pronunciation)
-        self.saveCompleted.connect(self.setFileSaveable)
-        self.information_widget.dictionary_widget.dictionaryError.connect(self.show_dictionary_error)
-        self.information_widget.dictionary_widget.dictionaryModified.connect(self.enable_dictionary_actions)
-        self.newSpeaker.connect(self.change_speaker_act.widget.refresh_speaker_dropdown)
-        self.newSpeaker.connect(self.information_widget.speaker_widget.refresh_speakers)
-        self.information_widget.speaker_widget.speaker_edit.enableAddSpeaker.connect(self.enable_add_speaker)
-        self.information_widget.search_widget.searchNew.connect(self.detail_widget.set_search_term)
         self.warning_label = WarningLabel('Warning: This is alpha '
                                               'software, there will be bugs and issues. Please back up any data before '
                                               'using.')
@@ -799,24 +757,85 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.status_bar.addPermanentWidget(self.warning_label, 1)
         self.status_bar.addPermanentWidget(self.status_label)
         self.setStatusBar(self.status_bar)
+
+        self.list_widget = UtteranceListWidget(self)
+        self.list_dock = DockWidget('Utterances')
+        self.list_dock.setWidget(self.list_widget)
+        self.detail_widget = UtteranceDetailWidget(self)
+        self.media_player.timeChanged.connect(self.detail_widget.plot_widget.update_play_line)
+        self.detail_widget.plot_widget.timeRequested.connect(self.media_player.setCurrentTime)
+        self.detail_widget.text_widget.installEventFilter(self)
+        self.dictionary_widget = DictionaryWidget(self)
+        self.dictionary_dock = DockWidget('Dictionary')
+        self.dictionary_dock.setWidget(self.dictionary_widget)
+
+        self.speaker_widget = SpeakerWidget(self)
+        self.speaker_dock = DockWidget('Speakers')
+        self.speaker_dock.setWidget(self.speaker_widget)
+
+        self.speaker_dock.visibilityChanged.connect(self.update_icons)
+
+        self.loading_label = LoadingScreen(self)
+        self.title_screen = TitleScreen(self)
+        self.configUpdated.connect(self.detail_widget.update_config)
+        self.configUpdated.connect(self.list_widget.update_config)
+        self.configUpdated.connect(self.dictionary_widget.update_config)
+        self.configUpdated.connect(self.speaker_widget.update_config)
+        self.configUpdated.connect(self.loading_label.update_config)
+        self.configUpdated.connect(self.title_screen.update_config)
+
+        self.setDockOptions(self.DockOption.ForceTabbedDocks | self.DockOption.VerticalTabs)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.list_dock)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.dictionary_dock)
+        self.tabifyDockWidget(self.list_dock, self.dictionary_dock)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.speaker_dock)
+        self.tabifyDockWidget(self.list_dock, self.speaker_dock)
+
+        self.settings = QtCore.QSettings()
+        self.restoreGeometry(self.settings.value("MainWindow/geometry"))
+        self.restoreState(self.settings.value("MainWindow/windowState"))
+
+        self.create_actions()
+        self.create_menus()
+        self.setup_key_binds()
+        self.load_config()
+        self.load_search_history()
+        self.load_corpus_history()
+        self.configUpdated.connect(self.save_config)
+
+        self.corpusLoaded.connect(self.detail_widget.update_corpus)
+        self.corpusLoaded.connect(self.list_widget.update_corpus)
+        self.dictionaryLoaded.connect(self.detail_widget.update_dictionary)
+
+        self.dictionaryLoaded.connect(self.dictionary_widget.update_dictionary)
+        self.g2pLoaded.connect(self.dictionary_widget.update_g2p)
+        self.detail_widget.lookUpWord.connect(self.open_dictionary)
+        self.detail_widget.createWord.connect(self.open_dictionary)
+        self.detail_widget.lookUpWord.connect(self.dictionary_widget.look_up_word)
+        self.detail_widget.createWord.connect(self.dictionary_widget.create_pronunciation)
+        self.dictionary_widget.dictionaryError.connect(self.show_dictionary_error)
+        self.dictionary_widget.dictionaryModified.connect(self.enable_dictionary_actions)
+        self.newSpeaker.connect(self.change_speaker_act.widget.refresh_speaker_dropdown)
+        self.newSpeaker.connect(self.speaker_widget.refresh_speakers)
+        self.speaker_widget.speaker_edit.enableAddSpeaker.connect(self.enable_add_speaker)
+
         self.wrapper = QtWidgets.QWidget()
+        self.wrapper.setContentsMargins(0,0,0,0)
         layout = QtWidgets.QHBoxLayout()
+        layout.setContentsMargins(0,0,0,0)
 
         self.list_widget.setVisible(False)
         self.detail_widget.setVisible(False)
-        self.information_widget.setVisible(False)
         self.loading_label.setVisible(False)
         self.title_screen.setVisible(True)
-        layout.addWidget(self.list_widget)
+        #layout.addWidget(self.list_widget)
         layout.addWidget(self.detail_widget)
-        layout.addWidget(self.information_widget)
         layout.addWidget(self.loading_label)
         layout.addWidget(self.title_screen)
 
         self.wrapper.setLayout(layout)
         self.setCentralWidget(self.wrapper)
-        self.default_directory = TEMP_DIR
-        self.logger = setup_logger('anchor', self.default_directory, 'debug')
+        self.default_directory = get_temporary_directory()
 
         icon = QtGui.QIcon()
         icon.addFile(':anchor-yellow.svg', mode=QtGui.QIcon.Normal, state=QtGui.QIcon.On)
@@ -832,7 +851,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.saving_dictionary = False
         self.saving_utterance = False
 
-        self.corpus_worker = ImportCorpusWorker(logger=self.logger)
+        self.corpus_worker = ImportCorpusWorker()
 
         #self.corpus_worker.errorEncountered.connect(self.showError)
         self.corpus_worker.dataReady.connect(self.finalize_load_corpus)
@@ -842,6 +861,36 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.load_dictionary()
         self.load_g2p()
         self.load_ivector_extractor()
+        self.previous_volume = 100
+
+    def update_icons(self):
+        dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+        for j in range(len(dock_tab_bars)):
+            dock_tab_bar = dock_tab_bars[j]
+            if not dock_tab_bar.count():
+                continue
+            font = self.config.font_options
+            dock_tab_bar.setFont(font['font'])
+            for i in range(dock_tab_bar.count()):
+                if dock_tab_bar.tabText(i) == 'Utterances':
+                    dock_tab_bar.setTabIcon(i,create_icon('search'))
+                elif dock_tab_bar.tabText(i) == 'Dictionary':
+                    dock_tab_bar.setTabIcon(i,create_icon('book'))
+                elif dock_tab_bar.tabText(i) == 'Speakers':
+                    dock_tab_bar.setTabIcon(i,create_icon('speaker'))
+
+    def handleAudioState(self, state):
+        if state == QtMultimedia.QMediaPlayer.StoppedState:
+            self.play_act.setChecked(False)
+
+    def update_mute_status(self, is_muted):
+        if is_muted:
+            self.previous_volume = self.media_player.volume()
+            self.change_volume_act.widget.setValue(0)
+        else:
+            self.change_volume_act.widget.setValue(self.previous_volume)
+        self.media_player.setMuted(is_muted)
 
     def enable_add_speaker(self, b):
         self.add_new_speaker_act.setEnabled(b)
@@ -858,7 +907,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         reply.setText(message)
         ret = reply.exec_()
         if ret:
-            self.information_widget.dictionary_widget.ignore_errors = True
+            self.dictionary_widget.ignore_errors = True
             self.save_dictionary_act.trigger()
 
     def eventFilter(self, object, event) -> bool:
@@ -869,32 +918,39 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
     def update_file_name(self, file_name):
         self.current_file = file_name
-        self.list_widget.update_file_name(file_name)
         self.detail_widget.update_file_name(file_name)
-        self.information_widget.search_widget.update_file_name(file_name)
         self.set_current_utterance(None, False)
         self.setFileSaveable(False)
-
-    def updateAudioState(self, playing):
-        self.play_act.setChecked(playing)
 
     def setFileSaveable(self, enable):
         self.save_current_file_act.setEnabled(enable)
 
-    def set_current_utterance(self, utterance, zoom):
-        self.current_utterance = utterance
-        if self.sender() != self.list_widget:
-            self.list_widget.select_utterance(utterance, zoom)
-        if self.sender() != self.detail_widget:
-            self.detail_widget.update_utterance(utterance, zoom)
-        if self.current_utterance is None:
+    def restore_deleted_utts(self):
+        self.corpus_model.restore_deleted_utts()
+
+    def delete_utterances(self):
+        utts = self.selection_model.selectedUtterances()
+        self.corpus_model.delete_utterances(utts)
+
+    def split_utterances(self):
+        utts = self.selection_model.selectedUtterances()
+        self.corpus_model.split_utterances(utts)
+
+
+    def merge_utterances(self):
+        utts = self.selection_model.selectedUtterances()
+        self.corpus_model.merge_utterances(utts)
+
+    def change_utterance(self):
+        current_utterance = self.selection_model.currentUtterance()
+        if current_utterance is None:
             self.change_speaker_act.setEnabled(False)
             self.delete_act.setEnabled(False)
             self.change_speaker_act.widget.setCurrentSpeaker('')
         else:
             self.change_speaker_act.setEnabled(True)
+            self.change_speaker_act.widget.setCurrentSpeaker(current_utterance.speaker)
             self.delete_act.setEnabled(True)
-            self.change_speaker_act.widget.setCurrentSpeaker(self.corpus.utt_speak_mapping[self.current_utterance])
 
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
@@ -906,17 +962,17 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                 self.corpus_worker.wait(500)
                 if self.corpus_worker.isFinished():
                     break
-        print('CLOSE EVENT')
-        self.config['height'] = self.height()
-        self.config['width'] = self.width()
-        print('SAVING MAXIMIZED', self.isMaximized())
-        self.config['is_maximized'] = self.isMaximized()
         self.config['volume'] = self.change_volume_act.widget.value()
+
         self.save_config()
         self.save_search_history()
+
+        self.settings.setValue("MainWindow/geometry", self.saveGeometry())
+        self.settings.setValue("MainWindow/windowState", self.saveState())
+        self.settings.sync()
         if self.config['autosave']:
             print('Saving!')
-            self.save_file(self.list_widget.current_file)
+            self.save_file()
         a0.accept()
 
     def load_config(self):
@@ -933,35 +989,17 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.configUpdated.emit(self.config)
 
     def update_speaker(self):
-        old_utterance = self.detail_widget.utterance
+        old_utterance = self.selection_model.currentUtterance()
         speaker = self.change_speaker_act.widget.current_speaker
-        print(old_utterance, speaker)
-        if old_utterance is None:
-            return
-        if old_utterance not in self.corpus.utt_speak_mapping:
-            return
-        old_speaker = self.corpus.utt_speak_mapping[old_utterance]
-
-        if old_speaker == speaker:
-            return
-        if not speaker:
-            return
-        new_utt = old_utterance.replace(old_speaker, speaker)
-        file = self.corpus.utt_file_mapping[old_utterance]
-        text = self.corpus.text_mapping[old_utterance]
-        seg = self.corpus.segments[old_utterance]
-        self.corpus.add_utterance(new_utt, speaker, file, text, seg=seg)
-        self.corpus.delete_utterance(old_utterance)
-
-        self.list_widget.refresh_corpus(new_utt)
-        self.information_widget.speaker_widget.refresh_speakers()
-        self.detail_widget.refresh_utterances()
-        self.setFileSaveable(True)
+        self.corpus_model.update_utterance(old_utterance, speaker=speaker)
 
     def refresh_fonts(self):
         base_font = self.config.font_options['font']
-        big_font = self.config.font_options['big_font']
+        small_font = self.config.font_options['small_font']
         self.menuBar().setFont(base_font)
+        self.list_dock.setFont(base_font)
+        self.speaker_dock.setFont(base_font)
+        self.dictionary_dock.setFont(base_font)
         self.corpus_menu.setFont(base_font)
         for a in self.corpus_menu.actions():
             a.setFont(base_font)
@@ -975,6 +1013,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         for a in self.g2p_model_menu.actions():
             a.setFont(base_font)
         self.status_bar.setFont(base_font)
+        self.warning_label.setFont(base_font)
 
         icon_ratio = 0.03
         icon_height = int(icon_ratio*self.config['height'])
@@ -983,29 +1022,18 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
         for a in self.actions():
             if isinstance(a, AnchorAction):
-                a.widget.setFont(base_font)
+                a.widget.setFont(small_font)
                 a.widget.setFixedHeight(icon_height+8)
 
             else:
-                a.setFont(base_font)
+                a.setFont(small_font)
 
-    def doneResizing(self):
-        self.resize_timer.stop()
-        print('DONE RESIZING', self.size())
-        self.config['height'] = self.height()
-        self.config['width'] = self.width()
-        self.configUpdated.emit(self.config)
-
-    def resizeEvent(self, a0: QtGui.QResizeEvent) -> None:
-        if self.corpus is not None:
-            self.resize_timer.stop()
-        super(MainWindow, self).resizeEvent(a0)
-        if self.corpus is not None:
-            self.resize_timer.start(100)
+        icon_height = self.menuBar().fontMetrics().height()
+        self.corner_tool_bar.setIconSize(QtCore.QSize(icon_height, icon_height))
 
     def save_search_history(self):
         with open(self.history_path, 'w', encoding='utf8') as f:
-            for query in self.information_widget.search_widget.history:
+            for query in self.list_widget.search_box.history:
                 f.write(f"{query[0]}\t{query[1]}\t{query[2]}\n")
 
     def save_corpus_history(self):
@@ -1026,7 +1054,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                     line = tuple(line)
                     if line not in history:
                         history.append(line)
-        self.information_widget.search_widget.load_history(history)
+        self.list_widget.load_history(history)
 
     def load_corpus_history(self):
         self.corpus_history = []
@@ -1047,7 +1075,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         for i, corpus in enumerate(self.corpus_history):
             if corpus == self.current_corpus_path:
                 continue
-            history_action = QtWidgets.QAction(parent=self, text=os.path.basename(corpus),
+            history_action = QtGui.QAction(parent=self, text=os.path.basename(corpus),
                                                triggered=lambda: self.load_corpus_path(corpus))
             self.open_recent_menu.addAction(history_action)
             if i == 6:
@@ -1086,6 +1114,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
         text_edit_color = colors['text_edit_color']
         text_edit_background_color = colors['text_edit_background_color']
+        line_edit_color = colors['line_edit_color']
+        line_edit_background_color = colors['line_edit_background_color']
 
         enabled_color = colors['enabled_color']
         enabled_background_color = colors['enabled_background_color']
@@ -1134,10 +1164,16 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         }}
         QMenuBar {{
             background-color: {menu_background_color};
+            spacing: 2px;
         }}
         QMenuBar::item {{
+            padding: 4px 4px;
                         color: {menu_text_color};
                         background-color: {menu_background_color};
+        }}
+        QMenuBar::item:selected {{
+                        color: {hover_text_color};
+                        background-color: {hover_background_color};
         }}
         QMenuBar::item:disabled {{
                         color: {disabled_text_color};
@@ -1146,16 +1182,53 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         ButtonWidget {{
             background-color: {table_header_background_color};
         }}
+        QDockWidget {{
+            background-color: {active_background_color};
+            color: {active_color};
+            
+            titlebar-close-icon: url(:checked/times.svg);
+            titlebar-normal-icon: url(:checked/external-link.svg);
+        }}
+        QDockWidget::title {{
+            text-align: center;
+        }}
         
+        QMainWindow::separator {{
+    background: {background_color};
+    width: 10px; /* when vertical */
+    height: 10px; /* when horizontal */
+}}
+
+QMainWindow::separator:hover {{
+    background: {enabled_background_color};
+}}
         UtteranceListWidget {{
             background-color: {text_edit_background_color};
-            color: {main_widget_border_color};
+        
             border: {border_width}px solid {main_widget_border_color};
+            color: {main_widget_border_color};
             padding: 0px;
             padding-top: 20px;
-            border-radius: {border_radius}px;
             margin-top: 0ex; /* leave space at the top for the title */
             }}
+            
+        UtteranceDetailWidget {{
+            padding: 0px;
+            border: none;
+            margin: 0;
+        }}
+        InformationWidget {{
+            background-color: {main_widget_background_color};
+            border: {border_width}px solid {main_widget_border_color};
+            border-top-right-radius: {border_radius}px;
+            border-bottom-right-radius: {border_radius}px;
+                    
+        }}
+        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget {{
+        
+            border-bottom-right-radius: {border_radius}px;
+                    
+        }}
         
         QGroupBox::title {{
             color: {text_edit_color};
@@ -1184,17 +1257,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         QTabWidget::pane  {{ /* The tab widget frame */
             border: {border_width}px solid {main_widget_border_color};
             border-top-color: {enabled_color};
-            border-bottom-left-radius: {border_radius}px;
-            border-bottom-right-radius: {border_radius}px;
             background-color: {main_widget_background_color};
         
-        }}
-        QTabWidget {{
-            background-color: {main_widget_background_color};
-            border-radius: {border_radius}px;
-            border: {border_width}px solid {main_widget_border_color};
-            border-radius: {border_radius}px;
-                    
         }}
             
             
@@ -1211,12 +1275,41 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             margin: 0px;
         }}
             
+        QTabBar::scroller{{
+            width: {2*scroll_bar_height}px;
+        }}
+        QTabBar QToolButton  {{
+            border-radius: 0px;
+        }}
+        
+        QTabBar QToolButton::right-arrow  {{
+            image: url(:caret-right.svg);
+            height: {scroll_bar_height}px;
+            width: {scroll_bar_height}px;
+        }}
+        QTabBar QToolButton::right-arrow :pressed {{
+            image: url(:checked/caret-right.svg);
+        }}
+        QTabBar QToolButton::right-arrow :disabled {{
+            image: url(:disabled/caret-right.svg);
+        }}
+        
+        QTabBar QToolButton::left-arrow  {{
+            image: url(:caret-left.svg);
+            height: {scroll_bar_height}px;
+            width: {scroll_bar_height}px;
+        }}
+        QTabBar QToolButton::left-arrow:pressed {{
+            image: url(:checked/caret-left.svg);
+        }}
+        QTabBar QToolButton::left-arrow:disabled {{
+            image: url(:disabled/caret-left.svg);
+        }}
         
         QTabBar::tab-bar {{
             color: {menu_text_color};
             background-color: {menu_background_color};
             border: {border_width}px solid {main_widget_border_color};
-            border-radius: {border_radius}px;
         }}
             
         QTabBar::tab:hover {{
@@ -1228,15 +1321,12 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         QTabBar::tab:selected {{
             color: {active_color};
             background-color: {active_background_color};
-            border-left-width: {border_width}px;
-            border-right-width: {border_width}px;
             margin-left: -{border_width}px;
             margin-right: -{border_width}px;
             border-color: {active_border_color};
             border-bottom-color:  {active_border_color};
         }}
         QTabBar::tab:first {{
-            border-top-left-radius: {border_radius}px;
             border-left-width: {border_width}px;
             margin-left: 0px;
         }}
@@ -1276,6 +1366,9 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             border-bottom-right-radius: {border_radius}px;
             
             width: {base_menu_button_width}px;
+        }}
+        QMenuBar QToolButton{{
+            padding: 0px;
         }}
         QLineEdit QToolButton {{
                         background-color: {text_edit_background_color};
@@ -1334,7 +1427,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             background-color: {disabled_background_color};
             border-color: {disabled_border_color};
         }}
-        QPushButton:hover, QToolButton:hover, QToolButton:focus, ToolButton:hover {{
+        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {{
             color: {hover_text_color};
             background-color: {hover_background_color};
             border-color: {hover_border_color};
@@ -1355,19 +1448,21 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             border: {border_width}px solid {main_widget_border_color};
         }}
          QLineEdit {{
-            color: {text_edit_color};
-            background-color: {text_edit_background_color};
+            color: {line_edit_color};
+            background-color: {line_edit_background_color};
             selection-background-color: {selection_color};
         }}
         QSlider::handle:horizontal {{
             height: 10px;
-            background: {enabled_color};
-            margin: 0 -4px; /* expand outside the groove */
+            background: {enabled_background_color};
+            border: {border_width/2}px solid {enabled_border_color};
+            margin: 0 -2px; /* expand outside the groove */
         }}
         QSlider::handle:horizontal:hover {{
             height: 10px;
-            background: {hover_text_color};
-            margin: 0 -4px; /* expand outside the groove */
+            background: {hover_background_color};
+            border-color: {hover_border_color};
+            margin: 0 -2px; /* expand outside the groove */
         }}
         QTableWidget, QTableView {{
             alternate-background-color: {table_even_color}; 
@@ -1563,7 +1658,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.setStyleSheet(sheet)
 
     def create_actions(self):
-        self.change_temp_dir_act = QtWidgets.QAction(
+        self.change_temp_dir_act = QtGui.QAction(
             parent=self, text="Change temporary directory",
             statusTip="Change temporary directory", triggered=self.change_temp_dir)
 
@@ -1583,29 +1678,33 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         w = self.loading_label.tool_bar.widgetForAction(self.cancel_load_corpus_act)
         w.setObjectName('cancel_load')
 
-        self.close_corpus_act = QtWidgets.QAction(
+        self.close_corpus_act = QtGui.QAction(
             parent=self, text="Close current corpus",
             statusTip="Load current corpus", triggered=self.close_corpus)
 
-        self.load_acoustic_model_act = QtWidgets.QAction(
+        self.load_acoustic_model_act = QtGui.QAction(
             parent=self, text="Load an acoustic model",
             statusTip="Load an acoustic model", triggered=self.change_acoustic_model)
 
-        self.load_dictionary_act = QtWidgets.QAction(
+        self.load_dictionary_act = QtGui.QAction(
             parent=self, text="Load a dictionary",
             statusTip="Load a dictionary", triggered=self.change_dictionary)
 
-        self.load_g2p_act = QtWidgets.QAction(
+        self.load_g2p_act = QtGui.QAction(
             parent=self, text="Load a G2P model",
             statusTip="Load a G2P model", triggered=self.change_g2p)
 
-        self.load_lm_act = QtWidgets.QAction(
+        self.load_lm_act = QtGui.QAction(
             parent=self, text="Load a language model",
             statusTip="Load a language model", triggered=self.change_lm)
 
-        self.load_ivector_extractor_act = QtWidgets.QAction(
+        self.load_ivector_extractor_act = QtGui.QAction(
             parent=self, text="Load an ivector extractor",
             statusTip="Load an ivector extractor", triggered=self.change_ivector_extractor)
+
+        self.undo_act = self.corpus_model.undo_stack.createUndoAction(self, 'Undo')
+
+        self.redo_act = self.corpus_model.undo_stack.createRedoAction(self, 'Redo')
 
         self.addAction(self.change_temp_dir_act)
         self.addAction(self.options_act)
@@ -1621,8 +1720,13 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
     def set_application_state(self, state):
         if state == 'loading':
             self.list_widget.setVisible(False)
+            self.list_dock.setVisible(False)
+            self.dictionary_dock.setVisible(False)
+            self.dictionary_widget.setVisible(False)
+            self.speaker_dock.setVisible(False)
+            self.speaker_widget.setVisible(False)
+
             self.detail_widget.setVisible(False)
-            self.information_widget.setVisible(False)
             self.title_screen.setVisible(False)
             self.loading_label.setVisible(True)
 
@@ -1639,9 +1743,16 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.load_ivector_extractor_act.setEnabled(False)
         elif state == 'loaded':
             self.loading_label.setVisible(False)
+
             self.list_widget.setVisible(True)
+            self.dictionary_widget.setVisible(True)
+            self.speaker_widget.setVisible(True)
+            self.list_dock.setVisible(True)
+            self.dictionary_dock.setVisible(True)
+            self.speaker_dock.setVisible(True)
+
+
             self.detail_widget.setVisible(True)
-            self.information_widget.setVisible(True)
             self.title_screen.setVisible(False)
 
             self.change_temp_dir_act.setEnabled(True)
@@ -1655,12 +1766,16 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.load_g2p_act.setEnabled(True)
             self.load_lm_act.setEnabled(True)
             self.load_ivector_extractor_act.setEnabled(True)
-
+            self.update_icons()
         elif state == 'unloaded':
             self.loading_label.setVisible(False)
             self.list_widget.setVisible(False)
+            self.list_dock.setVisible(False)
+            self.dictionary_dock.setVisible(False)
+            self.dictionary_widget.setVisible(False)
+            self.speaker_dock.setVisible(False)
+            self.speaker_widget.setVisible(False)
             self.detail_widget.setVisible(False)
-            self.information_widget.setVisible(False)
             self.title_screen.setVisible(True)
 
             self.change_temp_dir_act.setEnabled(True)
@@ -1675,20 +1790,27 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.load_lm_act.setEnabled(True)
             self.load_ivector_extractor_act.setEnabled(True)
 
+    def play_audio(self):
+        if self.media_player.state() in [QtMultimedia.QMediaPlayer.StoppedState,
+                                          QtMultimedia.QMediaPlayer.PausedState]:
+            self.media_player.play()
+        elif self.media_player.state() == QtMultimedia.QMediaPlayer.PlayingState:
+            self.media_player.pause()
+
     def setup_key_binds(self):
 
         self.play_act = DefaultAction('play', checkable=True,
             parent=self, text="Play audio",
-            statusTip="Play current loaded file", triggered=self.detail_widget.play_audio)
+            statusTip="Play current loaded file", triggered=self.play_audio)
 
 
         self.zoom_in_act = DefaultAction('search-plus',
             parent=self, text="Zoom in",
-            statusTip="Zoom in", triggered=self.detail_widget.zoom_in)
+            statusTip="Zoom in", triggered=self.selection_model.zoom_in)
 
         self.zoom_out_act = DefaultAction('search-minus',
             parent=self, text="Zoom out",
-            statusTip="Zoom out", triggered=self.detail_widget.zoom_out)
+            statusTip="Zoom out", triggered=self.selection_model.zoom_out)
 
         self.pan_left_act = DefaultAction('caret-left', buttonless=True,
             parent=self, text="Pan left",
@@ -1700,11 +1822,11 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
         self.merge_act = DefaultAction('compress',
             parent=self, text="Merge utterances",
-            statusTip="Merge utterances", triggered=self.list_widget.merge_utterances)
+            statusTip="Merge utterances", triggered=self.merge_utterances)
 
         self.split_act = DefaultAction('expand',
             parent=self, text="Split utterances",
-            statusTip="Split utterances", triggered=self.list_widget.split_utterances)
+            statusTip="Split utterances", triggered=self.split_utterances)
 
         self.search_act = DefaultAction('search',
             parent=self, text="Search corpus",
@@ -1712,7 +1834,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
         self.delete_act = DefaultAction(icon_name='trash',
             parent=self, text="Delete utterances",
-            statusTip="Delete utterances", triggered=self.list_widget.delete_utterances)
+            statusTip="Delete utterances", triggered=self.delete_utterances)
 
         self.save_act = DefaultAction('save',
             parent=self, text="Save file",
@@ -1720,30 +1842,31 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
 
         self.show_all_speakers_act = DefaultAction('users', checkable=True,
             parent=self, text="Show all speakers",
-            statusTip="Show all speakers", triggered=self.detail_widget.update_show_speakers)
+            statusTip="Show all speakers", triggered=self.detail_widget.plot_widget.update_show_speakers)
 
         self.mute_act = DefaultAction('volume-up', checkable=True,
             parent=self, text="Mute",
-            statusTip="Mute", triggered=self.detail_widget.update_mute_status)
+            statusTip="Mute", triggered=self.update_mute_status)
 
         self.change_volume_act = AnchorAction('volume',
             parent=self, text="Adjust volume",
             statusTip="Adjust volume")
-        self.change_volume_act.widget.valueChanged.connect(self.detail_widget.m_audioOutput.setVolume)
+        self.change_volume_act.widget.valueChanged.connect(self.media_player.set_volume)
 
         self.change_speaker_act = AnchorAction('speaker',
             parent=self, text="Change utterance speaker",
             statusTip="Change utterance speaker", triggered=self.update_speaker)
 
         self.save_current_file_act = DefaultAction('save',
-            parent=self, text="Save current file",
-            statusTip="Save current file", triggered=self.save_file)
+            parent=self, text="Save file",
+            statusTip="Save file", triggered=self.save_file)
         self.save_current_file_act.setDisabled(True)
 
         self.revert_changes_act = DefaultAction('undo',
-            parent=self, text="Undo unsaved changes",
-            statusTip="Undo unsaved changes", triggered=self.list_widget.restore_deleted_utts)
+            parent=self, text="Undo changes",
+            statusTip="Undo changes", triggered=self.restore_deleted_utts)
         self.revert_changes_act.setDisabled(True)
+        self.corpus_model.undoAvailable.connect(self.revert_changes_act.setEnabled)
 
         self.add_new_speaker_act = DefaultAction('user-plus',
             parent=self, text="Add new speaker",
@@ -1756,8 +1879,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.save_dictionary_act.setEnabled(False)
 
         self.reset_dictionary_act = DefaultAction('book-undo',
-            parent=self, text="Revert dictionary",
-            statusTip="Revert dictionary", triggered=self.load_dictionary)
+            parent=self, text="Revert changes",
+            statusTip="Revert changes", triggered=self.load_dictionary)
         self.reset_dictionary_act.setEnabled(False)
 
         self.change_speaker_act.setEnabled(False)
@@ -1779,9 +1902,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.addAction(self.save_dictionary_act)
         self.addAction(self.reset_dictionary_act)
         self.addAction(self.search_act)
-
-        self.information_widget.speaker_widget.tool_bar.addAction(self.add_new_speaker_act)
-        self.information_widget.speaker_widget.speaker_edit.returnPressed.connect(self.add_new_speaker_act.trigger)
+        self.speaker_widget.tool_bar.addAction(self.add_new_speaker_act)
+        self.speaker_widget.speaker_edit.returnPressed.connect(self.add_new_speaker_act.trigger)
 
         self.list_widget.tool_bar.addAction(self.save_current_file_act)
         self.list_widget.tool_bar.addSeparator()
@@ -1809,23 +1931,58 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         w = self.detail_widget.tool_bar.widgetForAction(self.delete_act)
         w.setObjectName('delete_utterance')
 
-        self.information_widget.dictionary_widget.tool_bar.addAction(self.save_dictionary_act)
-        self.information_widget.dictionary_widget.tool_bar.addSeparator()
-        self.information_widget.dictionary_widget.tool_bar.addAction(self.reset_dictionary_act)
+        self.dictionary_widget.tool_bar.addAction(self.save_dictionary_act)
+        self.dictionary_widget.tool_bar.addSeparator()
+        self.dictionary_widget.tool_bar.addAction(self.reset_dictionary_act)
+
+    def report_bug(self):
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl('https://github.com/MontrealCorpusTools/Anchor-annotator/issues'))
+
+    def open_help(self):
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl('https://anchor-annotator.readthedocs.io/en/latest/'))
 
     def add_new_speaker(self):
-        new_speaker = self.information_widget.speaker_widget.speaker_edit.text()
+        new_speaker = self.speaker_widget.speaker_edit.text()
         if new_speaker in self.corpus.speak_utt_mapping:
             return
         if not new_speaker:
             return
         self.corpus.speak_utt_mapping[new_speaker] = []
         self.newSpeaker.emit(self.corpus.speakers)
-        self.information_widget.speaker_widget.speaker_edit.clear()
+        self.speaker_widget.speaker_edit.clear()
+
+
 
     def open_search(self):
-        self.information_widget.tabs.setCurrentWidget(self.information_widget.search_widget)
-        self.information_widget.search_widget.search_field.setFocus()
+
+        dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+        for j in range(len(dock_tab_bars)):
+            dock_tab_bar = dock_tab_bars[j]
+            if not dock_tab_bar.count():
+                continue
+            for i in range(dock_tab_bar.count()):
+                if dock_tab_bar.tabText(i) == 'Utterances':
+                    dock_tab_bar.setCurrentIndex(i)
+                    break
+            else:
+                self.list_dock.toggleViewAction().trigger()
+            self.list_widget.search_widget.search_box.setFocus()
+
+    def open_dictionary(self):
+
+        dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+        for j in range(len(dock_tab_bars)):
+            dock_tab_bar = dock_tab_bars[j]
+            if not dock_tab_bar.count():
+                continue
+            for i in range(dock_tab_bar.count()):
+                if dock_tab_bar.tabText(i) == 'Dictionary':
+                    dock_tab_bar.setCurrentIndex(i)
+                    break
+            else:
+                self.dictionary_dock.toggleViewAction().trigger()
 
     def refresh_shortcuts(self):
         self.play_act.setShortcut(QtGui.QKeySequence(self.config['play_keybind']))
@@ -1838,6 +1995,8 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.delete_act.setShortcut(QtGui.QKeySequence(self.config['delete_keybind']))
         self.save_act.setShortcut(QtGui.QKeySequence(self.config['save_keybind']))
         self.search_act.setShortcut(QtGui.QKeySequence(self.config['search_keybind']))
+        self.undo_act.setShortcut(QtGui.QKeySequence(self.config['undo_keybind']))
+        self.redo_act.setShortcut(QtGui.QKeySequence(self.config['redo_keybind']))
         self.change_volume_act.widget.setValue(self.config['volume'])
 
         for a in self.actions():
@@ -1852,39 +2011,64 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.corpus_menu.addAction(self.close_corpus_act)
 
         self.file_menu = self.menuBar().addMenu("Edit")
+        self.file_menu.addAction(self.undo_act)
+        self.file_menu.addAction(self.redo_act)
+        self.file_menu.addSeparator()
         self.file_menu.addAction(self.change_temp_dir_act)
         self.file_menu.addAction(self.options_act)
         self.dictionary_menu = self.menuBar().addMenu("Dictionary")
         self.dictionary_menu.addAction(self.load_dictionary_act)
         downloaded_dictionaries_models = self.dictionary_menu.addMenu("Downloaded dictionary")
-        for lang in get_available_dict_languages():
-            lang_action = QtWidgets.QAction(
-                parent=self, text=lang,
-                statusTip=lang, triggered=lambda: self.change_dictionary(lang))
+        for lang in DictionaryModel.get_available_models():
+            lang_action = QtGui.QAction(parent=self, text=lang)
+            lang_action.triggered.connect(lambda: self.change_dictionary(lang))
             downloaded_dictionaries_models.addAction(lang_action)
         self.acoustic_model_menu = self.menuBar().addMenu("Acoustic model")
         self.acoustic_model_menu.addAction(self.load_acoustic_model_act)
         downloaded_acoustic_models = self.acoustic_model_menu.addMenu("MFA acoustic model")
-        for lang in get_available_acoustic_languages():
-            lang_action = QtWidgets.QAction(
-                parent=self, text=lang,
-                statusTip=lang, triggered=lambda: self.change_acoustic_model(lang))
+        for lang in AcousticModel.get_available_models():
+            lang_action = QtGui.QAction(parent=self, text=lang)
+            lang_action.triggered.connect(lambda: self.change_acoustic_model(lang))
             downloaded_acoustic_models.addAction(lang_action)
 
         self.g2p_model_menu = self.menuBar().addMenu("G2P model")
         self.g2p_model_menu.addAction(self.load_g2p_act)
         downloaded_g2p_models = self.g2p_model_menu.addMenu("MFA G2P model")
-        for lang in get_available_g2p_languages():
-            lang_action = QtWidgets.QAction(
-                parent=self, text=lang,
-                statusTip=lang, triggered=lambda: self.change_g2p(lang))
+        for lang in G2PModel.get_available_models():
+            lang_action = QtGui.QAction(parent=self, text=lang)
+            lang_action.triggered.connect(lambda: self.change_g2p(lang))
             downloaded_g2p_models.addAction(lang_action)
 
+        self.windows_menu = self.menuBar().addMenu('Window')
+        self.windows_menu.addAction(self.list_dock.toggleViewAction())
+        self.windows_menu.addAction(self.dictionary_dock.toggleViewAction())
+        self.windows_menu.addAction(self.speaker_dock.toggleViewAction())
+
+        self.help_act = DefaultAction('help',
+            parent=self, text="Help",
+            statusTip="Help")
+
+        self.open_help_act = DefaultAction('help',
+            parent=self, text="Open documentation",
+            statusTip="Open documentation", triggered=self.open_help)
+        self.report_bug_act = DefaultAction('bug',
+            parent=self, text="Report a bug",
+            statusTip="Report a bug", triggered=self.report_bug)
+
+        self.corner_tool_bar = QtWidgets.QToolBar()
+        self.help_widget = HelpDropDown()
+        self.help_widget.setDefaultAction(self.help_act)
+
+        self.help_widget.addAction(self.open_help_act)
+        self.corner_tool_bar.addWidget(self.help_widget)
+
+        self.corner_tool_bar.addAction(self.report_bug_act)
+        self.menuBar().setCornerWidget(self.corner_tool_bar, QtCore.Qt.Corner.TopRightCorner)
         #self.language_model_menu = self.menuBar().addMenu("Language model")
         #self.language_model_menu.addAction(self.load_lm_act)
         #downloaded_language_models = self.language_model_menu.addMenu("MFA language model")
         #for lang in get_available_lm_languages():
-        #    lang_action = QtWidgets.QAction(
+        #    lang_action = QtGui.QAction(
         #        parent=self, text=lang,
         #        statusTip=lang, triggered=lambda: self.change_lm(lang))
         #    downloaded_language_models.addAction(lang_action)
@@ -1893,10 +2077,11 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         #self.ivector_menu.addAction(self.load_ivector_extractor_act)
         #downloaded_ie_models = self.ivector_menu.addMenu("MFA ivector extractor")
         #for lang in get_available_ivector_languages():
-        #    lang_action = QtWidgets.QAction(
+        #    lang_action = QtGui.QAction(
         #        parent=self, text=lang,
         #        statusTip=lang, triggered=lambda: self.change_ivector_extractor(lang))
         #    downloaded_ie_models.addAction(lang_action)
+
 
     def change_temp_dir(self):
         self.configUpdated.emit(self.config)
@@ -1909,17 +2094,16 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                       directory=default_dir)
         if not corpus_directory or not os.path.exists(corpus_directory):
             return
-        print(corpus_directory)
         self.default_directory = os.path.dirname(corpus_directory)
         self.config['current_corpus_path'] = corpus_directory
         self.load_corpus()
         self.configUpdated.emit(self.config)
+        self.deleted_utts = []
 
     def close_corpus(self):
         self.title_screen.setVisible(True)
         self.list_widget.setVisible(False)
         self.detail_widget.setVisible(False)
-        self.information_widget.setVisible(False)
         self.loading_label.setVisible(False)
         self.corpus = None
         self.current_corpus_path = None
@@ -1934,7 +2118,6 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             self.title_screen.setVisible(True)
             self.list_widget.setVisible(False)
             self.detail_widget.setVisible(False)
-            self.information_widget.setVisible(False)
             self.loading_label.setVisible(False)
             return
         self.load_corpus_path(directory)
@@ -1943,7 +2126,6 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         self.current_corpus_path = directory
         self.set_application_state('loading')
 
-        self.corpusLoaded.emit(None)
         self.loading_label.setCorpusName(f'Loading {directory}...')
         self.corpus_worker.setParams(directory, self.config['temp_directory'])
         self.corpus_worker.start()
@@ -1957,19 +2139,20 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
     def finish_cancelling(self):
         self.loading_corpus = False
         self.corpus = None
+        self.corpus_model.setCorpus(None)
         self.current_corpus_path = None
 
         self.set_application_state('unloaded')
-
-        self.corpusLoaded.emit(self.corpus)
+        self.corpusLoaded.emit()
         self.set_current_utterance(None, False)
 
     def finalize_load_corpus(self, corpus):
         self.corpus = corpus
+        self.corpus_model.setCorpus(corpus)
+
         self.loading_corpus = False
-        self.corpusLoaded.emit(self.corpus)
+        self.corpusLoaded.emit()
         self.change_speaker_act.widget.refresh_speaker_dropdown(self.corpus.speakers)
-        self.set_current_utterance(None, False)
         self.set_application_state('loaded')
 
     def change_acoustic_model(self, lang=None):
@@ -1978,7 +2161,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                directory=self.default_directory,
                                                                filter="Model files (*.zip)")
         else:
-            am_path = get_pretrained_acoustic_path(lang)
+            am_path = AcousticModel.get_pretrained_path(lang)
         if not am_path or not os.path.exists(am_path):
             return
         self.default_directory = os.path.dirname(am_path)
@@ -2002,7 +2185,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                directory=self.default_directory,
                                                                filter="Model files (*.zip)")
         else:
-            ie_path = get_pretrained_ivector_path(lang)
+            ie_path = IvectorExtractorModel.get_pretrained_path(lang)
         if not ie_path or not os.path.exists(ie_path):
             return
         self.default_directory = os.path.dirname(ie_path)
@@ -2016,7 +2199,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         if ie_path is None or not os.path.exists(ie_path):
             return
         ie_name, _ = os.path.splitext(os.path.basename(ie_path))
-        self.ie_model = IvectorExtractor(ie_path, root_directory=self.config['temp_directory'])
+        self.ie_model = IvectorExtractorModel(ie_path, root_directory=self.config['temp_directory'])
         self.ivectorExtractorLoaded.emit(self.ie_model)
         self.loading_ie = False
 
@@ -2028,7 +2211,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                        directory=self.default_directory,
                                                                        filter="Dictionary files (*.dict *.txt)")
         else:
-            dictionary_path = get_dictionary_path(lang)
+            dictionary_path = DictionaryModel.get_pretrained_path(lang)
         if not dictionary_path or not os.path.exists(dictionary_path):
             return
         self.default_directory = os.path.dirname(dictionary_path)
@@ -2039,30 +2222,28 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
     def load_dictionary(self):
         self.loading_dictionary = True
         dictionary_path = self.config['current_dictionary_path']
-        print(dictionary_path)
         if dictionary_path is None or not os.path.exists(dictionary_path):
             return
 
         dictionary_name, _ = os.path.splitext(os.path.basename(dictionary_path))
         dictionary_temp_dir = os.path.join(self.config['temp_directory'], dictionary_name)
-        self.dictionary = Dictionary(dictionary_path, dictionary_temp_dir)
+        self.dictionary = PronunciationDictionary(dictionary_path, dictionary_temp_dir)
         self.dictionaryLoaded.emit(self.dictionary)
+        self.corpus_model.setDictionary(self.dictionary)
         self.loading_dictionary = False
         self.save_dictionary_act.setEnabled(False)
         self.reset_dictionary_act.setEnabled(False)
 
-    def save_file(self, file_name):
-        if not file_name:
-            return
-        if not self.corpus:
+    def save_file(self):
+        if not self.corpus_model.corpus:
             return
         if self.saving_utterance:
             return
         self.saving_utterance = True
 
-        self.status_label.setText('Saving {}...'.format(file_name))
+        self.status_label.setText('Saving {}...'.format(self.corpus_model.file_name))
         try:
-            self.corpus.save_text_file(file_name)
+            self.corpus_model.corpus.save_text_file(self.corpus_model.file_name)
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             print(traceback.format_exception(exc_type, exc_value, exc_traceback))
@@ -2070,14 +2251,13 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             reply.setDetailedText('\n'.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
             ret = reply.exec_()
         self.saving_utterance = False
-        #self.corpusLoaded.emit(self.corpus)
-        self.saveCompleted.emit(False)
-        self.status_label.setText('Saved {}!'.format(file_name))
+        self.save_current_file_act.setEnabled(False)
+        self.status_label.setText('Saved {}!'.format(self.corpus_model.file_name))
 
     def save_dictionary(self):
         if self.saving_dictionary:
             return
-        words = self.information_widget.dictionary_widget.create_dictionary_for_save()
+        words = self.dictionary_widget.create_dictionary_for_save()
         if not words:
             self.save_dictionary_act.setText('Issue encountered')
             return
@@ -2110,7 +2290,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                 directory=self.default_directory,
                                                                 filter="Model files (*.zip)")
         else:
-            g2p_path = get_pretrained_g2p_path(lang)
+            g2p_path = G2PModel.get_pretrained_path(lang)
         if not g2p_path or not os.path.exists(g2p_path):
             return
         self.default_directory = os.path.dirname(g2p_path)
@@ -2127,7 +2307,7 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
                                                                directory=self.default_directory,
                                                                filter="Model files (*.zip)")
         else:
-            lm_path = get_pretrained_language_model_path(lang)
+            lm_path = LanguageModel.get_pretrained_path(lang)
         if not lm_path or not os.path.exists(lm_path):
             return
         self.default_directory = os.path.dirname(lm_path)

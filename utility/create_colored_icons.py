@@ -20,11 +20,11 @@ folders = {
 }
 
 colors = {
-    'base': '#01192F',
-    'hover': '#FFE819',
-    'disabled': '#D43610',
-    'checked': '#F9D213',
-    'highlighted': '#49A4F7',
+    'base': '#001D3D', # dark blue
+    'hover': '#FFD60A', #light yellow
+    'disabled': '#C63623', # light red
+    'checked': '#FFD60A', # light yellow
+    'highlighted': '#0E63B3', # very light blue
 }
 
 
@@ -38,13 +38,14 @@ def create_icon_set(identifier):
         out_path = os.path.join(out_dir, f)
         doc = minidom.parse(base_path)
         path = doc.getElementsByTagName('path')
+        width = float(doc.getElementsByTagName('svg')[0].getAttribute('viewBox').split()[2])
         for p in path:
             print(dir(p))
             print(p.getAttribute('fill'))
             p.setAttribute('fill', color)
-            if p.hasAttribute('stroke'):
-                print(p.getAttribute('stroke'))
-                p.setAttribute('stroke', color)
+            print(p.getAttribute('stroke'))
+            p.setAttribute('stroke', color)
+            p.setAttribute('stroke-width', str(2*width/100))
         print(path)
 
         with open(out_path, 'w', encoding='utf8') as f:

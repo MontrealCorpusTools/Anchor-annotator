@@ -37,6 +37,9 @@
 
 <qresource>
     <file alias="anchor.svg">resources/base_tool_buttons/anchor-solid.svg</file>
+    <file alias="help.svg">resources/base_tool_buttons/life-ring-solid.svg</file>
+    <file alias="times.svg">resources/base_tool_buttons/times-solid.svg</file>
+    <file alias="external-link.svg">resources/base_tool_buttons/external-link-alt-solid.svg</file>
     <file alias="speaker.svg">resources/base_tool_buttons/speaker.svg</file>
     <file alias="regex.svg">resources/base_tool_buttons/regex.svg</file>
     <file alias="case.svg">resources/base_tool_buttons/case.svg</file>
@@ -75,6 +78,7 @@
     <file alias="sort-up.svg">resources/base_tool_buttons/sort-up-solid.svg</file>
     <file alias="trash.svg">resources/base_tool_buttons/trash-alt-solid.svg</file>
     <file alias="undo.svg">resources/base_tool_buttons/undo-solid.svg</file>
+    <file alias="redo.svg">resources/base_tool_buttons/redo-solid.svg</file>
     <file alias="user.svg">resources/base_tool_buttons/user-solid.svg</file>
     <file alias="users.svg">resources/base_tool_buttons/users-solid.svg</file>
     <file alias="users-slash.svg">resources/base_tool_buttons/users-slash-solid.svg</file>
@@ -88,6 +92,9 @@
 
 <qresource prefix="/hover">
     <file alias="anchor.svg">resources/hover_tool_buttons/anchor-solid.svg</file>
+    <file alias="help.svg">resources/hover_tool_buttons/life-ring-solid.svg</file>
+    <file alias="times.svg">resources/hover_tool_buttons/times-solid.svg</file>
+    <file alias="external-link.svg">resources/hover_tool_buttons/external-link-alt-solid.svg</file>
     <file alias="speaker.svg">resources/hover_tool_buttons/speaker.svg</file>
     <file alias="regex.svg">resources/hover_tool_buttons/regex.svg</file>
     <file alias="case.svg">resources/hover_tool_buttons/case.svg</file>
@@ -126,6 +133,7 @@
     <file alias="sort-up.svg">resources/hover_tool_buttons/sort-up-solid.svg</file>
     <file alias="trash.svg">resources/hover_tool_buttons/trash-alt-solid.svg</file>
     <file alias="undo.svg">resources/hover_tool_buttons/undo-solid.svg</file>
+    <file alias="redo.svg">resources/hover_tool_buttons/redo-solid.svg</file>
     <file alias="user.svg">resources/hover_tool_buttons/user-solid.svg</file>
     <file alias="users.svg">resources/hover_tool_buttons/users-solid.svg</file>
     <file alias="users-slash.svg">resources/hover_tool_buttons/users-slash-solid.svg</file>
@@ -139,6 +147,9 @@
 
 <qresource prefix="/disabled">
     <file alias="anchor.svg">resources/disabled_tool_buttons/anchor-solid.svg</file>
+    <file alias="help.svg">resources/disabled_tool_buttons/life-ring-solid.svg</file>
+    <file alias="times.svg">resources/disabled_tool_buttons/times-solid.svg</file>
+    <file alias="external-link.svg">resources/disabled_tool_buttons/external-link-alt-solid.svg</file>
     <file alias="speaker.svg">resources/disabled_tool_buttons/speaker.svg</file>
     <file alias="regex.svg">resources/disabled_tool_buttons/regex.svg</file>
     <file alias="case.svg">resources/disabled_tool_buttons/case.svg</file>
@@ -177,6 +188,7 @@
     <file alias="sort-up.svg">resources/disabled_tool_buttons/sort-up-solid.svg</file>
     <file alias="trash.svg">resources/disabled_tool_buttons/trash-alt-solid.svg</file>
     <file alias="undo.svg">resources/disabled_tool_buttons/undo-solid.svg</file>
+    <file alias="redo.svg">resources/disabled_tool_buttons/redo-solid.svg</file>
     <file alias="user.svg">resources/disabled_tool_buttons/user-solid.svg</file>
     <file alias="users.svg">resources/disabled_tool_buttons/users-slash-solid.svg</file>
     <file alias="users-slash.svg">resources/disabled_tool_buttons/users-slash-solid.svg</file>
@@ -190,6 +202,9 @@
 
 <qresource prefix="/checked">
     <file alias="anchor.svg">resources/checked_tool_buttons/anchor-solid.svg</file>
+    <file alias="help.svg">resources/checked_tool_buttons/life-ring-solid.svg</file>
+    <file alias="times.svg">resources/checked_tool_buttons/times-solid.svg</file>
+    <file alias="external-link.svg">resources/checked_tool_buttons/external-link-alt-solid.svg</file>
     <file alias="speaker.svg">resources/checked_tool_buttons/speaker.svg</file>
     <file alias="regex.svg">resources/checked_tool_buttons/regex.svg</file>
     <file alias="case.svg">resources/checked_tool_buttons/case.svg</file>
@@ -228,6 +243,7 @@
     <file alias="sort-up.svg">resources/checked_tool_buttons/sort-up-solid.svg</file>
     <file alias="trash.svg">resources/checked_tool_buttons/trash-alt-solid.svg</file>
     <file alias="undo.svg">resources/checked_tool_buttons/undo-solid.svg</file>
+    <file alias="redo.svg">resources/checked_tool_buttons/redo-solid.svg</file>
     <file alias="user.svg">resources/checked_tool_buttons/user-solid.svg</file>
     <file alias="users.svg">resources/checked_tool_buttons/users-solid.svg</file>
     <file alias="users-slash.svg">resources/checked_tool_buttons/users-slash-solid.svg</file>

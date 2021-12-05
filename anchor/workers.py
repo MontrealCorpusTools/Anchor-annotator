@@ -1,18 +1,18 @@
 import os
 import time
-from PyQt5 import QtCore
+from PySide6 import QtCore
 
-from montreal_forced_aligner.corpus.align_corpus import AlignableCorpus
+from montreal_forced_aligner.corpus.acoustic_corpus import AcousticCorpus
 
 class FunctionWorker(QtCore.QThread):  # pragma: no cover
-    updateProgress = QtCore.pyqtSignal(object)
-    updateMaximum = QtCore.pyqtSignal(object)
-    updateProgressText = QtCore.pyqtSignal(str)
-    errorEncountered = QtCore.pyqtSignal(object)
-    finishedCancelling = QtCore.pyqtSignal()
-    actionCompleted= QtCore.pyqtSignal(object)
+    updateProgress = QtCore.Signal(object)
+    updateMaximum = QtCore.Signal(object)
+    updateProgressText = QtCore.Signal(str)
+    errorEncountered = QtCore.Signal(object)
+    finishedCancelling = QtCore.Signal()
+    actionCompleted= QtCore.Signal(object)
 
-    dataReady = QtCore.pyqtSignal(object)
+    dataReady = QtCore.Signal(object)
 
     def __init__(self):
         super(FunctionWorker, self).__init__()
@@ -45,12 +45,11 @@ class FunctionWorker(QtCore.QThread):  # pragma: no cover
 
 
 class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
-    def __init__(self, logger):
+    def __init__(self):
         super(FunctionWorker, self).__init__()
         self.directory = None
         self.corpus_name = None
         self.corpus_temp_dir = None
-        self.logger = logger
         self.stopped = False
         self.finished = True
 
@@ -58,7 +57,8 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
         self.corpus_name = os.path.basename(directory)
         self.directory = directory
         self.corpus_temp_dir = os.path.join(temp_directory, self.corpus_name)
-        self.corpus = AlignableCorpus(self.directory, self.corpus_temp_dir, logger=self.logger, skip_load=True)
+        self.corpus = AcousticCorpus(corpus_directory=self.directory, temporary_directory=self.corpus_temp_dir)
+        self.corpus.utterances_time_sorted = True
 
     def stop(self):
         self.stopped = True
@@ -70,7 +70,7 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
         time.sleep(0.1)
         if not self.directory:
             return
-        self.corpus.load()
+        self.corpus._load_corpus()
         #if not corpus.loaded_from_temp:
         #    corpus.initialize_corpus(None)
         if self.stopCheck():
