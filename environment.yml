@@ -10,6 +10,8 @@ dependencies:
   - pyqtgraph
   - pytorch
   - torchaudio
+  - setuptools_scm
   - pip:
-      - pyqtgraph
+      - build
+      - twine
       - speechbrain
