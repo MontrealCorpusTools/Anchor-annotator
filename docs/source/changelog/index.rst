@@ -4,4 +4,4 @@ Changelog
 
 .. warning::
 
-   Under construction
+   Not even really released. This is like pre-pre alpha.

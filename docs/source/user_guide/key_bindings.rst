@@ -9,7 +9,7 @@ Keyboard
 
 .. tip::
 
-   You can change most of the keyboard shortcuts by :
+   You can change most of the keyboard shortcuts by via the settings in :doc:`configuration`.
 
 .. csv-table::
    :header: "Function", "Default keyboard shortcut"

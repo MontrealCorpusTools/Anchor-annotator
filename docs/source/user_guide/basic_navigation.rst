@@ -3,6 +3,10 @@
 Basic navigation
 ================
 
+.. warning::
+
+   This section is horrendously out of date, sorry!  I will update it soon!
+
 Fixing out of vocabulary issues
 -------------------------------
 
