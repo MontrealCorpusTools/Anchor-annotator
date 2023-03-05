@@ -1,0 +1,12 @@
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.8
+  - sphinx
+  - montreal-forced-aligner
+  - pyside6
+  - pyqtgraph
+  - myst-parser
+  - numpydoc
+  - pydata-sphinx-theme
+  - sphinx-design

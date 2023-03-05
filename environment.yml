@@ -1,0 +1,15 @@
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python>=3.10
+  - pip
+  - montreal-forced-aligner
+  - pyside6
+  - pyqtgraph
+  - pytorch
+  - torchaudio
+  - pip:
+      - pyqtgraph
+      - speechbrain
