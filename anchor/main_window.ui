@@ -1,0 +1,1516 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1448</width>
+    <height>974</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MFA Anchor</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="resources.qrc">
+    <normaloff>:/anchor-yellow.svg</normaloff>:/anchor-yellow.svg</iconset>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">QMainWindow, QDialog{
+            background-color: rgb(0, 53, 102);
+        }
+        QMenuBar {
+            background-color: rgb(255, 195, 0);
+            spacing: 2px;
+        }
+        QMenuBar::item {
+            padding: 4px 4px;
+                        color: rgb(0, 8, 20);
+                        background-color: rgb(255, 195, 0);
+        }
+        QMenuBar::item:selected {
+                        color: rgb(255, 214, 10);
+                        background-color: rgb(14, 99, 179);
+        }
+        QMenuBar::item:disabled {
+                        color: rgb(198, 54, 35);
+                        background-color: rgb(255, 195, 0);
+                        }
+        ButtonWidget {
+            background-color: rgb(14, 99, 179);
+        }
+        QDockWidget {
+            background-color: rgb(0, 29, 61);
+            color: rgb(255, 214, 10);
+            
+            titlebar-close-icon: url(:checked/times.svg);
+            titlebar-normal-icon: url(:checked/external-link.svg);
+        }
+        QDockWidget::title {
+            text-align: center;
+        }
+        
+        QMainWindow::separator {
+    background: rgb(0, 53, 102);
+    width: 10px; /* when vertical */
+    height: 10px; /* when horizontal */
+}
+
+QMainWindow::separator:hover {
+    background: rgb(255, 195, 0);
+}
+        #utteranceListWidget, #dictionaryWidget, #speakerWidget {
+            background-color: rgb(0, 8, 20);
+        
+            border: 2px solid rgb(14, 99, 179);
+            color: rgb(14, 99, 179);
+            padding: 0px;
+            padding-top: 20px;
+            margin-top: 0ex; /* leave space at the top for the title */
+            }
+            
+        #utteranceDetailWidget {
+            background-color: rgb(0, 53, 102);
+            padding: 0px;
+            border: none;
+            margin: 0;
+        }
+        InformationWidget {
+            background-color: rgb(0, 8, 20);
+            border: 2px solid rgb(14, 99, 179);
+            border-top-right-radius: 5px;
+            border-bottom-right-radius: 5px;
+                    
+        }
+        
+        QGroupBox::title {
+            color: rgb(237, 221, 212);
+            background-color: transparent;
+            subcontrol-origin: margin;
+            subcontrol-position: top center; /* position at the top center */
+            padding-top: 5px;
+        }
+        QLabel {
+                        color: rgb(237, 221, 212);
+            }
+        QStatusBar {
+            background-color: rgb(0, 8, 20);
+                        color: rgb(237, 221, 212);
+            }
+        WarningLabel {
+                        color: rgb(198, 54, 35);
+            }
+        QCheckBox {
+            color: rgb(237, 221, 212);
+        }
+        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget { /* The tab widget frame */
+            background-color: rgb(0, 8, 20);
+        
+        }
+        QTabWidget::pane  { /* The tab widget frame */
+            border: 2px solid rgb(14, 99, 179);
+            border-top-color: rgb(0, 8, 20);
+            background-color: rgb(0, 8, 20);
+        
+        }
+            
+            
+        QTabBar::tab {
+            color: rgb(0, 8, 20);
+            background-color: rgb(255, 195, 0);
+            border-color: rgb(0, 8, 20);
+            border: 1px solid rgb(0, 8, 20);
+            border-top-color: rgb(14, 99, 179);
+            border-bottom: none;
+            
+            min-width: 8ex;
+            padding: 5px;
+            margin: 0px;
+        }
+            
+        QTabBar::scroller{
+            width: 50px;
+        }
+        QTabBar QToolButton  {
+            border-radius: 0px;
+        }
+        
+        QTabBar QToolButton::right-arrow  {
+            image: url(:caret-right.svg);
+            height: 25px;
+            width: 25px;
+        }
+        QTabBar QToolButton::right-arrow :pressed {
+            image: url(:checked/caret-right.svg);
+        }
+        QTabBar QToolButton::right-arrow :disabled {
+            image: url(:disabled/caret-right.svg);
+        }
+        
+        QTabBar QToolButton::left-arrow  {
+            image: url(:caret-left.svg);
+            height: 25px;
+            width: 25px;
+        }
+        QTabBar QToolButton::left-arrow:pressed {
+            image: url(:checked/caret-left.svg);
+        }
+        QTabBar QToolButton::left-arrow:disabled {
+            image: url(:disabled/caret-left.svg);
+        }
+        
+        QTabBar::tab-bar {
+            color: rgb(0, 8, 20);
+            background-color: rgb(255, 195, 0);
+            border: 2px solid rgb(14, 99, 179);
+        }
+            
+        QTabBar::tab:hover {
+            color: rgb(255, 214, 10);
+            background-color: rgb(14, 99, 179);
+            border-bottom-color:  rgb(14, 99, 179);
+        }
+        QTabBar::tab:selected {
+            color: rgb(255, 214, 10);
+            background-color: rgb(0, 29, 61);
+            margin-left: -2px;
+            margin-right: -2px;
+            border-color: rgb(14, 99, 179);
+            border-bottom-color:  rgb(14, 99, 179);
+        }
+        QTabBar::tab:first {
+            border-left-width: 2px;
+            margin-left: 0px;
+        }
+        QTabBar::tab:last {
+            border-right-width: 2px;
+            margin-right: 0px;
+        }
+        QToolBar {
+            spacing: 3px; 
+			border: none;s
+        }
+        #toolBar {
+            background: rgb(0, 8, 20);
+        }
+            
+        QToolBar::separator {
+            margin-left: 5px;
+            margin-right: 5px;
+            width: 3px;
+            height: 3px;
+            background: rgb(14, 99, 179);
+        }
+            
+        
+            
+        QPushButton, QToolButton {
+            background-color: rgb(255, 195, 0);
+            color: rgb(0, 8, 20);
+            padding: 2px;
+            border-width: 2px; 
+            border-style: solid; 
+            border-color: rgb(0, 8, 20);
+            border-radius: 5px;
+        }
+        QToolButton[popupMode=&quot;1&quot;] { /* only for MenuButtonPopup */
+            padding-right: 20px; /* make way for the popup button */
+        }
+        QToolButton::menu-button {
+            border: 2px solid rgb(0, 8, 20);
+            border-top-right-radius: 5px;
+            border-bottom-right-radius: 5px;
+            
+            width: 16px;
+        }
+        QMenuBar QToolButton{
+            padding: 0px;
+        }
+        QLineEdit QToolButton {
+                        background-color: rgb(255, 195, 0);
+                        color: rgb(237, 221, 212);
+                        border: none;
+        }
+        QToolButton#clear_search_field, QToolButton#clear_new_speaker_field, 
+        QToolButton#regex_search_field, QToolButton#word_search_field {
+                        background-color: none;
+                        border: none;
+                        padding: 2px;
+        }
+        QMenu {
+                margin: 2px;
+                background-color: rgb(255, 195, 0);
+                color: rgb(0, 8, 20);
+        }
+        QMenu::item {
+                padding: 2px 25px 2px 20px;
+                border: 1px solid transparent;
+                background-color: rgb(255, 195, 0);
+                color: rgb(0, 8, 20);
+        }
+        QMenu::item:disabled {
+                border: none;
+                background-color: rgb(0, 29, 61);
+                color: rgb(198, 54, 35);
+        }
+        QMenu::item:!disabled:selected {
+            border-color: rgb(0, 8, 20);
+            background-color: rgb(14, 99, 179);
+        }
+        QComboBox {
+            color: rgb(0, 8, 20);
+            background-color: rgb(255, 195, 0);
+            selection-background-color: none;
+        }
+        QComboBox QAbstractItemView {
+            color: rgb(0, 8, 20);
+            background-color: rgb(255, 195, 0);
+            selection-background-color: rgb(14, 99, 179);
+        }
+        QToolButton:checked  {
+            color: rgb(255, 214, 10);
+            background-color: rgb(0, 29, 61);
+            border-color: rgb(14, 99, 179);
+        }
+        QPushButton:disabled, QToolButton:disabled {
+            color: rgb(198, 54, 35);
+            background-color: rgb(160, 122, 0);
+        }
+        
+        QToolButton#cancel_load:disabled {
+            color: rgb(198, 54, 35);
+            background-color: rgb(0, 29, 61);
+        }
+        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {
+            color: rgb(255, 214, 10);
+            background-color: rgb(14, 99, 179);
+        }
+        
+        QToolButton#cancel_load:focus:hover {
+            color: rgb(255, 214, 10);
+            background-color: rgb(14, 99, 179);
+        }
+        QPlainTextEdit {
+            color: rgb(237, 221, 212);
+            background-color: rgb(0, 8, 20);
+            border: 2px solid rgb(14, 99, 179);
+            selection-background-color: rgb(14, 99, 179);
+        }
+        QGraphicsView {
+            border: 2px solid rgb(14, 99, 179);
+        }
+         QLineEdit {
+            color: rgb(0, 8, 20);
+            background-color: rgb(237, 221, 212);
+            selection-background-color: rgb(14, 99, 179);
+        }
+        QSlider::handle:horizontal {
+            height: 10px;
+            background: rgb(255, 195, 0);
+            border: 1px solid rgb(0, 8, 20);
+            margin: 0 -2px; /* expand outside the groove */
+        }
+        QSlider::handle:horizontal:hover {
+            height: 10px;
+            background: rgb(14, 99, 179);
+            margin: 0 -2px; /* expand outside the groove */
+        }
+        QTableWidget, QTableView {
+            alternate-background-color: rgb(242, 205, 73); 
+            selection-background-color: rgb(14, 99, 179);
+            selection-color: rgb(237, 221, 212);
+            background-color: rgb(122, 181, 230);
+            color: rgb(0, 8, 20);
+            border: 4px solid rgb(0, 8, 20);
+        }
+        QScrollArea {
+            border: 4px solid rgb(0, 8, 20);
+		background-color: rgb(0, 29, 61);
+        }
+        QHeaderView::up-arrow {
+            subcontrol-origin: padding; 
+            subcontrol-position: center right;
+            image: url(:hover/sort-up.svg);
+            height: 20px;
+            width: 20px;
+        }
+        QHeaderView::down-arrow {
+            image: url(:hover/sort-down.svg);
+            subcontrol-origin: padding; 
+            subcontrol-position: center right;
+            height: 20px;
+            width: 20px;
+        }
+        QTableView QTableCornerButton::section {
+            background-color: rgb(255, 195, 0);
+        }
+        QHeaderView {
+            background-color: rgb(122, 181, 230);
+        }
+        QHeaderView::section {
+            color: rgb(237, 221, 212);
+            background-color: rgb(14, 99, 179);
+            padding-left: 5px;
+        }
+        QHeaderView::section:horizontal {
+            padding-right: 15px;
+        }
+
+        QScrollBar {
+            color: rgb(255, 214, 10);
+            background: rgb(0, 29, 61);
+            border: 2px solid rgb(0, 8, 20);
+        }
+        QScrollBar#time_scroll_bar {
+            color: rgb(255, 214, 10);
+            background: rgb(0, 29, 61);
+            border: 2px solid rgb(0, 8, 20);
+            margin-left: 0px;
+            margin-right: 0px;
+        }
+        QScrollBar:horizontal {
+            height: 25px;
+            border: 2px solid rgb(0, 8, 20);
+            border-radius: 12px;
+            margin-left: 25px;
+            margin-right: 25px;
+        }
+        QScrollBar:vertical {
+            width: 25px;
+            border: 2px solid rgb(0, 8, 20);
+            border-radius: 12px;
+            margin-top: 25px;
+            margin-bottom: 25px;
+        }
+        
+        QScrollBar:left-arrow:horizontal {
+            image: url(:caret-left.svg);
+            height: 25px;
+            width: 25px;
+        }
+
+        QScrollBar:left-arrow:horizontal:pressed {
+            image: url(:checked/caret-left.svg);
+        }
+        
+        QScrollBar:right-arrow:horizontal {
+            image: url(:caret-right.svg);
+            height: 25px;
+            width: 25px;
+        }
+
+        QScrollBar:right-arrow:horizontal:pressed {
+            image: url(:checked/caret-right.svg);
+        }
+        
+        QScrollBar:up-arrow:vertical {
+            image: url(:caret-up.svg);
+            height: 25px;
+            width: 25px;
+        }
+
+        QScrollBar:up-arrow:vertical:pressed {
+            image: url(:checked/caret-up.svg);
+        }
+        
+        QScrollBar:down-arrow:vertical {
+            image: url(:caret-down.svg);
+            height: 25px;
+            width: 25px;
+        }
+        QScrollBar:down-arrow:vertical:pressed {
+            image: url(:checked/caret-down.svg);
+        }
+        
+        QScrollBar::handle:horizontal {
+            background: rgb(255, 214, 10);
+            min-width: 25px;
+            border: 2px solid rgb(0, 8, 20);
+            border-radius: 10px;
+        }
+        
+        QScrollBar::handle:vertical {
+            background: rgb(255, 214, 10);
+            min-height: 25px;
+            border: 2px solid rgb(0, 8, 20);
+            border-radius: 10px;
+        }
+        
+        QToolButton#pan_left_button, QToolButton#pan_right_button {
+            
+            color: none;
+            background-color: none;
+            border: none;
+            margin: 0px;
+            padding: 0px;
+        }
+
+        QScrollBar::add-page, QScrollBar::sub-page {
+            background: none;
+            height: 25px;
+            width: 25px;
+            padding: 0px;
+            margin: 0px;
+        }
+        
+        QScrollBar::add-line:horizontal {
+            background: none;
+            subcontrol-position: right;
+            subcontrol-origin: margin;
+            width: 25px;
+        }
+        
+        QScrollBar::sub-line:horizontal {
+            background: none;
+            subcontrol-position: left;
+            subcontrol-origin: margin;
+            width: 25px;
+        }
+        
+        QScrollBar::add-line:vertical {
+            background: none;
+            subcontrol-position: bottom;
+            subcontrol-origin: margin;
+            height: 25px;
+        }
+        
+        QScrollBar::sub-line:vertical {
+            background: none;
+            subcontrol-position: top;
+            subcontrol-origin: margin;
+            height: 25px;
+        }
+        
+        QScrollBar#time_scroll_bar::add-line:horizontal {
+            background: none;
+            subcontrol-position: none;
+            subcontrol-origin: none;
+            width: 0px;
+        }
+        
+        QScrollBar#time_scroll_bar::sub-line:horizontal {
+            background: none;
+            subcontrol-position: none;
+            subcontrol-origin: none;
+            width: 0px;
+        }</string>
+  </property>
+  <property name="animated">
+   <bool>true</bool>
+  </property>
+  <property name="documentMode">
+   <bool>false</bool>
+  </property>
+  <property name="dockOptions">
+   <set>QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks|QMainWindow::ForceTabbedDocks|QMainWindow::VerticalTabs</set>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_4">
+    <property name="spacing">
+     <number>0</number>
+    </property>
+    <property name="leftMargin">
+     <number>0</number>
+    </property>
+    <property name="topMargin">
+     <number>0</number>
+    </property>
+    <property name="rightMargin">
+     <number>0</number>
+    </property>
+    <property name="bottomMargin">
+     <number>0</number>
+    </property>
+    <item>
+     <widget class="UtteranceDetailWidget" name="utteranceDetailWidget" native="true"/>
+    </item>
+    <item>
+     <widget class="TitleScreen" name="titleScreen" native="true"/>
+    </item>
+    <item>
+     <widget class="LoadingScreen" name="loadingScreen" native="true"/>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1448</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuCorpus">
+    <property name="title">
+     <string>Corpus</string>
+    </property>
+    <widget class="QMenu" name="loadRecentCorpusMenu">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Load a recent corpus</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <addaction name="loadCorpusAct"/>
+    <addaction name="loadRecentCorpusMenu"/>
+    <addaction name="separator"/>
+    <addaction name="reloadCorpusAct"/>
+    <addaction name="saveChangesAct"/>
+    <addaction name="exportFilesAct"/>
+    <addaction name="separator"/>
+    <addaction name="closeCurrentCorpusAct"/>
+    <addaction name="separator"/>
+    <addaction name="separator"/>
+    <addaction name="exitAct"/>
+    <addaction name="separator"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="changeTemporaryDirectoryAct"/>
+    <addaction name="openPreferencesAct"/>
+    <addaction name="separator"/>
+    <addaction name="lockEditAct"/>
+    <addaction name="revertChangesAct"/>
+   </widget>
+   <widget class="QMenu" name="menuDictionary">
+    <property name="title">
+     <string>Dictionary</string>
+    </property>
+    <widget class="QMenu" name="mfaDictionaryMenu">
+     <property name="title">
+      <string>Load a saved dictionary</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="menuDownload_dictionary">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Download dictionary</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <addaction name="loadDictionaryAct"/>
+    <addaction name="mfaDictionaryMenu"/>
+    <addaction name="menuDownload_dictionary"/>
+    <addaction name="separator"/>
+    <addaction name="saveDictionaryAct"/>
+    <addaction name="revertDictionaryAct"/>
+    <addaction name="closeDictionaryAct"/>
+   </widget>
+   <widget class="QMenu" name="menuWindow">
+    <property name="title">
+     <string>Window</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="menuModels">
+    <property name="title">
+     <string>Models</string>
+    </property>
+    <widget class="QMenu" name="acousticModelMenu">
+     <property name="title">
+      <string>Load acoustic model</string>
+     </property>
+     <addaction name="loadAcousticModelAct"/>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="g2pMenu">
+     <property name="title">
+      <string>Load G2P model</string>
+     </property>
+     <addaction name="loadG2PModelAct"/>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="ivectorExtractorMenu">
+     <property name="title">
+      <string>Load ivector extractor</string>
+     </property>
+     <addaction name="loadIvectorExtractorAct"/>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="languageModelMenu">
+     <property name="title">
+      <string>Load language model</string>
+     </property>
+     <addaction name="loadLanguageModelAct"/>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="menuDownload_acoustic_model">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Download acoustic model</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="menuDownload_ivector_extractor">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Download ivector extractor</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="menuDownload_language_model">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Download language model</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <widget class="QMenu" name="menuDownload_G2P_model">
+     <property name="maximumSize">
+      <size>
+       <width>200</width>
+       <height>400</height>
+      </size>
+     </property>
+     <property name="title">
+      <string>Download G2P model</string>
+     </property>
+     <addaction name="separator"/>
+    </widget>
+    <addaction name="acousticModelMenu"/>
+    <addaction name="menuDownload_acoustic_model"/>
+    <addaction name="closeAcousticModelAct"/>
+    <addaction name="separator"/>
+    <addaction name="g2pMenu"/>
+    <addaction name="menuDownload_G2P_model"/>
+    <addaction name="closeG2PAct"/>
+    <addaction name="separator"/>
+    <addaction name="languageModelMenu"/>
+    <addaction name="menuDownload_language_model"/>
+    <addaction name="closeLanguageModelAct"/>
+    <addaction name="separator"/>
+    <addaction name="ivectorExtractorMenu"/>
+    <addaction name="menuDownload_ivector_extractor"/>
+    <addaction name="closeIvectorExtractorAct"/>
+   </widget>
+   <widget class="QMenu" name="menuAlignment">
+    <property name="title">
+     <string>Alignment</string>
+    </property>
+    <addaction name="loadReferenceAlignmentsAct"/>
+    <addaction name="selectMappingFileAct"/>
+    <addaction name="evaluateAlignmentsAct"/>
+   </widget>
+   <widget class="QMenu" name="menuTranscription">
+    <property name="title">
+     <string>Transcription</string>
+    </property>
+    <addaction name="transcribeCorpusAct"/>
+   </widget>
+   <widget class="QMenu" name="menuExperimental">
+    <property name="title">
+     <string>Experimental</string>
+    </property>
+    <addaction name="find_duplicates_action"/>
+    <addaction name="cluster_utterances_action"/>
+    <addaction name="classify_speakers_action"/>
+   </widget>
+   <addaction name="menuCorpus"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuDictionary"/>
+   <addaction name="menuModels"/>
+   <addaction name="menuAlignment"/>
+   <addaction name="menuTranscription"/>
+   <addaction name="menuExperimental"/>
+   <addaction name="menuWindow"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <widget class="QDockWidget" name="utteranceDockWidget">
+   <property name="features">
+    <set>QDockWidget::DockWidgetClosable|QDockWidget::DockWidgetFloatable|QDockWidget::DockWidgetMovable</set>
+   </property>
+   <property name="windowTitle">
+    <string>Utterances</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="UtteranceListWidget" name="utteranceListWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="dictionaryDockWidget">
+   <property name="windowTitle">
+    <string>Dictionary</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="DictionaryWidget" name="dictionaryWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="speakerDockWidget">
+   <property name="windowTitle">
+    <string>Speakers</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="SpeakerWidget" name="speakerWidget"/>
+  </widget>
+  <widget class="QToolBar" name="toolBar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+     <horstretch>1</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="acceptDrops">
+    <bool>false</bool>
+   </property>
+   <property name="windowTitle">
+    <string>toolBar</string>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="allowedAreas">
+    <set>Qt::BottomToolBarArea</set>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>25</width>
+     <height>25</height>
+    </size>
+   </property>
+   <property name="floatable">
+    <bool>false</bool>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>BottomToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="playAct"/>
+   <addaction name="showAllSpeakersAct"/>
+   <addaction name="separator"/>
+   <addaction name="zoomInAct"/>
+   <addaction name="zoomOutAct"/>
+   <addaction name="zoomToSelectionAct"/>
+   <addaction name="separator"/>
+   <addaction name="mergeUtterancesAct"/>
+   <addaction name="splitUtterancesAct"/>
+   <addaction name="deleteUtterancesAct"/>
+   <addaction name="separator"/>
+   <addaction name="alignUtteranceAct"/>
+   <addaction name="segmentUtteranceAct"/>
+   <addaction name="lockEditAct"/>
+   <addaction name="saveChangesAct"/>
+   <addaction name="revertChangesAct"/>
+   <addaction name="exportFilesAct"/>
+   <addaction name="separator"/>
+   <addaction name="getHelpAct"/>
+   <addaction name="reportBugAct"/>
+   <addaction name="separator"/>
+   <addaction name="muteAct"/>
+  </widget>
+  <widget class="QDockWidget" name="acousticModelDockWidget">
+   <property name="windowTitle">
+    <string>Acoustic model</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="AcousticModelWidget" name="acousticModelWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="languageModelDockWidget">
+   <property name="windowTitle">
+    <string>Language model</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="LanguageModelWidget" name="languageModelWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="transcriptionDockWidget">
+   <property name="windowTitle">
+    <string>Transcription</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="TranscriberWidget" name="transcriptionWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="alignmentDockWidget">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="allowedAreas">
+    <set>Qt::AllDockWidgetAreas</set>
+   </property>
+   <property name="windowTitle">
+    <string>Alignment</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="AlignmentWidget" name="alignmentWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="oovDockWidget">
+   <property name="windowTitle">
+    <string>OOVs</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>2</number>
+   </attribute>
+   <widget class="OovWidget" name="oovWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="diarizationDockWidget">
+   <property name="windowTitle">
+    <string>Diarization</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="DiarizationWidget" name="diarizationWidget"/>
+  </widget>
+  <action name="loadCorpusAct">
+   <property name="text">
+    <string>Load a corpus</string>
+   </property>
+  </action>
+  <action name="closeCurrentCorpusAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close current corpus</string>
+   </property>
+  </action>
+  <action name="changeTemporaryDirectoryAct">
+   <property name="text">
+    <string>Change temporary directory</string>
+   </property>
+  </action>
+  <action name="openPreferencesAct">
+   <property name="text">
+    <string>Preferences...</string>
+   </property>
+  </action>
+  <action name="loadDictionaryAct">
+   <property name="text">
+    <string>Choose a dictionary...</string>
+   </property>
+  </action>
+  <action name="loadAcousticModelAct">
+   <property name="text">
+    <string>Choose a model...</string>
+   </property>
+  </action>
+  <action name="loadG2PModelAct">
+   <property name="text">
+    <string>Choose a model...</string>
+   </property>
+  </action>
+  <action name="playAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/play.svg</normaloff>
+     <normalon>:/checked/pause.svg</normalon>
+     <disabledoff>:/play.svg</disabledoff>
+     <activeoff>:/checked/play.svg</activeoff>
+     <activeon>:/checked/pause.svg</activeon>
+     <selectedoff>:/checked/play.svg</selectedoff>
+     <selectedon>:/checked/pause.svg</selectedon>:/play.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Play</string>
+   </property>
+   <property name="autoRepeat">
+    <bool>false</bool>
+   </property>
+  </action>
+  <action name="muteAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/volume-mute.svg</normaloff>
+     <disabledoff>:/volume-mute.svg</disabledoff>:/volume-mute.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Mute</string>
+   </property>
+  </action>
+  <action name="zoomInAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/magnifying-glass-plus.svg</normaloff>
+     <disabledoff>:/magnifying-glass-plus.svg</disabledoff>:/magnifying-glass-plus.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Zoom in</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+I</string>
+   </property>
+  </action>
+  <action name="zoomOutAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/magnifying-glass-minus.svg</normaloff>
+     <disabledoff>:/magnifying-glass-minus.svg</disabledoff>:/magnifying-glass-minus.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Zoom out</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="mergeUtterancesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/compress.svg</normaloff>
+     <disabledoff>:/compress.svg</disabledoff>:/compress.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Merge utterances</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+M</string>
+   </property>
+  </action>
+  <action name="splitUtterancesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/expand.svg</normaloff>
+     <disabledoff>:/expand.svg</disabledoff>:/expand.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Split utterances</string>
+   </property>
+  </action>
+  <action name="deleteUtterancesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/disabled/trash.svg</normaloff>
+     <disabledoff>:/trash.svg</disabledoff>:/disabled/trash.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Delete utterance</string>
+   </property>
+   <property name="shortcut">
+    <string>Del</string>
+   </property>
+  </action>
+  <action name="showAllSpeakersAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/users.svg</normaloff>
+     <disabledoff>:/users.svg</disabledoff>:/users.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Show all speakers</string>
+   </property>
+  </action>
+  <action name="revertDictionaryAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/disabled/book-undo.svg</normaloff>
+     <disabledoff>:/book-undo.svg</disabledoff>:/disabled/book-undo.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Revert dictionary changes</string>
+   </property>
+  </action>
+  <action name="addSpeakerAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/user-plus.svg</normaloff>
+     <disabledoff>:/user-plus.svg</disabledoff>:/user-plus.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Add new speaker</string>
+   </property>
+  </action>
+  <action name="saveChangesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/sync.svg</normaloff>
+     <disabledoff>:/sync.svg</disabledoff>:/sync.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Sync changes</string>
+   </property>
+   <property name="toolTip">
+    <string>Sync changes to the database</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+S</string>
+   </property>
+  </action>
+  <action name="getHelpAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/help.svg</normaloff>:/help.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Help</string>
+   </property>
+  </action>
+  <action name="reportBugAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/bug.svg</normaloff>:/bug.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Report bug</string>
+   </property>
+  </action>
+  <action name="exitAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/times.svg</normaloff>:/times.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+  <action name="cancelCorpusLoadAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/times.svg</normaloff>:/times.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Cancel loading corpus</string>
+   </property>
+  </action>
+  <action name="loadIvectorExtractorAct">
+   <property name="text">
+    <string>Choose a model...</string>
+   </property>
+  </action>
+  <action name="loadLanguageModelAct">
+   <property name="text">
+    <string>Choose a model...</string>
+   </property>
+  </action>
+  <action name="panLeftAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/caret-left.svg</normaloff>:/caret-left.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Pan left</string>
+   </property>
+  </action>
+  <action name="panRightAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/caret-right.svg</normaloff>:/caret-right.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Pan right</string>
+   </property>
+  </action>
+  <action name="searchAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/magnifying-glass.svg</normaloff>
+     <disabledoff>:/magnifying-glass.svg</disabledoff>:/magnifying-glass.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Search corpus</string>
+   </property>
+  </action>
+  <action name="changeVolumeAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/volume-up.svg</normaloff>
+     <disabledoff>:/volume-up.svg</disabledoff>:/volume-up.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Change volume</string>
+   </property>
+  </action>
+  <action name="changeSpeakerAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/speaker.svg</normaloff>:/speaker.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Change speaker</string>
+   </property>
+  </action>
+  <action name="saveDictionaryAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/book-save.svg</normaloff>
+     <disabledoff>:/book-save.svg</disabledoff>:/book-save.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Save dictionary</string>
+   </property>
+  </action>
+  <action name="closeDictionaryAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close dictionary</string>
+   </property>
+  </action>
+  <action name="closeAcousticModelAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close acoustic model</string>
+   </property>
+  </action>
+  <action name="closeG2PAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close G2P model</string>
+   </property>
+  </action>
+  <action name="closeIvectorExtractorAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close ivector extractor</string>
+   </property>
+  </action>
+  <action name="closeLanguageModelAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close language model</string>
+   </property>
+  </action>
+  <action name="transcribeCorpusAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Transcribe corpus</string>
+   </property>
+  </action>
+  <action name="alignCorpusAct">
+   <property name="text">
+    <string>Align corpus</string>
+   </property>
+  </action>
+  <action name="loadReferenceAlignmentsAct">
+   <property name="text">
+    <string>Load reference alignments</string>
+   </property>
+  </action>
+  <action name="selectMappingFileAct">
+   <property name="text">
+    <string>Select custom mapping file</string>
+   </property>
+  </action>
+  <action name="evaluateAlignmentsAct">
+   <property name="text">
+    <string>Evaluate alignments</string>
+   </property>
+  </action>
+  <action name="revertChangesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/history.svg</normaloff>
+     <disabledoff>:/history.svg</disabledoff>
+     <disabledon>:/history.svg</disabledon>:/history.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Revert changes</string>
+   </property>
+   <property name="toolTip">
+    <string>Revert current changes to last sync</string>
+   </property>
+  </action>
+  <action name="exportFilesAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/file-export.svg</normaloff>
+     <disabledoff>:/file-export.svg</disabledoff>:/file-export.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Export changes</string>
+   </property>
+   <property name="toolTip">
+    <string>Export changes to original files</string>
+   </property>
+  </action>
+  <action name="lockEditAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/lock-open.svg</normaloff>
+     <normalon>:/checked/lock.svg</normalon>
+     <disabledoff>:/lock-open.svg</disabledoff>
+     <disabledon>:/lock.svg</disabledon>
+     <activeoff>:/checked/lock-open.svg</activeoff>
+     <activeon>:/checked/lock.svg</activeon>
+     <selectedoff>:/checked/lock-open.svg</selectedoff>
+     <selectedon>:/checked/lock.svg</selectedon>:/lock-open.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Lock editing</string>
+   </property>
+  </action>
+  <action name="alignUtteranceAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/magic.svg</normaloff>
+     <disabledoff>:/magic.svg</disabledoff>:/magic.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Align utterance</string>
+   </property>
+   <property name="toolTip">
+    <string>Align the current utterance</string>
+   </property>
+  </action>
+  <action name="reloadCorpusAct">
+   <property name="text">
+    <string>Reload corpus text from disk</string>
+   </property>
+  </action>
+  <action name="zoomToSelectionAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/magnifying-glass-location.svg</normaloff>
+     <disabledoff>:/magnifying-glass-location.svg</disabledoff>:/magnifying-glass-location.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Zoom to selection</string>
+   </property>
+  </action>
+  <action name="oovsOnlyAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/oov-check.svg</normaloff>
+     <disabledoff>:/oov-check.svg</disabledoff>
+     <disabledon>:/checked/oov-check.svg</disabledon>
+     <activeon>:/checked/oov-check.svg</activeon>
+     <selectedoff>:/oov-check.svg</selectedoff>:/oov-check.svg</iconset>
+   </property>
+   <property name="text">
+    <string>OOVs Only</string>
+   </property>
+  </action>
+  <action name="diarizeSpeakersAct">
+   <property name="text">
+    <string>Calculate ivectors</string>
+   </property>
+  </action>
+  <action name="find_duplicates_action">
+   <property name="text">
+    <string>Find duplicate utterances</string>
+   </property>
+  </action>
+  <action name="cluster_utterances_action">
+   <property name="text">
+    <string>Cluster utterances</string>
+   </property>
+  </action>
+  <action name="classify_speakers_action">
+   <property name="text">
+    <string>Classify speakers</string>
+   </property>
+  </action>
+  <action name="segmentUtteranceAct">
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/expand.svg</normaloff>:/expand.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Segment utterance</string>
+   </property>
+   <property name="toolTip">
+    <string>Split an utterance into VAD-based segments</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LoadingScreen</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>TitleScreen</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>UtteranceDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>UtteranceListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>SpeakerWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>DictionaryWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AcousticModelWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>LanguageModelWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>TranscriberWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AlignmentWidget</class>
+   <extends>QWidget</extends>
+   <header location="global">anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>OovWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>DiarizationWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources>
+  <include location="resources.qrc"/>
+ </resources>
+ <connections/>
+</ui>

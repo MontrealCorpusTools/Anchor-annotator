@@ -19,20 +19,19 @@
 
 import os
 import sys
-
-import mock
+from datetime import date
 
 sys.path.insert(0, os.path.abspath('../../'))
-import anchor
+import anchor # noqa
 
 project = 'Anchor Annotator'
-copyright = '2021, Montreal Corpus Tools'
+copyright = f'2021-{date.today().year}, Montreal Corpus Tools'
 author = 'Montreal Corpus Tools'
 
 # The full version, including alpha/beta/rc tags
-version = '{}.{}'.format(anchor.__ver_major__, anchor.__ver_minor__)
+version = "0.5.0"
 # The full version, including alpha/beta/rc tags.
-release = anchor.__version__
+release = "0.5"
 
 
 # -- General configuration ---------------------------------------------------
@@ -41,14 +40,15 @@ release = anchor.__version__
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "sphinx_design",
+    'sphinx.ext.viewcode',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.mathjax',
     'sphinx.ext.ifconfig',
-    'sphinx.ext.viewcode',
     'sphinx.ext.autosummary',
     'numpydoc',
-    'myst_parser'
+    'myst_parser',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -66,15 +66,57 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'pydata_sphinx_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
+html_css_files = [
+    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css",
+    "css/style.css",
+]
 
-html_logo = '_static/logo_full.svg'
+html_logo = '_static/anchor-yellow.svg'
+html_favicon = "_static/favicon.ico"
+
 html_theme_options = {
-    'logo_only': True,
-    'style_nav_header_background': '#053561'
+    "external_links": [
+        {
+            "url": "https://montreal-forced-aligner.readthedocs.io/",
+            "name": "MFA docs",
+        },
+        {
+            "url": "https://mfa-models.readthedocs.io/",
+            "name": "Pretrained MFA models",
+        },
+    ],
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/MontrealCorpusTools/anchor-annotator",
+            "icon": "fab fa-github",
+        },
+    ],
+    "logo": {
+        "text": "Anchor Annotator",
+        # "image_dark": "logo-dark.svg",
+    },
+    "analytics":{
+
+        "google_analytics_id": "G-VBJ8Y5QSF5",
+    },
+    "show_nav_level": 1,
+    "navigation_depth": 4,
+    "show_toc_level": 2,
+    "collapse_navigation": False,
 }
+html_context = {
+    # "github_url": "https://github.com", # or your GitHub Enterprise interprise
+    "github_user": "MontrealCorpusTools",
+    "github_repo": "Anchor-annotator",
+    "github_version": "main",
+    "doc_path": "docs/source",
+}
+
+html_sidebars = {"**": ["search-field.html", "sidebar-nav-bs.html", "sidebar-ethical-ads.html"]}

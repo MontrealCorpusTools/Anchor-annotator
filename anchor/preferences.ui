@@ -1,0 +1,875 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PreferencesDialog</class>
+ <widget class="QDialog" name="PreferencesDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>724</width>
+    <height>451</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>4</number>
+     </property>
+     <widget class="QWidget" name="appearenceTab">
+      <attribute name="title">
+       <string>Appearance</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_3">
+       <item>
+        <widget class="QWidget" name="widget" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <widget class="QLabel" name="label_11">
+            <property name="text">
+             <string>Theme</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="presetThemeEdit">
+            <item>
+             <property name="text">
+              <string>MFA</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Praat-like</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Custom</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_12">
+            <property name="text">
+             <string>Font</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="FontEdit" name="fontEdit">
+            <property name="text">
+             <string>PushButton</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QScrollArea" name="scrollArea">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>682</width>
+            <height>305</height>
+           </rect>
+          </property>
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <item>
+            <widget class="QGroupBox" name="primaryHueBox">
+             <property name="title">
+              <string>Primary hues</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_6">
+              <item>
+               <layout class="QFormLayout" name="formLayout_5">
+                <item row="0" column="0">
+                 <widget class="QLabel" name="label_15">
+                  <property name="text">
+                   <string>Base hue</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="0" column="1">
+                 <widget class="ColorEdit" name="primaryBaseEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="0">
+                 <widget class="QLabel" name="label_16">
+                  <property name="text">
+                   <string>Light</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="1">
+                 <widget class="ColorEdit" name="primaryLightEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="0">
+                 <widget class="QLabel" name="label_19">
+                  <property name="text">
+                   <string>Dark</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="1">
+                 <widget class="ColorEdit" name="primaryDarkEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="0">
+                 <widget class="QLabel" name="label_28">
+                  <property name="text">
+                   <string>Very light</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="ColorEdit" name="primaryVeryLightEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="4" column="0">
+                 <widget class="QLabel" name="label_27">
+                  <property name="text">
+                   <string>Very dark</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="4" column="1">
+                 <widget class="ColorEdit" name="primaryVeryDarkEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="accentHueBox">
+             <property name="title">
+              <string>Accent hues</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <item>
+               <layout class="QFormLayout" name="formLayout_4">
+                <item row="0" column="0">
+                 <widget class="QLabel" name="label_20">
+                  <property name="text">
+                   <string>Base hue</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="0" column="1">
+                 <widget class="ColorEdit" name="accentBaseEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="0">
+                 <widget class="QLabel" name="label_30">
+                  <property name="text">
+                   <string>Light</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="1">
+                 <widget class="ColorEdit" name="accentLightEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="0">
+                 <widget class="QLabel" name="label_21">
+                  <property name="text">
+                   <string>Dark</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="1">
+                 <widget class="ColorEdit" name="accentDarkEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="0">
+                 <widget class="QLabel" name="label_35">
+                  <property name="text">
+                   <string>Very light</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="ColorEdit" name="accentVeryLightEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="4" column="0">
+                 <widget class="QLabel" name="label_29">
+                  <property name="text">
+                   <string>Very dark</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="4" column="1">
+                 <widget class="ColorEdit" name="accentVeryDarkEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="otherBox">
+             <property name="title">
+              <string>Other</string>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_4">
+              <item>
+               <layout class="QFormLayout" name="formLayout_3">
+                <item row="0" column="0">
+                 <widget class="QLabel" name="label_14">
+                  <property name="text">
+                   <string>Main text hue</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="0" column="1">
+                 <widget class="ColorEdit" name="mainTextColorEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="0">
+                 <widget class="QLabel" name="label_17">
+                  <property name="text">
+                   <string>Selected text hue</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="1" column="1">
+                 <widget class="ColorEdit" name="selectedTextColorEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="0">
+                 <widget class="QLabel" name="label_18">
+                  <property name="text">
+                   <string>Error hue</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="2" column="1">
+                 <widget class="ColorEdit" name="errorColorEdit">
+                  <property name="text">
+                   <string>PushButton</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="0">
+                 <widget class="QLabel" name="label_13">
+                  <property name="text">
+                   <string>Plot text width</string>
+                  </property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="QSpinBox" name="plotTextWidth">
+                  <property name="suffix">
+                   <string>px</string>
+                  </property>
+                  <property name="minimum">
+                   <number>100</number>
+                  </property>
+                  <property name="maximum">
+                   <number>1000</number>
+                  </property>
+                  <property name="value">
+                   <number>400</number>
+                  </property>
+                 </widget>
+                </item>
+               </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="keybindTab">
+      <attribute name="title">
+       <string>Key shortcuts</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_2">
+       <item>
+        <widget class="QScrollArea" name="scrollArea_2">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents_2">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>668</width>
+            <height>410</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_7">
+           <item>
+            <layout class="QFormLayout" name="formLayout_2">
+             <item row="1" column="0">
+              <widget class="QLabel" name="label">
+               <property name="text">
+                <string>Play audio</string>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QKeySequenceEdit" name="playAudioShortcutEdit">
+               <property name="keySequence">
+                <string extracomment="Play audio"/>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_2">
+               <property name="text">
+                <string>Zoom in</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="QKeySequenceEdit" name="zoomInShortcutEdit"/>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label_3">
+               <property name="text">
+                <string>Zoom out</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="1">
+              <widget class="QKeySequenceEdit" name="zoomOutShortcutEdit"/>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_4">
+               <property name="text">
+                <string>Pan left</string>
+               </property>
+              </widget>
+             </item>
+             <item row="5" column="1">
+              <widget class="QKeySequenceEdit" name="panLeftShortcutEdit"/>
+             </item>
+             <item row="6" column="0">
+              <widget class="QLabel" name="label_5">
+               <property name="text">
+                <string>Pan right</string>
+               </property>
+              </widget>
+             </item>
+             <item row="6" column="1">
+              <widget class="QKeySequenceEdit" name="panRightShortcutEdit"/>
+             </item>
+             <item row="7" column="0">
+              <widget class="QLabel" name="label_6">
+               <property name="text">
+                <string>Merge utterances</string>
+               </property>
+              </widget>
+             </item>
+             <item row="7" column="1">
+              <widget class="QKeySequenceEdit" name="mergeShortcutEdit"/>
+             </item>
+             <item row="8" column="0">
+              <widget class="QLabel" name="label_7">
+               <property name="text">
+                <string>Split utterances</string>
+               </property>
+              </widget>
+             </item>
+             <item row="8" column="1">
+              <widget class="QKeySequenceEdit" name="splitShortcutEdit"/>
+             </item>
+             <item row="9" column="0">
+              <widget class="QLabel" name="label_8">
+               <property name="text">
+                <string>Delete utterances</string>
+               </property>
+              </widget>
+             </item>
+             <item row="9" column="1">
+              <widget class="QKeySequenceEdit" name="deleteShortcutEdit"/>
+             </item>
+             <item row="10" column="0">
+              <widget class="QLabel" name="label_9">
+               <property name="text">
+                <string>Save current file</string>
+               </property>
+              </widget>
+             </item>
+             <item row="10" column="1">
+              <widget class="QKeySequenceEdit" name="saveShortcutEdit"/>
+             </item>
+             <item row="11" column="0">
+              <widget class="QLabel" name="label_10">
+               <property name="text">
+                <string>Search within corpus</string>
+               </property>
+              </widget>
+             </item>
+             <item row="11" column="1">
+              <widget class="QKeySequenceEdit" name="searchShortcutEdit"/>
+             </item>
+             <item row="12" column="0">
+              <widget class="QLabel" name="label_23">
+               <property name="text">
+                <string>Undo</string>
+               </property>
+              </widget>
+             </item>
+             <item row="12" column="1">
+              <widget class="QKeySequenceEdit" name="undoShortcutEdit"/>
+             </item>
+             <item row="13" column="0">
+              <widget class="QLabel" name="label_22">
+               <property name="text">
+                <string>Redo</string>
+               </property>
+              </widget>
+             </item>
+             <item row="13" column="1">
+              <widget class="QKeySequenceEdit" name="redoShortcutEdit"/>
+             </item>
+             <item row="4" column="1">
+              <widget class="QKeySequenceEdit" name="zoomToSelectionShortcutEdit"/>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="label_31">
+               <property name="text">
+                <string>Zoom to selection</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="spectrogramTab">
+      <attribute name="title">
+       <string>Spectrogram</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_10">
+       <item>
+        <widget class="QScrollArea" name="scrollArea_4">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents_4">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>682</width>
+            <height>353</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_11">
+           <item>
+            <layout class="QFormLayout" name="formLayout_6">
+             <item row="0" column="0">
+              <widget class="QLabel" name="label_42">
+               <property name="text">
+                <string>Dynamic range (dB)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QSpinBox" name="spinBox_5"/>
+             </item>
+             <item row="1" column="1">
+              <widget class="QSpinBox" name="spinBox_6"/>
+             </item>
+             <item row="2" column="1">
+              <widget class="QSpinBox" name="spinBox_7"/>
+             </item>
+             <item row="3" column="1">
+              <widget class="QSpinBox" name="spinBox_8"/>
+             </item>
+             <item row="4" column="1">
+              <widget class="QLineEdit" name="lineEdit_3"/>
+             </item>
+             <item row="5" column="1">
+              <widget class="QLineEdit" name="lineEdit_4"/>
+             </item>
+             <item row="1" column="0">
+              <widget class="QLabel" name="label_43">
+               <property name="text">
+                <string>FFT size</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_44">
+               <property name="text">
+                <string>Number of time steps</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label_45">
+               <property name="text">
+                <string>Maximum frequency (Hz)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="label_46">
+               <property name="text">
+                <string>Window size (s)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_47">
+               <property name="text">
+                <string>Pre-emphasis factor</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="pitchTab">
+      <attribute name="title">
+       <string>Pitch</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_12">
+       <item>
+        <widget class="QScrollArea" name="scrollArea_5">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents_5">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>682</width>
+            <height>353</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_13">
+           <item>
+            <layout class="QFormLayout" name="formLayout_7">
+             <item row="0" column="0">
+              <widget class="QLabel" name="label_34">
+               <property name="text">
+                <string>Show pitch</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QCheckBox" name="checkBox">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="0">
+              <widget class="QLabel" name="label_36">
+               <property name="text">
+                <string>Minimum pitch (Hz)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QSpinBox" name="spinBox"/>
+             </item>
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_37">
+               <property name="text">
+                <string>Maximum pitch (Hz)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="QSpinBox" name="spinBox_2"/>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label_38">
+               <property name="text">
+                <string>Time step (ms)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="1">
+              <widget class="QSpinBox" name="spinBox_3"/>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="label_39">
+               <property name="text">
+                <string>Frame length (ms)</string>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="1">
+              <widget class="QSpinBox" name="spinBox_4"/>
+             </item>
+             <item row="5" column="1">
+              <widget class="QLineEdit" name="lineEdit"/>
+             </item>
+             <item row="6" column="1">
+              <widget class="QLineEdit" name="lineEdit_2"/>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_40">
+               <property name="text">
+                <string>Pentalty factor</string>
+               </property>
+              </widget>
+             </item>
+             <item row="6" column="0">
+              <widget class="QLabel" name="label_41">
+               <property name="text">
+                <string>Pitch delta factor</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="generalTab">
+      <attribute name="title">
+       <string>General</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_8">
+       <item>
+        <widget class="QScrollArea" name="scrollArea_3">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents_3">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>682</width>
+            <height>353</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_9">
+           <item>
+            <layout class="QFormLayout" name="formLayout">
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_24">
+               <property name="text">
+                <string>Audio device</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="QComboBox" name="audioDeviceEdit"/>
+             </item>
+             <item row="5" column="1">
+              <widget class="QSpinBox" name="numJobsEdit"/>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_25">
+               <property name="text">
+                <string>Number of processors to use</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="1">
+              <widget class="QCheckBox" name="useMpCheckBox">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label_26">
+               <property name="text">
+                <string>Use multiprocessing?</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="0">
+              <widget class="QLabel" name="autosaveLabel">
+               <property name="text">
+                <string>Autosave on exit</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QCheckBox" name="autosaveOnExitCheckBox"/>
+             </item>
+             <item row="1" column="0">
+              <widget class="QLabel" name="autoloadLastUsedCorpusLabel">
+               <property name="text">
+                <string>Autoload last used corpus</string>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QCheckBox" name="autoloadLastUsedCorpusCheckBox"/>
+             </item>
+             <item row="6" column="1">
+              <widget class="QLineEdit" name="githubTokenEdit"/>
+             </item>
+             <item row="6" column="0">
+              <widget class="QLabel" name="label_32">
+               <property name="text">
+                <string>Github request token</string>
+               </property>
+              </widget>
+             </item>
+             <item row="7" column="1">
+              <widget class="QSpinBox" name="resultsPerPageEdit"/>
+             </item>
+             <item row="7" column="0">
+              <widget class="QLabel" name="label_33">
+               <property name="text">
+                <string>Results per page</string>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="1">
+              <widget class="QCheckBox" name="cudaCheckBox">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="label_48">
+               <property name="text">
+                <string>Use CUDA</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ColorEdit</class>
+   <extends>QPushButton</extends>
+   <header>anchor.widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>FontEdit</class>
+   <extends>QPushButton</extends>
+   <header>anchor.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>PreferencesDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>PreferencesDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

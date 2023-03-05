@@ -1,722 +1,43 @@
-import yaml
+from __future__ import annotations
+
+
+import sqlalchemy
 import os
 import sys
 import traceback
-from PySide6 import QtGui, QtCore, QtWidgets, QtMultimedia, QtSvg, QtSvgWidgets
+from PySide6 import QtGui, QtCore, QtWidgets, QtMultimedia
+import subprocess
+from montreal_forced_aligner.config import get_temporary_directory, MfaConfiguration
 
-from montreal_forced_aligner.config import get_temporary_directory
-
-from montreal_forced_aligner.dictionary import PronunciationDictionary
+from montreal_forced_aligner.models import ModelManager
+from montreal_forced_aligner.corpus import AcousticCorpus
+from montreal_forced_aligner.config import GLOBAL_CONFIG
+from montreal_forced_aligner.utils import inspect_database, DatasetType
+from montreal_forced_aligner.data import WorkflowType
+from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import G2PModel, AcousticModel, LanguageModel, IvectorExtractorModel, DictionaryModel
-
-from anchor.widgets import UtteranceListWidget, UtteranceDetailWidget, \
-    DetailedMessageBox, DefaultAction, AnchorAction, create_icon, HelpDropDown, \
-    MediaPlayer, DictionaryWidget, SpeakerWidget
-from anchor.models import CorpusModel, CorpusSelectionModel, CorpusProxy
-
-
-from anchor.workers import ImportCorpusWorker
-
-
-class ColorEdit(QtWidgets.QPushButton): # pragma: no cover
-    def __init__(self, color, parent=None):
-        super(ColorEdit, self).__init__(parent=parent)
-        self._color = color
-        self.update_icon()
-        self.clicked.connect(self.open_dialog)
-
-    def update_icon(self):
-        pixmap = QtGui.QPixmap(100, 100)
-        pixmap.fill(self._color)
-        icon = QtGui.QIcon(pixmap)
-        icon.addPixmap(pixmap, QtGui.QIcon.Mode.Disabled)
-        self.setIcon(icon)
-
-    @property
-    def color(self):
-        return self._color.name()
-
-    def open_dialog(self):
-        color = QtWidgets.QColorDialog.getColor()
-        if color.isValid():
-            self._color = color
-            self.update_icon()
-
-
-class FontDialog(QtWidgets.QFontDialog):
-    def __init__(self, *args):
-        super(FontDialog, self).__init__(*args)
-
-
-class FontEdit(QtWidgets.QPushButton): # pragma: no cover
-    """
-    Parameters
-    ----------
-    font : QtGui.QFont
-    """
-    def __init__(self, font, parent=None):
-        super(FontEdit, self).__init__(parent=parent)
-        self.font = font
-        self.update_icon()
-        self.clicked.connect(self.open_dialog)
-        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-
-    def update_icon(self):
-        self.setFont(self.font)
-        self.setText(self.font.key().split(',',maxsplit=1)[0])
-
-    def open_dialog(self):
-        font, ok = FontDialog.getFont(self.font)
-
-        if ok:
-            self.font = font
-            self.update_icon()
-
-class ConfigurationOptions(object):
-    def __init__(self, data):
-        self.data = {
-            'temp_directory': get_temporary_directory(),
-            'current_corpus_path': None,
-            'current_acoustic_model_path': None,
-            'current_dictionary_path': None,
-            'current_g2p_model_path': None,
-            'current_language_model_path': None,
-            'current_ivector_extractor_path': None,
-            'autosave': True,
-            'autoload': True,
-            'is_maximized': False,
-            'play_keybind': 'Tab',
-            'delete_keybind': 'Delete',
-            'save_keybind': '',
-            'search_keybind': 'Ctrl+F',
-            'split_keybind': 'Ctrl+S',
-            'merge_keybind': 'Ctrl+M',
-            'zoom_in_keybind': 'Ctrl+I',
-            'zoom_out_keybind': 'Ctrl+O',
-            'pan_left_keybind': 'Left',
-            'pan_right_keybind': 'Right',
-            'undo_keybind': 'Ctrl+Z',
-            'redo_keybind': 'Shift+Ctrl+Z',
-
-            'font': QtGui.QFont('Noto Sans', 12).toString(),
-            'plot_text_width': 400,
-            'height': 720,
-            'width': 1280,
-            'volume': 100,
-
-        }
-        for k, v in self.mfa_color_theme.items():
-            self.data['style_'+ k] = v
-        for k, v in self.mfa_plot_theme.items():
-            self.data['plot_'+ k] = v
-        self.data.update(data)
-
-
-    def __getitem__(self, item):
-        if 'color' in item:
-            return QtGui.QColor(self.data[item])
-        return self.data[item]
-
-    def __setitem__(self, key, value):
-        self.data[key] = value
-
-    def get(self, key, default):
-        if key in self.data:
-            return self.data[key]
-        return default
-
-    def items(self):
-        return self.data.items()
-
-    def update(self, dictionary):
-        if isinstance(dictionary, ConfigurationOptions):
-            self.data.update(dictionary.data)
-        elif dictionary is not None:
-            self.data.update(dictionary)
-
-    @property
-    def is_mfa(self):
-        return self.data.get('theme', 'MFA').lower() == 'mfa'
-
-    @property
-    def font_options(self):
-        theme = self.data.get('theme', 'MFA')
-        base_font = self.data.get('font', QtGui.QFont('Noto Sans', 12).toString())
-        if theme.lower() == 'custom':
-            base_font = self.data.get('font', QtGui.QFont('Noto Sans', 12).toString())
-
-        font = QtGui.QFont()
-        font.fromString(base_font)
-
-        small_font = QtGui.QFont()
-        small_font.fromString(base_font)
-        small_font.setPointSize(int(0.75 * small_font.pointSize()))
-
-        header_font = QtGui.QFont()
-        header_font.fromString(base_font)
-        header_font.setBold(True)
-
-        big_font = QtGui.QFont()
-        big_font.fromString(base_font)
-        big_font.setPointSize(int(1.25 * big_font.pointSize()))
-
-        title_font = QtGui.QFont()
-        title_font.fromString(base_font)
-        title_font.setPointSize(int(3 * big_font.pointSize()))
-        return {'font': font, 'axis_font': small_font,
-                'form_font': small_font, 'header_font': header_font,
-                'small_font': small_font, 'big_font': big_font, 'title_font': title_font}
-
-    @property
-    def mfa_color_palettes(self):
-        yellows = {'very_light': '#F2CD49',
-                   'light': '#FFD60A',
-                   'base': '#FFC300',
-                   'dark': '#E3930D',
-                   'very_dark': '#7A4E03',
-                   }
-        blues = {
-            'very_light': '#7AB5E6',
-            'light': '#0E63B3',
-            'base': '#003566',
-            'dark': '#001D3D',
-            'very_dark': '#000814',
-                   }
-        reds = {'very_light': '#DC4432',
-                   'light': '#C63623',
-                   'base': '#B32300',
-                   'dark': '#891800',
-                   'very_dark': '#620E00',
-                   }
-        white = '#EDDDD4'
-        black = blues['very_dark']
-        return yellows, blues, reds, white, black
-
-    @property
-    def praat_like_color_theme(self):
-        white = '#FFFFFF'
-        black = '#000000'
-        return {
-                'background_color': '#E5E5D8',
-
-                'table_header_color': black,
-                'table_header_background_color': '#BFBFBF',
-                'table_even_color': white,
-                'table_odd_color': white,
-                'table_text_color': black,
-
-                'underline_color': '#DC0806',
-                'keyword_color': '#FAF205',
-                'keyword_text_color': black,
-                'selection_color': '#0078D7',
-                'selection_text_color': white,
-                'text_edit_color': black,
-                'error_color': '#DC0806',
-                'error_text_color': '#DC0806',
-                'error_background_color': white,
-                'text_edit_background_color': white,
-                'line_edit_color': black,
-                'line_edit_background_color': white,
-
-                'main_widget_border_color': 'none',
-                'main_widget_background_color': white,
-
-                'menu_background_color': white,
-                'menu_text_color': black,
-
-                'checked_background_color': white,
-                'checked_color': black,
-
-                'enabled_color': black,
-                'enabled_background_color': '#F0F0F0',
-                'enabled_border_color': black,
-
-                'active_color': black,
-                'active_background_color': '#F0F0F0',
-                'active_border_color': black,
-
-                'hover_text_color': black,
-                'hover_background_color': '#F0F0F0',
-                'hover_border_color': black,
-
-                'disabled_text_color': '#A0A0A0',
-                'disabled_background_color': '#F0F0F0',
-                'disabled_border_color': black,
-
-                'scroll_bar_background_color': '#F0F0F0',
-                'scroll_bar_handle_color': '#F0F0F0',
-                'scroll_bar_border_color': black,
-
-        }
-
-    @property
-    def praat_like_plot_theme(self):
-        white = '#FFFFFF'
-        black = '#000000'
-        return {
-            'background_color': white,
-            'play_line_color': '#DC0806',
-            'selected_range_color': '#FFD2D2',
-            'selected_interval_color': '#FAF205',
-            'selected_line_color': '#DC0806',
-            'selected_text_color': '#DC0806',
-            'break_line_color': '#0000D3',
-            'wave_line_color': black,
-            'text_color': black,
-            'axis_color': black,
-            'interval_background_color': white,
-        }
-
-    @property
-    def mfa_color_theme(self):
-        yellows, blues, reds, white, black = self.mfa_color_palettes
-        return {
-                'background_color': blues['base'],
-
-                'table_header_color': white,
-                'table_header_background_color': blues['light'],
-                'table_even_color': yellows['very_light'],
-                'table_odd_color': blues['very_light'],
-                'table_text_color': black,
-
-                'underline_color': reds['very_light'],
-                'keyword_color': yellows['light'],
-                'keyword_text_color': black,
-                'selection_color': blues['light'],
-                'error_color': reds['very_light'],
-                'error_text_color': yellows['dark'],
-                'error_background_color': reds['light'],
-
-                'text_edit_color': white,
-                'text_edit_background_color': black,
-                'line_edit_color': black,
-                'line_edit_background_color': white,
-
-                'main_widget_border_color': blues['light'],
-                'main_widget_background_color': black,
-
-                'checked_background_color': black,
-                'checked_color': yellows['light'],
-
-                'menu_background_color': yellows['base'],
-                'menu_text_color': black,
-
-                'enabled_color': black,
-                'enabled_background_color': yellows['base'],
-                'enabled_border_color': blues['very_dark'],
-
-                'active_color': yellows['very_light'],
-                'active_background_color': blues['dark'],
-                'active_border_color': blues['light'],
-
-                'hover_text_color': yellows['light'],
-                'hover_background_color': blues['light'],
-                'hover_border_color': blues['very_dark'],
-
-                'disabled_text_color': reds['very_light'],
-                'disabled_background_color': blues['dark'],
-                'disabled_border_color': blues['very_dark'],
-
-                'scroll_bar_background_color': blues['dark'],
-                'scroll_bar_handle_color': yellows['light'],
-                'scroll_bar_border_color': black,
-            }
-
-    @property
-    def mfa_plot_theme(self):
-        yellows, blues, reds, white, black = self.mfa_color_palettes
-        return {
-            'background_color': black,
-            'play_line_color': reds['very_light'],
-            'selected_range_color': blues['very_light'],
-            'selected_interval_color': blues['base'],
-            'hover_line_color': blues['very_light'],
-            'moving_line_color': reds['light'],
-            'break_line_color': yellows['light'],
-            'wave_line_color': white,
-            'text_color': white,
-            'selected_text_color': white,
-            'axis_color': yellows['light'],
-            'interval_background_color': blues['dark'],
-        }
-
-    @property
-    def style_keys(self):
-        return ['style_'+ k for k in self.mfa_color_theme.keys()]
-
-    @property
-    def plot_keys(self):
-        return ['plot_'+ k for k in self.mfa_plot_theme.keys()]
-
-    @property
-    def color_options(self):
-        theme = self.data.get('theme', 'MFA')
-        if theme == 'custom':
-            return {k.replace('style_', ''): v for k,v in self.data.items() if k.startswith('style_')}
-        elif theme.lower() == 'mfa':
-            return self.mfa_color_theme
-        elif theme.lower() == 'praat-like':
-            return self.praat_like_color_theme
-
-
-    @property
-    def plot_color_options(self):
-        theme = self.data.get('theme', 'MFA')
-        if theme == 'custom':
-            return {k: v for k,v in self.data.items() if k.startswith('plot_')}
-        if theme.lower() == 'mfa':
-            return self.mfa_plot_theme
-        elif theme.lower() == 'praat-like':
-            return self.praat_like_plot_theme
-        else:
-            return {
-            'background_color': 'black',
-            'play_line_color': 'red',
-            'selected_range_color': 'blue',
-            'selected_line_color': 'green',
-            'break_line_color': 'white',
-            'wave_line_color': 'white',
-            'text_color': 'white',
-            'interval_background_color': 'darkGray',
-            }
-
-class FormLayout(QtWidgets.QVBoxLayout):
-    def addRow(self, label, widget):
-        row_layout = QtWidgets.QHBoxLayout()
-        label = QtWidgets.QLabel(label)
-        label.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
-        row_layout.addWidget(label)
-        row_layout.addWidget(widget)
-        super(FormLayout, self).addLayout(row_layout)
-
-
-class OptionsDialog(QtWidgets.QDialog): # pragma: no cover
-    def __init__(self, parent=None):
-        super(OptionsDialog, self).__init__(parent=parent)
-        self.base_config = ConfigurationOptions({})
-        self.base_config.update(parent.config)
-
-        self.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.tab_widget = QtWidgets.QTabWidget()
-        self.tab_widget.setFont(self.base_config.font_options['font'])
-        self.tab_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-
-        self.appearance_widget = QtWidgets.QWidget()
-        self.appearance_widget.setFont(self.base_config.font_options['font'])
-        self.appearance_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.tab_widget.addTab(self.appearance_widget, 'Appearance')
-        appearance_layout = QtWidgets.QVBoxLayout()
-        common_appearance_layout = FormLayout()
-        common_appearance_widget = QtWidgets.QWidget()
-
-        common_appearance_widget.setLayout(common_appearance_layout)
-        appearance_tabs = QtWidgets.QTabWidget()
-
-        self.theme_select = QtWidgets.QComboBox()
-
-        self.theme_select.addItem('MFA')
-        self.theme_select.addItem('Praat-like')
-        self.theme_select.addItem('Custom')
-        self.theme_select.setCurrentText(self.base_config.get('theme','MFA'))
-        common_appearance_layout.addRow('Theme', self.theme_select)
-
-        f = QtGui.QFont()
-        f.fromString(self.base_config['font'])
-        self.font_edit = FontEdit(f)
-
-        common_appearance_layout.addRow('Font', self.font_edit)
-        appearance_layout.addWidget(common_appearance_widget)
-        self.theme_select.currentTextChanged.connect(self.updateColors)
-
-        style_wrapper = QtWidgets.QHBoxLayout()
-        breaks = 2
-        break_layouts = []
-        for b in range(breaks):
-            fl = FormLayout()
-            break_layouts.append(fl)
-            style_wrapper.addLayout(fl)
-        self.color_edits = {}
-        num_edits = len(self.base_config.style_keys)
-        num_per = num_edits / breaks
-        cur = 0
-        cur_count =0
-        for i, style_name in enumerate(self.base_config.style_keys):
-            cur_count += 1
-            if cur_count >= num_per and cur < breaks - 1:
-                cur += 1
-                cur_count = 0
-            self.color_edits[style_name] = ColorEdit(QtGui.QColor(self.base_config[style_name]))
-            human_readable = ' '.join(style_name.replace('style_', '').replace('_color', '').split('_')).title()
-            break_layouts[cur].addRow(human_readable, self.color_edits[style_name])
-
-        plot_appearance_layout = FormLayout()
-
-        self.plot_color_edits = {}
-        for style_name in self.base_config.plot_keys:
-            self.plot_color_edits[style_name] = ColorEdit(QtGui.QColor(self.base_config[style_name]))
-            human_readable = ' '.join(style_name.replace('plot_', '').replace('_color', '').split('_')).title()
-            plot_appearance_layout.addRow(human_readable, self.plot_color_edits[style_name])
-
-
-        if self.theme_select.currentText().lower() != 'custom':
-            for k, v in self.color_edits.items():
-                v.setEnabled(False)
-            for k, v in self.plot_color_edits.items():
-                v.setEnabled(False)
-
-        self.plot_text_width_edit = QtWidgets.QSpinBox()
-        self.plot_text_width_edit.setMinimum(1)
-        self.plot_text_width_edit.setMaximum(1000)
-        self.plot_text_width_edit.setValue(self.base_config['plot_text_width'])
-        plot_appearance_layout.addRow('Plot text width', self.plot_text_width_edit)
-        style_appearance_widget = QtWidgets.QWidget()
-
-        style_appearance_widget.setFont(self.base_config.font_options['font'])
-        style_appearance_widget.setLayout(style_wrapper)
-        appearance_tabs.addTab(style_appearance_widget, 'General')
-
-        plot_appearance_widget = QtWidgets.QWidget()
-        plot_appearance_widget.setLayout(plot_appearance_layout)
-        appearance_tabs.addTab(plot_appearance_widget, 'Plot')
-
-        appearance_layout.addWidget(appearance_tabs)
-        self.appearance_widget.setLayout(appearance_layout)
-
-        self.key_bind_widget = QtWidgets.QWidget()
-        self.key_bind_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        self.tab_widget.addTab(self.key_bind_widget, 'Key shortcuts')
-
-        key_bind_layout = QtWidgets.QFormLayout()
-
-        self.autosave_edit = QtWidgets.QCheckBox()
-        self.autosave_edit.setChecked(self.base_config['autosave'])
-        self.autosave_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Autosave on exit', self.autosave_edit)
-
-        self.autoload_edit = QtWidgets.QCheckBox()
-        self.autoload_edit.setChecked(self.base_config['autoload'])
-        self.autoload_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Autoload last used corpus', self.autoload_edit)
-
-        self.play_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.play_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['play_keybind']))
-        self.play_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Play audio', self.play_key_bind_edit)
-
-        self.zoom_in_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.zoom_in_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['zoom_in_keybind']))
-        self.zoom_in_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Zoom in', self.zoom_in_key_bind_edit)
-
-        self.zoom_out_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.zoom_out_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['zoom_out_keybind']))
-        self.zoom_out_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Zoom out', self.zoom_out_key_bind_edit)
-
-        self.pan_left_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.pan_left_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['pan_left_keybind']))
-        self.pan_left_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Pan left', self.pan_left_key_bind_edit)
-
-        self.pan_right_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.pan_right_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['pan_right_keybind']))
-        self.pan_right_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Pan right', self.pan_right_key_bind_edit)
-
-        self.merge_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.merge_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['merge_keybind']))
-        self.merge_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Merge utterances', self.merge_key_bind_edit)
-
-        self.split_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.split_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['split_keybind']))
-        self.split_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Split utterances', self.split_key_bind_edit)
-
-        self.delete_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.delete_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['delete_keybind']))
-        self.delete_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Delete utterance', self.delete_key_bind_edit)
-
-        self.save_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.save_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['save_keybind']))
-        self.save_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Save current file', self.save_key_bind_edit)
-
-        self.search_key_bind_edit = QtWidgets.QKeySequenceEdit()
-        self.search_key_bind_edit.setKeySequence(QtGui.QKeySequence(self.base_config['search_keybind']))
-        self.search_key_bind_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-        key_bind_layout.addRow('Search within the corpus', self.search_key_bind_edit)
-
-        self.key_bind_widget.setLayout(key_bind_layout)
-
-        layout = QtWidgets.QVBoxLayout()
-
-        button_layout = QtWidgets.QHBoxLayout()
-        self.save_button = QtWidgets.QPushButton('Save')
-        self.save_button.clicked.connect(self.accept)
-        self.save_button.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
-        self.cancel_button = QtWidgets.QPushButton('Cancel')
-        self.cancel_button.clicked.connect(self.reject)
-        self.cancel_button.setFocusPolicy(QtCore.Qt.ClickFocus)
-
-        button_layout.addWidget(self.save_button)
-        button_layout.addWidget(self.cancel_button)
-        layout.addWidget(self.tab_widget)
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-        self.setWindowTitle('Preferences')
-
-    def updateColors(self):
-        theme = self.theme_select.currentText()
-        for k, v in self.color_edits.items():
-            v.setEnabled(theme == 'custom')
-        for k, v in self.plot_color_edits.items():
-            v.setEnabled(theme == 'custom')
-
-    def generate_config(self):
-        out = {
-            'autosave': self.autosave_edit.isChecked(),
-            'autoload': self.autoload_edit.isChecked(),
-            'play_keybind': self.play_key_bind_edit.keySequence().toString(),
-            'delete_keybind': self.delete_key_bind_edit.keySequence().toString(),
-            'save_keybind': self.save_key_bind_edit.keySequence().toString(),
-            'split_keybind': self.split_key_bind_edit.keySequence().toString(),
-            'merge_keybind': self.merge_key_bind_edit.keySequence().toString(),
-            'zoom_in_keybind': self.zoom_in_key_bind_edit.keySequence().toString(),
-            'zoom_out_keybind': self.zoom_out_key_bind_edit.keySequence().toString(),
-            'pan_left_keybind': self.pan_left_key_bind_edit.keySequence().toString(),
-            'pan_right_keybind': self.pan_right_key_bind_edit.keySequence().toString(),
-            'theme': self.theme_select.currentText(),
-
-            'plot_text_width': self.plot_text_width_edit.value(),
-
-            'font': self.font_edit.font.toString(),
-        }
-        for k, v in self.color_edits.items():
-            out[k] = v.color
-        for k, v in self.plot_color_edits.items():
-            out[k] = v.color
-
-        return out
-
-
-class Application(QtWidgets.QApplication): # pragma: no cover
-    pass
-    #def notify(self, receiver, e):
-        #if e and e.type() == QtCore.QEvent.KeyPress:
-        #    if e.key() == QtCore.Qt.Key_Tab:
-        #        return False
-    #    return super(Application, self).notify(receiver, e)
-
-
-class WarningLabel(QtWidgets.QLabel):
-    def __init__(self, *args):
-        super(WarningLabel, self).__init__( *args)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
-
-class LoadingScreen(QtWidgets.QWidget):
-    def __init__(self, *args):
-        super(LoadingScreen, self).__init__( *args)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
-        layout = QtWidgets.QVBoxLayout()
-        self.loading_movie = QtGui.QMovie(':loading_screen.gif')
-        self.movie_label = QtWidgets.QLabel()
-        self.movie_label.setMinimumSize(720,576)
-
-        self.movie_label.setMovie(self.loading_movie)
-
-        self.logo_icon = QtGui.QIcon(':logo_text.svg')
-
-        self.logo_label = QtWidgets.QLabel()
-        self.logo_label.setPixmap(self.logo_icon.pixmap(QtCore.QSize(720, 144)))
-
-        self.logo_label.setFixedSize(720, 144)
-
-        self.text_label = QtWidgets.QLabel()
-        self.text_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.exit_label = QtWidgets.QLabel('Wrapping things up before exit, please wait a moment...')
-        self.exit_label.setVisible(False)
-        tool_bar_wrapper = QtWidgets.QVBoxLayout()
-        self.tool_bar = QtWidgets.QToolBar()
-        self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.tool_bar.addWidget(self.text_label)
-
-        tool_bar_wrapper.addWidget(self.tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-
-        self.setVisible(False)
-        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.movie_label)
-        layout.addWidget(self.logo_label)
-        layout.addWidget(self.text_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        layout.addLayout(tool_bar_wrapper)
-        layout.addWidget(self.exit_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.setLayout(layout)
-
-    def update_config(self, config):
-        font_config = config.font_options
-        self.text_label.setFont(font_config['big_font'])
-        self.exit_label.setFont(font_config['big_font'])
-
-    def setExiting(self):
-        self.tool_bar.setVisible(False)
-        self.exit_label.setVisible(True)
-        self.repaint()
-
-    def setVisible(self, visible: bool) -> None:
-        if visible:
-            self.loading_movie.start()
-        else:
-            self.text_label.setText('')
-            self.loading_movie.stop()
-        super(LoadingScreen, self).setVisible(visible)
-
-    def setCorpusName(self, corpus_name):
-        self.text_label.setText(corpus_name)
-        self.text_label.setVisible(True)
-
-class TitleScreen(QtWidgets.QWidget):
-    def __init__(self, *args):
-        super(TitleScreen, self).__init__( *args)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
-        layout = QtWidgets.QVBoxLayout()
-        self.logo_widget = QtSvgWidgets.QSvgWidget(':splash_screen.svg')
-        self.setMinimumSize(720, 720)
-        self.setMaximumSize(720, 720)
-
-        self.setVisible(False)
-        #self.loading_label.setWindowFlag()
-        layout.addWidget(self.logo_widget)
-        layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        self.setLayout(layout)
-
-    def update_config(self, config):
-        font_config = config.font_options
-
-class DockWidget(QtWidgets.QDockWidget):
-    def __init__(self, *args, **kwargs):
-        super(DockWidget, self).__init__(*args, **kwargs)
-        #self.setFeatures(QtWidgets.QDockWidget.AllDockWidgetFeatures)
-        self.setContentsMargins(0,0,0,0)
-
-class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
+from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_SPEECHBRAIN
+
+from anchor.widgets import MediaPlayer, ProgressWidget
+from anchor.models import CorpusModel, CorpusSelectionModel, DictionaryTableModel, OovModel, SpeakerModel, MergeSpeakerModel
+
+from anchor.ui_main_window import Ui_MainWindow
+from anchor.ui_preferences import Ui_PreferencesDialog
+from anchor.ui_error_dialog import Ui_ErrorDialog
+from anchor import workers
+from anchor.settings import AnchorSettings
+import anchor.db
+
+class MainWindow(QtWidgets.QMainWindow):
     configUpdated = QtCore.Signal(object)
-    corpusLoaded = QtCore.Signal()
-    dictionaryLoaded = QtCore.Signal(object)
     g2pLoaded = QtCore.Signal(object)
     ivectorExtractorLoaded = QtCore.Signal(object)
     acousticModelLoaded = QtCore.Signal(object)
     languageModelLoaded = QtCore.Signal(object)
     newSpeaker = QtCore.Signal(object)
 
-    def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key_Tab:
-            event.ignore()
-            return
-        super(MainWindow, self).keyPressEvent(event)
-
-    def __init__(self):
-        super(MainWindow, self).__init__()
+    def __init__(self, debug):
+        super().__init__()
         QtCore.QCoreApplication.setOrganizationName('Montreal Corpus Tools')
         QtCore.QCoreApplication.setApplicationName('Anchor')
 
@@ -730,203 +51,412 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
             id = QtGui.QFontDatabase.addApplicationFont(f":fonts/{font}.ttf")
         if not os.path.exists(os.path.join(get_temporary_directory(), 'Anchor')):
             os.makedirs(os.path.join(get_temporary_directory(), 'Anchor'))
-        self.config_path = os.path.join(get_temporary_directory(), 'Anchor', 'config.yaml')
-        self.history_path = os.path.join(get_temporary_directory(), 'Anchor', 'search_history')
-        self.corpus_history_path = os.path.join(get_temporary_directory(), 'Anchor', 'corpus_history')
-        self.corpus = None
-        self.corpus_model = CorpusModel()
-        self.proxy_model = CorpusProxy(self.corpus_model)
-        self.proxy_model.setSourceModel(self.corpus_model)
-        self.selection_model = CorpusSelectionModel(self.proxy_model)
-        self.selection_model.currentChanged.connect(self.change_utterance)
-        self.corpus_model.fileSaveable.connect(self.setFileSaveable)
-        self.current_corpus_path = None
-        self.dictionary = None
-        self.acoustic_model = None
-        self.g2p_model = None
-        self.language_model = None
-        self.waiting_on_close = False
-        self.media_player = MediaPlayer(self.corpus_model, self.selection_model)
+        self._db_engine = None
+        self.initialize_database()
+
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
+        self.debug = debug
+        self.status_indicator = ProgressWidget()
+        self.status_indicator.setFixedWidth(self.ui.statusbar.height())
+        self.ui.statusbar.addPermanentWidget(self.status_indicator, 0)
+        self.settings = AnchorSettings()
+        self.sync_models()
+        if self.settings.contains(AnchorSettings.GEOMETRY):
+            self.restoreGeometry(self.settings.value(AnchorSettings.GEOMETRY))
+            self.restoreState(self.settings.value(AnchorSettings.WINDOW_STATE))
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.dictionaryDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.oovDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.alignmentDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.transcriptionDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.acousticModelDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.languageModelDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.speakerDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.diarizationDockWidget)
+        self.media_player = MediaPlayer(self)
         self.media_player.playbackStateChanged.connect(self.handleAudioState)
+        self.media_player.audioReady.connect(self.file_loaded)
+        self.media_player.timeChanged.connect(self.ui.utteranceDetailWidget.plot_widget.audio_plot.update_play_line)
+        if self.settings.contains(AnchorSettings.VOLUME):
+            self.media_player.set_volume(self.settings.value(AnchorSettings.VOLUME))
+        self.ui.loadingScreen.setVisible(False)
+        self.ui.titleScreen.setVisible(True)
 
-        self.status_bar = QtWidgets.QStatusBar()
-        self.warning_label = WarningLabel('Warning: This is alpha '
-                                              'software, there will be bugs and issues. Please back up any data before '
-                                              'using.')
-        self.status_label = QtWidgets.QLabel()
-        self.status_bar.addPermanentWidget(self.warning_label, 1)
-        self.status_bar.addPermanentWidget(self.status_label)
-        self.setStatusBar(self.status_bar)
+        self.thread_pool = QtCore.QThreadPool()
 
-        self.list_widget = UtteranceListWidget(self)
-        self.list_dock = DockWidget('Utterances')
-        self.list_dock.setWidget(self.list_widget)
-        self.detail_widget = UtteranceDetailWidget(self)
-        self.media_player.timeChanged.connect(self.detail_widget.plot_widget.update_play_line)
-        self.detail_widget.plot_widget.timeRequested.connect(self.media_player.setCurrentTime)
-        self.detail_widget.text_widget.installEventFilter(self)
-        self.dictionary_widget = DictionaryWidget(self)
-        self.dictionary_dock = DockWidget('Dictionary')
-        self.dictionary_dock.setWidget(self.dictionary_widget)
+        self.single_runners = {
+            'Calculating OOVs': None,
+            'Comparing speakers': None,
+            'Counting utterance results': None,
+            'Finding duplicates': None,
+            'Querying utterances': None,
+            'Querying speakers': None,
+            'Querying dictionary': None,
+            'Querying OOVs': None,
+            'Counting OOV results': None,
+            'Clustering speaker utterances': None,
+            'Generating speaker MDS': None,
+            'Loading speaker ivectors': None,
+            'Merging speakers': None,
+        }
+        self.sequential_runners = {
+            'Exporting files': [],
+            'Changing speakers': [],
+        }
+        self.quick_runners = {
+            'Generating waveform',
+            'Generating scaled waveform',
+            'Generating spectrogram',
+            'Generating pitch track',
+            'Creating speaker tiers',
+        }
+        self.current_query_worker = None
+        self.current_count_worker = None
+        self.current_speaker_comparison_worker = None
+        self.current_speaker_merge_worker = None
 
-        self.speaker_widget = SpeakerWidget(self)
-        self.speaker_dock = DockWidget('Speakers')
-        self.speaker_dock.setWidget(self.speaker_widget)
+        self.download_worker = workers.DownloadWorker(self)
+        self.download_worker.signals.error.connect(self.handle_error)
+        self.download_worker.signals.result.connect(self.finalize_download)
 
-        self.speaker_dock.visibilityChanged.connect(self.update_icons)
+        self.dictionary_worker = workers.ImportDictionaryWorker(self)
+        self.dictionary_worker.signals.error.connect(self.handle_error)
+        self.dictionary_worker.signals.result.connect(self.finalize_load_dictionary)
 
-        self.loading_label = LoadingScreen(self)
-        self.title_screen = TitleScreen(self)
-        self.configUpdated.connect(self.detail_widget.update_config)
-        self.configUpdated.connect(self.list_widget.update_config)
-        self.configUpdated.connect(self.dictionary_widget.update_config)
-        self.configUpdated.connect(self.speaker_widget.update_config)
-        self.configUpdated.connect(self.loading_label.update_config)
-        self.configUpdated.connect(self.title_screen.update_config)
+        self.oov_worker = workers.OovCountWorker(self)
+        self.oov_worker.signals.error.connect(self.handle_error)
+        self.oov_worker.signals.result.connect(self.finalize_oov_count)
 
-        self.setDockOptions(self.DockOption.ForceTabbedDocks | self.DockOption.VerticalTabs)
-        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.list_dock)
-        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.dictionary_dock)
-        self.tabifyDockWidget(self.list_dock, self.dictionary_dock)
-        self.addDockWidget(QtCore.Qt.DockWidgetArea.LeftDockWidgetArea, self.speaker_dock)
-        self.tabifyDockWidget(self.list_dock, self.speaker_dock)
+        self.acoustic_model_worker = workers.ImportAcousticModelWorker(self)
+        self.acoustic_model_worker.signals.error.connect(self.handle_error)
+        self.acoustic_model_worker.signals.result.connect(self.finalize_load_acoustic_model)
 
-        self.settings = QtCore.QSettings()
-        self.restoreGeometry(self.settings.value("MainWindow/geometry"))
-        self.restoreState(self.settings.value("MainWindow/windowState"))
+        self.language_model_worker = workers.ImportLanguageModelWorker(self)
+        self.language_model_worker.signals.error.connect(self.handle_error)
+        self.language_model_worker.signals.result.connect(self.finalize_load_language_model)
 
-        self.create_actions()
-        self.create_menus()
-        self.setup_key_binds()
-        self.load_config()
-        self.load_search_history()
-        self.load_corpus_history()
-        self.configUpdated.connect(self.save_config)
+        self.g2p_model_worker = workers.ImportG2PModelWorker(self)
+        self.g2p_model_worker.signals.error.connect(self.handle_error)
+        self.g2p_model_worker.signals.result.connect(self.finalize_load_g2p_model)
 
-        self.corpusLoaded.connect(self.detail_widget.update_corpus)
-        self.corpusLoaded.connect(self.list_widget.update_corpus)
-        self.dictionaryLoaded.connect(self.detail_widget.update_dictionary)
+        self.ivector_extractor_worker = workers.ImportIvectorExtractorWorker(self)
+        self.ivector_extractor_worker.signals.error.connect(self.handle_error)
+        self.ivector_extractor_worker.signals.result.connect(self.finalize_load_ivector_extractor)
 
-        self.dictionaryLoaded.connect(self.dictionary_widget.update_dictionary)
-        self.g2pLoaded.connect(self.dictionary_widget.update_g2p)
-        self.detail_widget.lookUpWord.connect(self.open_dictionary)
-        self.detail_widget.createWord.connect(self.open_dictionary)
-        self.detail_widget.lookUpWord.connect(self.dictionary_widget.look_up_word)
-        self.detail_widget.createWord.connect(self.dictionary_widget.create_pronunciation)
-        self.dictionary_widget.dictionaryError.connect(self.show_dictionary_error)
-        self.dictionary_widget.dictionaryModified.connect(self.enable_dictionary_actions)
-        self.newSpeaker.connect(self.change_speaker_act.widget.refresh_speaker_dropdown)
-        self.newSpeaker.connect(self.speaker_widget.refresh_speakers)
-        self.speaker_widget.speaker_edit.enableAddSpeaker.connect(self.enable_add_speaker)
+        self.transcription_worker = workers.TranscriptionWorker(self)
+        self.transcription_worker.signals.error.connect(self.handle_error)
+        self.transcription_worker.signals.finished.connect(self.finalize_adding_intervals)
 
-        self.wrapper = QtWidgets.QWidget()
-        self.wrapper.setContentsMargins(0,0,0,0)
-        layout = QtWidgets.QHBoxLayout()
-        layout.setContentsMargins(0,0,0,0)
+        self.validation_worker = workers.ValidationWorker(self)
+        self.validation_worker.signals.error.connect(self.handle_error)
+        self.validation_worker.signals.finished.connect(self.finalize_adding_intervals)
 
-        self.list_widget.setVisible(False)
-        self.detail_widget.setVisible(False)
-        self.loading_label.setVisible(False)
-        self.title_screen.setVisible(True)
-        #layout.addWidget(self.list_widget)
-        layout.addWidget(self.detail_widget)
-        layout.addWidget(self.loading_label)
-        layout.addWidget(self.title_screen)
+        self.alignment_worker = workers.AlignmentWorker(self)
+        self.alignment_worker.signals.error.connect(self.handle_error)
+        self.alignment_worker.signals.finished.connect(self.finalize_adding_intervals)
 
-        self.wrapper.setLayout(layout)
-        self.setCentralWidget(self.wrapper)
-        self.default_directory = get_temporary_directory()
+        self.speaker_diarization_worker = workers.ComputeIvectorWorker(self)
+        self.speaker_diarization_worker.signals.error.connect(self.handle_error)
+        self.speaker_diarization_worker.signals.finished.connect(self.finalize_adding_ivectors)
 
-        icon = QtGui.QIcon()
-        icon.addFile(':anchor-yellow.svg', mode=QtGui.QIcon.Normal, state=QtGui.QIcon.On)
-        self.setWindowTitle("MFA Anchor")
-        self.setWindowIcon(icon)
-        self.setWindowIconText('Anchor')
-        self.loading_corpus = False
-        self.loading_dictionary = False
-        self.loading_g2p = False
-        self.loading_ie = False
-        self.loading_am = False
-        self.loading_lm = False
-        self.saving_dictionary = False
-        self.saving_utterance = False
+        self.cluster_utterances_worker = workers.ClusterUtterancesWorker(self)
+        self.cluster_utterances_worker.signals.error.connect(self.handle_error)
+        self.cluster_utterances_worker.signals.finished.connect(self.finalize_clustering_utterances)
 
-        self.corpus_worker = ImportCorpusWorker()
+        self.classify_speakers_worker = workers.ClassifySpeakersWorker(self)
+        self.classify_speakers_worker.signals.error.connect(self.handle_error)
+        self.classify_speakers_worker.signals.finished.connect(self.finalize_clustering_utterances)
 
-        #self.corpus_worker.errorEncountered.connect(self.showError)
-        self.corpus_worker.dataReady.connect(self.finalize_load_corpus)
-        self.corpus_worker.finishedCancelling.connect(self.finish_cancelling)
-        if self.config['autoload']:
+        self.alignment_utterance_worker = workers.AlignUtteranceWorker(self)
+        self.alignment_utterance_worker.signals.error.connect(self.handle_error)
+        self.alignment_utterance_worker.signals.result.connect(self.finalize_utterance_alignment)
+
+        self.segment_utterance_worker = workers.SegmentUtteranceWorker(self)
+        self.segment_utterance_worker.signals.error.connect(self.handle_error)
+        self.segment_utterance_worker.signals.result.connect(self.finalize_segmentation)
+
+        self.alignment_evaluation_worker = workers.AlignmentEvaluationWorker(self)
+        self.alignment_evaluation_worker.signals.error.connect(self.handle_error)
+        self.alignment_evaluation_worker.signals.finished.connect(self.finalize_adding_intervals)
+
+        self.corpus_worker = workers.ImportCorpusWorker(self)
+        self.corpus_worker.signals.result.connect(self.finalize_load_corpus)
+        self.corpus_worker.signals.error.connect(self.handle_error)
+
+        self.load_reference_worker = workers.LoadReferenceWorker(self)
+        self.load_reference_worker.signals.error.connect(self.handle_error)
+        self.load_reference_worker.signals.finished.connect(self.finalize_adding_intervals)
+
+        self.undo_group = QtGui.QUndoGroup(self)
+        self.corpus_undo_stack = QtGui.QUndoStack(self)
+        self.dictionary_undo_stack = QtGui.QUndoStack(self)
+
+        self.set_up_models()
+        if self.settings.value(AnchorSettings.AUTOLOAD):
             self.load_corpus()
-        self.load_dictionary()
-        self.load_g2p()
-        self.load_ivector_extractor()
-        self.previous_volume = 100
-
-    def update_icons(self):
-        dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
-
-        for j in range(len(dock_tab_bars)):
-            dock_tab_bar = dock_tab_bars[j]
-            if not dock_tab_bar.count():
-                continue
-            font = self.config.font_options
-            dock_tab_bar.setFont(font['font'])
-            for i in range(dock_tab_bar.count()):
-                if dock_tab_bar.tabText(i) == 'Utterances':
-                    dock_tab_bar.setTabIcon(i,create_icon('search'))
-                elif dock_tab_bar.tabText(i) == 'Dictionary':
-                    dock_tab_bar.setTabIcon(i,create_icon('book'))
-                elif dock_tab_bar.tabText(i) == 'Speakers':
-                    dock_tab_bar.setTabIcon(i,create_icon('speaker'))
-
-    def handleAudioState(self, state):
-        if state == QtMultimedia.QMediaPlayer.StoppedState:
-            self.play_act.setChecked(False)
-
-    def update_mute_status(self, is_muted):
-        if is_muted:
-            self.previous_volume = self.media_player.volume()
-            self.change_volume_act.widget.setValue(0)
         else:
-            self.change_volume_act.widget.setValue(self.previous_volume)
-        self.media_player.setMuted(is_muted)
+            self.set_application_state('unloaded')
+        self.load_ivector_extractor()
+        #self.load_dictionary()
+        self.load_acoustic_model()
+        self.load_language_model()
+        self.load_g2p()
+        self.create_actions()
+        self.refresh_settings()
+        self.refresh_shortcuts()
+        self.refresh_style_sheets()
+        self.refresh_fonts()
 
-    def enable_add_speaker(self, b):
-        self.add_new_speaker_act.setEnabled(b)
+    def finalize_download(self):
+        self.refresh_model_actions()
 
-    def enable_dictionary_actions(self):
-        self.save_dictionary_act.setEnabled(True)
-        self.save_dictionary_act.setText('Save dictionary')
-        self.reset_dictionary_act.setEnabled(True)
+    @property
+    def db_string(self):
+        return f"postgresql+psycopg2://@/anchor?host={GLOBAL_CONFIG.database_socket}"
 
-    def show_dictionary_error(self, message):
-        reply = DetailedMessageBox()
-        reply.setWindowTitle('Issue saving dictionary')
-        self.setStandardButtons(QtWidgets.QMessageBox.Ignore|QtWidgets.QMessageBox.Close)
-        reply.setText(message)
-        ret = reply.exec_()
-        if ret:
-            self.dictionary_widget.ignore_errors = True
-            self.save_dictionary_act.trigger()
+    @property
+    def db_engine(self) -> sqlalchemy.engine.Engine:
+        """Database engine"""
+        if self._db_engine is None:
+            self._db_engine = sqlalchemy.create_engine(self.db_string)
+        return self._db_engine
 
-    def eventFilter(self, object, event) -> bool:
-        if event.type() == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Tab:
-            self.play_act.trigger()
-            return True
-        return False
+    def initialize_database(self):
+        retcode = subprocess.call(
+            ["createdb", "anchor"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+        )
+        exist_check = retcode != 0
+        if exist_check:
+            return
+        from anchor.db import AnchorSqlBase
+        AnchorSqlBase.metadata.create_all(self.db_engine)
 
-    def update_file_name(self, file_name):
-        self.current_file = file_name
-        self.detail_widget.update_file_name(file_name)
-        self.set_current_utterance(None, False)
-        self.setFileSaveable(False)
+    def sync_models(self):
+        self.model_manager = ModelManager(token=self.settings.value(AnchorSettings.GITHUB_TOKEN))
+        self.model_manager.refresh_remote()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            for model_type, db_class in anchor.db.MODEL_TYPES.items():
+                if model_type not in self.model_manager.local_models:
+                    continue
+                current_models = {x.name: x for x in session.query(db_class)}
+                for m in self.model_manager.local_models[model_type]:
+                    if m not in current_models:
+                        current_models[m] = db_class(name=m, path=m, available_locally=True)
+                        session.add(current_models[m])
+                    else:
+                        current_models[m].available_locally = True
+                for m in self.model_manager.remote_models[model_type]:
+                    if m not in current_models:
+                        current_models[m] = db_class(name=m, path=m, available_locally=False)
+                        session.add(current_models[m])
+                session.flush()
+            session.commit()
 
-    def setFileSaveable(self, enable):
-        self.save_current_file_act.setEnabled(enable)
+    def file_loaded(self, ready):
+        if ready:
+            self.ui.playAct.setEnabled(ready)
+        else:
+            self.ui.playAct.setEnabled(False)
+            self.ui.playAct.setChecked(False)
 
-    def restore_deleted_utts(self):
-        self.corpus_model.restore_deleted_utts()
+    def corpus_changed(self, clean):
+        if clean:
+            self.ui.revertChangesAct.setEnabled(False)
+            self.ui.saveChangesAct.setEnabled(False)
+        else:
+            self.ui.revertChangesAct.setEnabled(True)
+            self.ui.saveChangesAct.setEnabled(True)
+
+    def handle_changes_synced(self, changed:bool):
+        self.ui.revertChangesAct.setEnabled(False)
+        self.undo_group.setActiveStack(self.corpus_undo_stack)
+        self.corpus_undo_stack.setClean()
+        self.ui.saveChangesAct.setEnabled(False)
+
+    def execute_runnable(self, function, finished_function, extra_args=None):
+        if self.corpus_model.corpus is None:
+            return
+        delayed_start = False
+        if function == 'Replacing query':
+            worker = workers.ReplaceAllWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Changing speakers':
+            worker = workers.ChangeSpeakerWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Recalculate speaker ivector':
+            worker = workers.RecalculateSpeakerWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Loading speakers':
+            worker = workers.LoadSpeakersWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Loading files':
+            worker = workers.LoadFilesWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Loading dictionaries':
+            worker = workers.LoadDictionariesWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Calculating OOVs':
+            self.calculate_oovs()
+            return
+        elif function == 'Finding duplicates':
+            self.set_application_state('loading')
+            worker = workers.DuplicateFilesWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Counting utterance results':
+            worker = workers.QueryUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Comparing speakers':
+            worker = workers.SpeakerComparisonWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Merging speakers':
+
+            self.set_application_state('loading')
+            worker = workers.MergeSpeakersWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.finished.connect(finished_function)
+        elif function == 'Querying utterances':
+            worker = workers.QueryUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Querying speakers':
+            worker = workers.QuerySpeakersWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Creating speaker tiers':
+            worker = workers.FileUtterancesWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == 'Counting dictionary results':
+            worker = workers.QueryDictionaryWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Querying dictionary':
+            worker = workers.QueryDictionaryWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Querying OOVs':
+            worker = workers.QueryOovWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Counting OOV results':
+            worker = workers.QueryOovWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Getting closest speakers':
+            worker = workers.ClosestSpeakersWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Clustering speaker utterances':
+            worker = workers.ClusterSpeakerUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Loading speaker ivectors':
+            worker = workers.CalculateSpeakerIvectorsWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Generating speaker MDS':
+            worker = workers.SpeakerMdsWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Exporting dictionary':
+            self.set_application_state('loading')
+            self.ui.loadingScreen.setCorpusName(f'Saving dictionary changes...')
+            worker = workers.ExportLexiconWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == 'Exporting files':
+            self.set_application_state('loading')
+            self.ui.loadingScreen.setCorpusName(f'Saving changes...')
+            worker = workers.ExportFilesWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        else:
+            if extra_args is None:
+                extra_args = []
+            worker = workers.Worker(function, *extra_args)
+            worker.signals.result.connect(finished_function)
+        if function in self.single_runners:
+            if self.single_runners[function] is not None:
+                self.single_runners[function].cancel()
+            self.single_runners[function] = worker
+        if function in self.sequential_runners:
+            delayed_start = len(self.sequential_runners[function]) > 0
+            if delayed_start:
+                self.sequential_runners[function][-1].signals.finished.connect(lambda: self.thread_pool.start(worker))
+            self.sequential_runners[function].append(worker)
+            worker.signals.finished.connect(self.update_sequential_runners)
+
+        worker.signals.error.connect(self.handle_error)
+        # Execute
+        if not delayed_start:
+            self.thread_pool.start(worker)
+        if function not in self.quick_runners:
+            if isinstance(function, str):
+                worker.name = function
+            self.status_indicator.add_worker(worker)
+
+    def update_sequential_runners(self):
+        sender = self.sender()
+        for k, v in self.sequential_runners.items():
+            self.sequential_runners[k] = [x for x in v if x.signals != sender]
+
+    def set_up_models(self):
+        self.dictionary_model = DictionaryTableModel(self)
+        self.oov_model = OovModel(self)
+        self.corpus_model = CorpusModel(self)
+        self.speaker_model = SpeakerModel(self)
+        self.merge_speaker_model = MergeSpeakerModel(self)
+
+        self.corpus_model.databaseSynced.connect(self.handle_changes_synced)
+        self.corpus_model.runFunction.connect(self.execute_runnable)
+        self.merge_speaker_model.runFunction.connect(self.execute_runnable)
+        self.merge_speaker_model.mergeAllFinished.connect(self.save_completed)
+        self.corpus_model.lockCorpus.connect(self.anchor_lock_corpus)
+        self.corpus_model.statusUpdate.connect(self.update_status_message)
+        self.corpus_model.unlockCorpus.connect(self.anchor_unlock_corpus)
+        self.corpus_model.corpusLoaded.connect(self.fully_loaded)
+        self.corpus_model.filesSaved.connect(self.save_completed)
+        self.corpus_model.requestFileView.connect(self.open_search_file)
+        self.speaker_model.runFunction.connect(self.execute_runnable)
+        self.dictionary_model.runFunction.connect(self.execute_runnable)
+        self.oov_model.runFunction.connect(self.execute_runnable)
+        self.dictionary_model.set_corpus_model(self.corpus_model)
+        self.corpus_model.set_dictionary_model(self.dictionary_model)
+        self.speaker_model.set_corpus_model(self.corpus_model)
+        self.merge_speaker_model.set_corpus_model(self.corpus_model)
+        self.oov_model.set_corpus_model(self.corpus_model)
+        self.selection_model = CorpusSelectionModel(self.corpus_model)
+        self.ui.utteranceListWidget.set_models(self.corpus_model, self.selection_model, self.speaker_model)
+        self.ui.utteranceDetailWidget.set_models(self.corpus_model,
+                                                 self.selection_model, self.dictionary_model)
+        self.ui.speakerWidget.set_models(self.corpus_model, self.selection_model, self.speaker_model)
+        self.ui.transcriptionWidget.set_models(self.corpus_model, self.dictionary_model)
+        self.ui.alignmentWidget.set_models(self.corpus_model)
+        self.ui.acousticModelWidget.set_models(self.corpus_model)
+        self.ui.languageModelWidget.set_models(self.corpus_model)
+        self.ui.dictionaryWidget.set_models(self.dictionary_model)
+        self.ui.diarizationWidget.set_models(self.merge_speaker_model)
+        self.ui.oovWidget.set_models(self.oov_model)
+        self.selection_model.selectionChanged.connect(self.change_utterance)
+        self.selection_model.fileChanged.connect(self.change_file)
+        self.selection_model.fileAboutToChange.connect(self.check_media_stop)
+        self.media_player.set_corpus_models(self.corpus_model, self.selection_model)
+        self.corpus_model.addCommand.connect(self.update_corpus_stack)
+
+        self.g2p_model = None
+        self.acoustic_model = None
+        self.language_model = None
+        self.ivector_extractor = None
+
+    def check_media_stop(self):
+        if self.ui.playAct.isChecked():
+            self.ui.playAct.setChecked(False)
+            self.media_player.stop()
+
+    def update_status_message(self, message: str):
+        self.ui.statusbar.showMessage(message)
+
+    def anchor_lock_corpus(self):
+        self.ui.lockEditAct.setChecked(True)
+        self.ui.lockEditAct.setEnabled(False)
+
+    def anchor_unlock_corpus(self):
+        self.ui.lockEditAct.setChecked(False)
+        self.ui.lockEditAct.setEnabled(True)
+
+    def update_corpus_stack(self, command):
+        self.undo_group.setActiveStack(self.corpus_undo_stack)
+        self.corpus_undo_stack.push(command)
+
+    def update_dictionary_stack(self, command):
+        self.undo_group.setActiveStack(self.dictionary_undo_stack)
+        self.dictionary_undo_stack.push(command)
 
     def delete_utterances(self):
         utts = self.selection_model.selectedUtterances()
@@ -936,1004 +466,775 @@ class MainWindow(QtWidgets.QMainWindow):  # pragma: no cover
         utts = self.selection_model.selectedUtterances()
         self.corpus_model.split_utterances(utts)
 
-
     def merge_utterances(self):
         utts = self.selection_model.selectedUtterances()
         self.corpus_model.merge_utterances(utts)
 
-    def change_utterance(self):
-        current_utterance = self.selection_model.currentUtterance()
-        if current_utterance is None:
-            self.change_speaker_act.setEnabled(False)
-            self.delete_act.setEnabled(False)
-            self.change_speaker_act.widget.setCurrentSpeaker('')
+    def check_actions(self):
+        self.ui.lockEditAct.setEnabled(True)
+        self.ui.transcribeCorpusAct.setEnabled(True)
+        self.ui.alignCorpusAct.setEnabled(True)
+        self.ui.loadReferenceAlignmentsAct.setEnabled(True)
+        self.ui.closeLanguageModelAct.setEnabled(True)
+        self.ui.closeDictionaryAct.setEnabled(True)
+        self.ui.evaluateAlignmentsAct.setEnabled(True)
+        self.ui.closeAcousticModelAct.setEnabled(True)
+        self.ui.closeG2PAct.setEnabled(True)
+        self.ui.saveDictionaryAct.setEnabled(True)
+        self.ui.closeIvectorExtractorAct.setEnabled(True)
+        if self.corpus_model.language_model is None:
+            self.ui.closeLanguageModelAct.setEnabled(False)
+        if self.corpus_model.g2p_model is None:
+            self.ui.closeG2PAct.setEnabled(False)
+        if self.corpus_model.acoustic_model is None:
+            self.ui.alignCorpusAct.setEnabled(False)
+            self.ui.transcribeCorpusAct.setEnabled(False)
+            self.ui.loadReferenceAlignmentsAct.setEnabled(False)
+            self.ui.evaluateAlignmentsAct.setEnabled(False)
+            self.ui.closeAcousticModelAct.setEnabled(False)
+        if self.corpus_model.corpus is None:
+            self.ui.alignCorpusAct.setEnabled(False)
+            self.ui.transcribeCorpusAct.setEnabled(False)
+            self.ui.loadReferenceAlignmentsAct.setEnabled(False)
+            self.ui.evaluateAlignmentsAct.setEnabled(False)
+            self.ui.find_duplicates_action.setEnabled(False)
+            self.ui.cluster_utterances_action.setEnabled(False)
+            self.ui.classify_speakers_action.setEnabled(False)
         else:
-            self.change_speaker_act.setEnabled(True)
-            self.change_speaker_act.widget.setCurrentSpeaker(current_utterance.speaker)
-            self.delete_act.setEnabled(True)
+            if not self.corpus_model.corpus.has_alignments() or not self.corpus_model.corpus.has_alignments(WorkflowType.reference):
+                self.ui.evaluateAlignmentsAct.setEnabled(False)
+            #if self.corpus_model.corpus.alignment_done:
+            #    self.ui.alignCorpusAct.setEnabled(False)
+            if self.corpus_model.corpus.transcription_done:
+                self.ui.transcribeCorpusAct.setEnabled(False)
+            self.ui.find_duplicates_action.setEnabled(self.corpus_model.corpus.has_any_ivectors())
+            self.ui.cluster_utterances_action.setEnabled(self.corpus_model.corpus.has_any_ivectors())
+            self.ui.classify_speakers_action.setEnabled(self.corpus_model.corpus.has_any_ivectors())
 
+        if self.corpus_model.corpus is None or inspect_database(self.corpus_model.corpus.data_source_identifier) not in {DatasetType.ACOUSTIC_CORPUS_WITH_DICTIONARY,
+                            DatasetType.TEXT_CORPUS_WITH_DICTIONARY}:
+            self.ui.alignCorpusAct.setEnabled(False)
+            self.ui.transcribeCorpusAct.setEnabled(False)
+            self.ui.evaluateAlignmentsAct.setEnabled(False)
+            self.ui.closeDictionaryAct.setEnabled(False)
+            #self.ui.saveDictionaryAct.setEnabled(False)
+
+    def change_file(self):
+        self.ui.playAct.setChecked(False)
+        if self.selection_model.current_file is None:
+            self.ui.playAct.setEnabled(False)
+            self.ui.panLeftAct.setEnabled(False)
+            self.ui.panRightAct.setEnabled(False)
+            self.ui.zoomInAct.setEnabled(False)
+            self.ui.zoomToSelectionAct.setEnabled(False)
+            self.ui.zoomOutAct.setEnabled(False)
+        else:
+            self.ui.playAct.setEnabled(True)
+            self.ui.panLeftAct.setEnabled(True)
+            self.ui.panRightAct.setEnabled(True)
+            self.ui.zoomInAct.setEnabled(True)
+            self.ui.zoomToSelectionAct.setEnabled(True)
+            self.ui.zoomOutAct.setEnabled(True)
+        if hasattr(self, 'channel_select'):
+            with QtCore.QSignalBlocker(self.channel_select):
+                self.channel_select.clear()
+                self.channel_select.addItem('Channel 0', userData=0)
+                self.channel_select.setEnabled(False)
+                if self.selection_model.current_file is not None and self.selection_model.current_file.num_channels > 1:
+                    self.channel_select.addItem('Channel 1', userData=1)
+                    self.channel_select.setEnabled(True)
+
+    def change_utterance(self):
+        selection = self.selection_model.selectedUtterances()
+        self.ui.deleteUtterancesAct.setEnabled(False)
+        self.ui.splitUtterancesAct.setEnabled(False)
+        self.ui.alignUtteranceAct.setEnabled(False)
+        if not selection:
+            return
+
+        self.ui.splitUtterancesAct.setEnabled(True)
+        if len(selection) == 1:
+            self.ui.mergeUtterancesAct.setEnabled(False)
+            if self.corpus_model.acoustic_model is not None and self.corpus_model.has_dictionary:
+                self.ui.alignUtteranceAct.setEnabled(True)
+        else:
+            self.ui.mergeUtterancesAct.setEnabled(True)
+        #self.change_speaker_act.widget.setCurrentSpeaker(current_utterance.speaker)
+        self.ui.deleteUtterancesAct.setEnabled(True)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        if self.loading_corpus:
-            self.cancel_load_corpus_act.trigger()
-            self.loading_label.setExiting()
-            self.repaint()
-            while self.loading_corpus:
-                self.corpus_worker.wait(500)
-                if self.corpus_worker.isFinished():
-                    break
-        self.config['volume'] = self.change_volume_act.widget.value()
+        self.ui.utteranceDetailWidget.plot_widget.clean_up_for_close()
+        self.settings.setValue(AnchorSettings.UTTERANCES_VISIBLE, self.ui.utteranceDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.DICTIONARY_VISIBLE, self.ui.dictionaryDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.DICTIONARY_VISIBLE, self.ui.oovDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.SPEAKERS_VISIBLE, self.ui.speakerDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.LM_VISIBLE, self.ui.languageModelDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.AM_VISIBLE, self.ui.acousticModelDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.TRANSCRIPTION_VISIBLE, self.ui.transcriptionDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.ALIGNMENT_VISIBLE, self.ui.alignmentDockWidget.isVisible())
+        self.settings.setValue(AnchorSettings.DIARIZATION_VISIBLE, self.ui.diarizationDockWidget.isVisible())
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setExiting()
+        self.close_timer = QtCore.QTimer()
+        self.close_timer.timeout.connect(lambda : self._actual_close(a0))
+        self.close_timer.start(1000)
 
-        self.save_config()
-        self.save_search_history()
 
-        self.settings.setValue("MainWindow/geometry", self.saveGeometry())
-        self.settings.setValue("MainWindow/windowState", self.saveState())
+
+    def _actual_close(self, a0):
+        if self.thread_pool.activeThreadCount() > 0:
+            return
+        self.settings.setValue(AnchorSettings.GEOMETRY, self.saveGeometry())
+        self.settings.setValue(AnchorSettings.WINDOW_STATE, self.saveState())
+
         self.settings.sync()
-        if self.config['autosave']:
-            print('Saving!')
-            self.save_file()
+        if self.corpus_model.session is not None:
+            sqlalchemy.orm.close_all_sessions()
         a0.accept()
 
-    def load_config(self):
-        self.config = ConfigurationOptions({})
-        if os.path.exists(self.config_path):
-            with open(self.config_path, 'r', encoding='utf8') as f:
-                self.config.update(yaml.load(f, Loader=yaml.SafeLoader))
-
-
-        os.makedirs(self.config['temp_directory'], exist_ok=True)
-        self.refresh_fonts()
-        self.refresh_shortcuts()
-        self.refresh_style_sheets()
-        self.configUpdated.emit(self.config)
-
-    def update_speaker(self):
-        old_utterance = self.selection_model.currentUtterance()
-        speaker = self.change_speaker_act.widget.current_speaker
-        self.corpus_model.update_utterance(old_utterance, speaker=speaker)
-
-    def refresh_fonts(self):
-        base_font = self.config.font_options['font']
-        small_font = self.config.font_options['small_font']
-        self.menuBar().setFont(base_font)
-        self.list_dock.setFont(base_font)
-        self.speaker_dock.setFont(base_font)
-        self.dictionary_dock.setFont(base_font)
-        self.corpus_menu.setFont(base_font)
-        for a in self.corpus_menu.actions():
-            a.setFont(base_font)
-        self.dictionary_menu.setFont(base_font)
-        for a in self.dictionary_menu.actions():
-            a.setFont(base_font)
-        self.acoustic_model_menu.setFont(base_font)
-        for a in self.acoustic_model_menu.actions():
-            a.setFont(base_font)
-        self.g2p_model_menu.setFont(base_font)
-        for a in self.g2p_model_menu.actions():
-            a.setFont(base_font)
-        self.status_bar.setFont(base_font)
-        self.warning_label.setFont(base_font)
-
-        icon_ratio = 0.03
-        icon_height = int(icon_ratio*self.config['height'])
-        if icon_height < 24:
-            icon_height = 24
-
-        for a in self.actions():
-            if isinstance(a, AnchorAction):
-                a.widget.setFont(small_font)
-                a.widget.setFixedHeight(icon_height+8)
-
-            else:
-                a.setFont(small_font)
-
-        icon_height = self.menuBar().fontMetrics().height()
-        self.corner_tool_bar.setIconSize(QtCore.QSize(icon_height, icon_height))
-
-    def save_search_history(self):
-        with open(self.history_path, 'w', encoding='utf8') as f:
-            for query in self.list_widget.search_box.history:
-                f.write(f"{query[0]}\t{query[1]}\t{query[2]}\n")
-
-    def save_corpus_history(self):
-        with open(self.corpus_history_path, 'w', encoding='utf8') as f:
-            for path in self.corpus_history:
-                f.write(f"{path}\n")
-
-    def load_search_history(self):
-        history = []
-        if os.path.exists(self.history_path):
-            with open(self.history_path, 'r', encoding='utf8') as f:
-                for line in f:
-                    line = line.strip().split()
-                    if not line:
-                        continue
-                    line[1] = line[1].lower() != 'false'
-                    line[2] = line[2].lower() != 'false'
-                    line = tuple(line)
-                    if line not in history:
-                        history.append(line)
-        self.list_widget.load_history(history)
-
-    def load_corpus_history(self):
-        self.corpus_history = []
-        if os.path.exists(self.corpus_history_path):
-            with open(self.corpus_history_path, 'r', encoding='utf8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if line not in self.corpus_history:
-                        self.corpus_history.append(line)
-        self.refresh_corpus_history()
-
-    def refresh_corpus_history(self):
-        self.open_recent_menu.clear()
-        if not self.corpus_history or self.corpus_history[0] != self.current_corpus_path:
-            self.corpus_history.insert(0, self.current_corpus_path)
-        for i, corpus in enumerate(self.corpus_history):
-            if corpus == self.current_corpus_path:
-                continue
-            history_action = QtGui.QAction(parent=self, text=os.path.basename(corpus),
-                                               triggered=lambda: self.load_corpus_path(corpus))
-            self.open_recent_menu.addAction(history_action)
-            if i == 6:
-                break
-        if len(self.corpus_history) <= 1:
-            self.open_recent_menu.setEnabled(False)
-        else:
-            self.open_recent_menu.setEnabled(True)
-        self.corpus_history = self.corpus_history[:6]
-
-    def save_config(self):
-        self.refresh_fonts()
-        self.refresh_shortcuts()
-        self.refresh_style_sheets()
-        with open(self.config_path, 'w', encoding='utf8') as f:
-            to_output = {}
-            for k, v in self.config.items():
-                to_output[k] = v
-            yaml.dump(to_output, f)
-
-    def open_options(self):
-        dialog = OptionsDialog(self)
-        if dialog.exec_():
-            self.config.update(dialog.generate_config())
-            self.refresh_shortcuts()
-            self.refresh_style_sheets()
-            self.configUpdated.emit(self.config)
-
-    def refresh_style_sheets(self):
-        colors = self.config.color_options
-        background_color = colors['background_color']
-
-        selection_color = colors['selection_color']
-        error_color = colors['error_color']
-        error_background_color = colors['error_background_color']
-
-        text_edit_color = colors['text_edit_color']
-        text_edit_background_color = colors['text_edit_background_color']
-        line_edit_color = colors['line_edit_color']
-        line_edit_background_color = colors['line_edit_background_color']
-
-        enabled_color = colors['enabled_color']
-        enabled_background_color = colors['enabled_background_color']
-        enabled_border_color = colors['enabled_border_color']
-
-        active_color = colors['active_color']
-        active_background_color = colors['active_background_color']
-        active_border_color = colors['active_border_color']
-
-        hover_text_color = colors['hover_text_color']
-        hover_background_color = colors['hover_background_color']
-        hover_border_color = colors['hover_border_color']
-
-        disabled_text_color = colors['disabled_text_color']
-        disabled_background_color = colors['disabled_background_color']
-        disabled_border_color = colors['disabled_border_color']
-
-        table_text_color = colors['table_text_color']
-        table_odd_color = colors['table_odd_color']
-        table_even_color = colors['table_even_color']
-        table_header_background_color = colors['table_header_background_color']
-
-        table_header_color = colors['table_header_color']
-
-        main_widget_border_color = colors['main_widget_border_color']
-        main_widget_background_color = colors['main_widget_background_color']
-        menu_background_color = colors['menu_background_color']
-        menu_text_color = colors['menu_text_color']
-
-        scroll_bar_background_color = colors['scroll_bar_background_color']
-        scroll_bar_handle_color = colors['scroll_bar_handle_color']
-        scroll_bar_border_color = colors['scroll_bar_border_color']
-        border_radius = 5
-        text_padding = 5
-        border_width = 2
-        base_menu_button_width = 16
-        menu_button_width = base_menu_button_width + border_width * 2
-
-        sort_indicator_size = 20
-        sort_indicator_padding = 15
-        scroll_bar_height = 25
-        scroll_bar_border_radius = int(scroll_bar_height / 2) -2
-        sheet = f'''
-        QMainWindow, QDialog{{
-            background-color: {background_color};
-        }}
-        QMenuBar {{
-            background-color: {menu_background_color};
-            spacing: 2px;
-        }}
-        QMenuBar::item {{
-            padding: 4px 4px;
-                        color: {menu_text_color};
-                        background-color: {menu_background_color};
-        }}
-        QMenuBar::item:selected {{
-                        color: {hover_text_color};
-                        background-color: {hover_background_color};
-        }}
-        QMenuBar::item:disabled {{
-                        color: {disabled_text_color};
-                        background-color: {menu_background_color};
-                        }}
-        ButtonWidget {{
-            background-color: {table_header_background_color};
-        }}
-        QDockWidget {{
-            background-color: {active_background_color};
-            color: {active_color};
-            
-            titlebar-close-icon: url(:checked/times.svg);
-            titlebar-normal-icon: url(:checked/external-link.svg);
-        }}
-        QDockWidget::title {{
-            text-align: center;
-        }}
-        
-        QMainWindow::separator {{
-    background: {background_color};
-    width: 10px; /* when vertical */
-    height: 10px; /* when horizontal */
-}}
-
-QMainWindow::separator:hover {{
-    background: {enabled_background_color};
-}}
-        UtteranceListWidget {{
-            background-color: {text_edit_background_color};
-        
-            border: {border_width}px solid {main_widget_border_color};
-            color: {main_widget_border_color};
-            padding: 0px;
-            padding-top: 20px;
-            margin-top: 0ex; /* leave space at the top for the title */
-            }}
-            
-        UtteranceDetailWidget {{
-            padding: 0px;
-            border: none;
-            margin: 0;
-        }}
-        InformationWidget {{
-            background-color: {main_widget_background_color};
-            border: {border_width}px solid {main_widget_border_color};
-            border-top-right-radius: {border_radius}px;
-            border-bottom-right-radius: {border_radius}px;
-                    
-        }}
-        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget {{
-        
-            border-bottom-right-radius: {border_radius}px;
-                    
-        }}
-        
-        QGroupBox::title {{
-            color: {text_edit_color};
-            background-color: transparent;
-            subcontrol-origin: margin;
-            subcontrol-position: top center; /* position at the top center */
-            padding-top: 5px;
-        }}
-        QLabel {{
-                        color: {text_edit_color};
-            }}
-        QStatusBar {{
-            background-color: {text_edit_background_color};
-                        color: {text_edit_color};
-            }}
-        WarningLabel {{
-                        color: {error_color};
-            }}
-        QCheckBox {{
-            color: {text_edit_color};
-        }}
-        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget {{ /* The tab widget frame */
-            background-color: {main_widget_background_color};
-        
-        }}
-        QTabWidget::pane  {{ /* The tab widget frame */
-            border: {border_width}px solid {main_widget_border_color};
-            border-top-color: {enabled_color};
-            background-color: {main_widget_background_color};
-        
-        }}
-            
-            
-        QTabBar::tab {{
-            color: {menu_text_color};
-            background-color: {menu_background_color};
-            border-color: {enabled_border_color};
-            border: {border_width / 2}px solid {enabled_border_color};
-            border-top-color: {main_widget_border_color};
-            border-bottom: none;
-            
-            min-width: 8ex;
-            padding: {text_padding}px;
-            margin: 0px;
-        }}
-            
-        QTabBar::scroller{{
-            width: {2*scroll_bar_height}px;
-        }}
-        QTabBar QToolButton  {{
-            border-radius: 0px;
-        }}
-        
-        QTabBar QToolButton::right-arrow  {{
-            image: url(:caret-right.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QTabBar QToolButton::right-arrow :pressed {{
-            image: url(:checked/caret-right.svg);
-        }}
-        QTabBar QToolButton::right-arrow :disabled {{
-            image: url(:disabled/caret-right.svg);
-        }}
-        
-        QTabBar QToolButton::left-arrow  {{
-            image: url(:caret-left.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QTabBar QToolButton::left-arrow:pressed {{
-            image: url(:checked/caret-left.svg);
-        }}
-        QTabBar QToolButton::left-arrow:disabled {{
-            image: url(:disabled/caret-left.svg);
-        }}
-        
-        QTabBar::tab-bar {{
-            color: {menu_text_color};
-            background-color: {menu_background_color};
-            border: {border_width}px solid {main_widget_border_color};
-        }}
-            
-        QTabBar::tab:hover {{
-            color: {hover_text_color};
-            background-color: {hover_background_color};
-            border-color: {hover_border_color};
-            border-bottom-color:  {active_border_color};
-        }}
-        QTabBar::tab:selected {{
-            color: {active_color};
-            background-color: {active_background_color};
-            margin-left: -{border_width}px;
-            margin-right: -{border_width}px;
-            border-color: {active_border_color};
-            border-bottom-color:  {active_border_color};
-        }}
-        QTabBar::tab:first {{
-            border-left-width: {border_width}px;
-            margin-left: 0px;
-        }}
-        QTabBar::tab:last {{
-            border-right-width: {border_width}px;
-            margin-right: 0px;
-        }}
-        QToolBar {{
-            spacing: 3px; 
-        }}
-            
-        QToolBar::separator {{
-            margin-left: 5px;
-            margin-right: 5px;
-            width: 3px;
-            height: 3px;
-            background: {selection_color};
-        }}
-            
-        
-            
-        QPushButton, QToolButton {{
-            background-color: {enabled_background_color};
-            color: {enabled_color};
-            padding: {text_padding}px;
-            border-width: {border_width}px; 
-            border-style: solid; 
-            border-color: {enabled_border_color};
-            border-radius: {border_radius}px;
-        }}
-        QToolButton[popupMode="1"] {{ /* only for MenuButtonPopup */
-            padding-right: {menu_button_width}px; /* make way for the popup button */
-        }}
-        QToolButton::menu-button {{
-            border: {border_width}px solid {enabled_border_color};
-            border-top-right-radius: {border_radius}px;
-            border-bottom-right-radius: {border_radius}px;
-            
-            width: {base_menu_button_width}px;
-        }}
-        QMenuBar QToolButton{{
-            padding: 0px;
-        }}
-        QLineEdit QToolButton {{
-                        background-color: {text_edit_background_color};
-                        color: {text_edit_color};
-                        border: none;
-        }}
-        QToolButton#clear_search_field, QToolButton#clear_new_speaker_field, 
-        QToolButton#regex_search_field, QToolButton#word_search_field {{
-                        background-color: none;
-                        border: none;
-                        padding: {border_width}px;
-        }}
-        QMenu {{
-                margin: 2px;
-                background-color: {menu_background_color};
-                color: {menu_text_color};
-        }}
-        QMenu::item {{
-                padding: 2px 25px 2px 20px;
-                border: {border_width /2}px solid transparent;
-                background-color: {menu_background_color};
-                color: {menu_text_color};
-        }}
-        QMenu::item:disabled {{
-                border: none;
-                background-color: {disabled_background_color};
-                color: {disabled_text_color};
-        }}
-        QMenu::item:!disabled:selected {{
-            border-color: {enabled_color};
-            background-color: {selection_color};
-        }}
-        QComboBox {{
-            color: {enabled_color};
-            background-color: {enabled_background_color};
-            selection-background-color: none;
-        }}
-        QComboBox QAbstractItemView {{
-            color: {enabled_color};
-            background-color: {enabled_background_color};
-            selection-background-color: {hover_background_color};
-        }}
-        QToolButton:checked  {{
-            color: {active_color};
-            background-color: {active_background_color};
-            border-color: {active_border_color};
-        }}
-        QPushButton:disabled, QToolButton:disabled {{
-            color: {disabled_text_color};
-            background-color: {disabled_background_color};
-            border-color: {disabled_border_color};
-        }}
-        
-        QToolButton#cancel_load:disabled {{
-            color: {disabled_text_color};
-            background-color: {disabled_background_color};
-            border-color: {disabled_border_color};
-        }}
-        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {{
-            color: {hover_text_color};
-            background-color: {hover_background_color};
-            border-color: {hover_border_color};
-        }}
-        
-        QToolButton#cancel_load:focus:hover {{
-            color: {hover_text_color};
-            background-color: {hover_background_color};
-            border-color: {hover_border_color};
-        }}
-        QTextEdit {{
-            color: {text_edit_color};
-            background-color: {text_edit_background_color};
-            border: {border_width}px solid {main_widget_border_color};
-            selection-background-color: {selection_color};
-        }}
-        QGraphicsView {{
-            border: {border_width}px solid {main_widget_border_color};
-        }}
-         QLineEdit {{
-            color: {line_edit_color};
-            background-color: {line_edit_background_color};
-            selection-background-color: {selection_color};
-        }}
-        QSlider::handle:horizontal {{
-            height: 10px;
-            background: {enabled_background_color};
-            border: {border_width/2}px solid {enabled_border_color};
-            margin: 0 -2px; /* expand outside the groove */
-        }}
-        QSlider::handle:horizontal:hover {{
-            height: 10px;
-            background: {hover_background_color};
-            border-color: {hover_border_color};
-            margin: 0 -2px; /* expand outside the groove */
-        }}
-        QTableWidget, QTableView {{
-            alternate-background-color: {table_even_color}; 
-            selection-background-color: {selection_color};
-            selection-color: {text_edit_color};
-            background-color: {table_odd_color};
-            color: {table_text_color};
-            border: 4px solid {enabled_color};
-        }}
-        QScrollArea {{
-            border: 4px solid {enabled_color};
-        }}
-        QHeaderView::up-arrow {{
-            subcontrol-origin: padding; 
-            subcontrol-position: center right;
-            image: url(:hover/sort-up.svg);
-            height: {sort_indicator_size}px;
-            width: {sort_indicator_size}px;
-        }}
-        QHeaderView::down-arrow {{
-            image: url(:hover/sort-down.svg);
-            subcontrol-origin: padding; 
-            subcontrol-position: center right;
-            height: {sort_indicator_size}px;
-            width: {sort_indicator_size}px;
-        }}
-        QTableView QTableCornerButton::section {{
-            background-color: {enabled_background_color};
-        }}
-        QHeaderView {{
-            background-color: {table_odd_color};
-        }}
-        QHeaderView::section {{
-            color: {table_header_color};
-            background-color: {table_header_background_color};
-            padding-left: {text_padding}px;
-        }}
-        QHeaderView::section:horizontal {{
-            padding-right: {sort_indicator_padding}px;
-        }}
-        '''
-
-        scroll_bar_style = f'''
-        QScrollBar {{
-            color: {scroll_bar_handle_color};
-            background: {scroll_bar_background_color};
-            border: {border_width}px solid {scroll_bar_border_color};
-        }}
-        QScrollBar#time_scroll_bar {{
-            color: {scroll_bar_handle_color};
-            background: {scroll_bar_background_color};
-            border: {border_width}px solid {scroll_bar_border_color};
-            margin-left: 0px;
-            margin-right: 0px;
-        }}
-        QScrollBar:horizontal {{
-            height: {scroll_bar_height}px;
-            border: 2px solid {scroll_bar_border_color};
-            border-radius: {scroll_bar_border_radius+2}px;
-            margin-left: {scroll_bar_height}px;
-            margin-right: {scroll_bar_height}px;
-        }}
-        QScrollBar:vertical {{
-            width: {scroll_bar_height}px;
-            border: 2px solid {scroll_bar_border_color};
-            border-radius: {scroll_bar_border_radius+2}px;
-            margin-top: {scroll_bar_height}px;
-            margin-bottom: {scroll_bar_height}px;
-        }}
-        
-        QScrollBar:left-arrow:horizontal {{
-            image: url(:caret-left.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QScrollBar:left-arrow:horizontal:pressed {{
-            image: url(:checked/caret-left.svg);
-        }}
-        
-        QScrollBar:right-arrow:horizontal {{
-            image: url(:caret-right.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QScrollBar:right-arrow:horizontal:pressed {{
-            image: url(:checked/caret-right.svg);
-        }}
-        
-        QScrollBar:up-arrow:vertical {{
-            image: url(:caret-up.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QScrollBar:up-arrow:vertical:pressed {{
-            image: url(:checked/caret-up.svg);
-        }}
-        
-        QScrollBar:down-arrow:vertical {{
-            image: url(:caret-down.svg);
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-        }}
-        QScrollBar:down-arrow:vertical:pressed {{
-            image: url(:checked/caret-down.svg);
-        }}
-        
-        QScrollBar::handle:horizontal {{
-            background: {scroll_bar_handle_color};
-            min-width: {scroll_bar_height}px;
-            border: 2px solid {scroll_bar_border_color};
-            border-radius: {scroll_bar_border_radius}px;
-        }}
-        
-        QScrollBar::handle:vertical {{
-            background: {scroll_bar_handle_color};
-            min-height: {scroll_bar_height}px;
-            border: 2px solid {scroll_bar_border_color};
-            border-radius: {scroll_bar_border_radius}px;
-        }}
-        
-        QToolButton#pan_left_button, QToolButton#pan_right_button {{
-            
-            color: none;
-            background-color: none;
-            border: none;
-            margin: 0px;
-            padding: 0px;
-        }}
-        QScrollBar::add-page, QScrollBar::sub-page {{
-            background: none;
-            height: {scroll_bar_height}px;
-            width: {scroll_bar_height}px;
-            padding: 0px;
-            margin: 0px;
-        }}
-        
-        QScrollBar::add-line:horizontal {{
-            background: none;
-            subcontrol-position: right;
-            subcontrol-origin: margin;
-            width: {scroll_bar_height}px;
-        }}
-        
-        QScrollBar::sub-line:horizontal {{
-            background: none;
-            subcontrol-position: left;
-            subcontrol-origin: margin;
-            width: {scroll_bar_height}px;
-        }}
-        
-        QScrollBar::add-line:vertical {{
-            background: none;
-            subcontrol-position: bottom;
-            subcontrol-origin: margin;
-            height: {scroll_bar_height}px;
-        }}
-        
-        QScrollBar::sub-line:vertical {{
-            background: none;
-            subcontrol-position: top;
-            subcontrol-origin: margin;
-            height: {scroll_bar_height}px;
-        }}
-        
-        QScrollBar#time_scroll_bar::add-line:horizontal {{
-            background: none;
-            subcontrol-position: none;
-            subcontrol-origin: none;
-            width: 0px;
-        }}
-        
-        QScrollBar#time_scroll_bar::sub-line:horizontal {{
-            background: none;
-            subcontrol-position: none;
-            subcontrol-origin: none;
-            width: 0px;
-        }}
-        '''
-        if 'praat' not in self.config['theme'].lower():
-            sheet += scroll_bar_style
-        else:
-            sheet += f'''
-        QToolButton#pan_left_button, QToolButton#pan_right_button {{
-            width: 0;
-            height: 0;
-            color: none;
-            background-color: none;
-            border: none;
-            margin: 0px;
-            padding: 0px;
-        }}'''
-
-        self.setStyleSheet(sheet)
-
     def create_actions(self):
-        self.change_temp_dir_act = QtGui.QAction(
-            parent=self, text="Change temporary directory",
-            statusTip="Change temporary directory", triggered=self.change_temp_dir)
+        w = QtWidgets.QWidget(self)
+        w.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,QtWidgets.QSizePolicy.Policy.Expanding)
+        self.ui.toolBar.insertWidget(self.ui.toolBar.actions()[0], w)
+        self.ui.toolBar.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding,QtWidgets.QSizePolicy.Policy.Expanding)
+        self.ui.toolBar.addWidget(w)
+        self.ui.lockEditAct.setEnabled(True)
+        self.ui.lockEditAct.setChecked(bool(self.settings.value(AnchorSettings.LOCKED, False)))
+        self.ui.lockEditAct.toggled.connect(self.corpus_model.lock_edits)
+        self.ui.loadCorpusAct.triggered.connect(self.change_corpus)
+        self.ui.reloadCorpusAct.triggered.connect(self.reload_corpus)
+        self.ui.closeCurrentCorpusAct.triggered.connect(self.close_corpus)
+        self.ui.cancelCorpusLoadAct.triggered.connect(self.cancel_corpus_load)
+        self.ui.changeTemporaryDirectoryAct.triggered.connect(self.change_temp_dir)
+        self.ui.openPreferencesAct.triggered.connect(self.open_options)
+        self.ui.loadAcousticModelAct.triggered.connect(self.change_acoustic_model)
+        self.ui.loadLanguageModelAct.triggered.connect(self.change_language_model)
+        self.ui.loadIvectorExtractorAct.triggered.connect(self.change_ivector_extractor)
+        self.ui.loadDictionaryAct.triggered.connect(self.change_dictionary)
+        self.ui.saveDictionaryAct.triggered.connect(self.save_dictionary)
+        self.ui.loadG2PModelAct.triggered.connect(self.change_g2p)
+        self.ui.loadReferenceAlignmentsAct.triggered.connect(self.load_reference_alignments)
+        self.ui.loadingScreen.tool_bar.addAction(self.ui.cancelCorpusLoadAct)
+        self.ui.utteranceDetailWidget.pan_left_button.setDefaultAction(self.ui.panLeftAct)
+        self.ui.utteranceDetailWidget.pan_right_button.setDefaultAction(self.ui.panRightAct)
+        self.ui.playAct.triggered.connect(self.play_audio)
+        self.media_player.playbackStateChanged.connect(self.update_play_act)
+        self.ui.find_duplicates_action.triggered.connect(self.find_duplicates)
+        self.ui.cluster_utterances_action.triggered.connect(self.begin_cluster_utterances)
+        self.ui.classify_speakers_action.triggered.connect(self.begin_classify_speakers)
+        self.selection_model.selectionAudioChanged.connect(self.enable_zoom)
+        self.ui.zoomInAct.triggered.connect(self.selection_model.zoom_in)
+        self.ui.zoomToSelectionAct.triggered.connect(self.selection_model.zoom_to_selection)
+        self.ui.zoomOutAct.triggered.connect(self.selection_model.zoom_out)
+        self.ui.panLeftAct.triggered.connect(self.ui.utteranceDetailWidget.pan_left)
+        self.ui.panRightAct.triggered.connect(self.ui.utteranceDetailWidget.pan_right)
+        self.ui.mergeUtterancesAct.triggered.connect(self.merge_utterances)
+        self.ui.splitUtterancesAct.triggered.connect(self.split_utterances)
+        self.ui.searchAct.triggered.connect(self.open_search)
+        self.ui.dictionaryWidget.table.searchRequested.connect(self.open_search)
+        self.ui.oovWidget.table.searchRequested.connect(self.open_search)
+        self.ui.diarizationWidget.table.searchRequested.connect(self.open_search_speaker)
+        self.ui.speakerWidget.table.searchRequested.connect(self.open_search_speaker)
+        self.ui.oovWidget.table.g2pRequested.connect(self.dictionary_model.add_word)
+        self.dictionary_model.requestLookup.connect(self.open_dictionary)
+        self.ui.deleteUtterancesAct.triggered.connect(self.delete_utterances)
+        self.ui.lockEditAct.toggled.connect(self.toggle_lock)
+        self.ui.exportFilesAct.setEnabled(True)
+        self.ui.exportFilesAct.triggered.connect(self.export_files)
+        self.ui.showAllSpeakersAct.triggered.connect(self.ui.utteranceDetailWidget.plot_widget.update_show_speakers)
+        self.ui.muteAct.triggered.connect(self.update_mute_status)
+        self.volume_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximumWidth(100)
+        self.volume_slider.setValue(self.media_player.volume())
+        self.volume_slider.valueChanged.connect(self.ui.changeVolumeAct.trigger)
+        self.channel_select = QtWidgets.QComboBox(self)
+        self.channel_select.addItem('Channel 0')
+        self.ui.toolBar.addWidget(self.volume_slider)
+        self.ui.toolBar.addWidget(self.channel_select)
+        self.channel_select.currentIndexChanged.connect(self.selection_model.set_current_channel)
+        self.ui.changeVolumeAct.triggered.connect(self.media_player.set_volume)
+        self.ui.addSpeakerAct.triggered.connect(self.add_new_speaker)
+        self.ui.speakerWidget.tool_bar.addAction(self.ui.addSpeakerAct)
+        self.ui.transcribeCorpusAct.triggered.connect(self.begin_transcription)
+        self.ui.transcriptionWidget.button.setDefaultAction(self.ui.transcribeCorpusAct)
+        self.ui.utteranceListWidget.oov_button.setDefaultAction(self.ui.oovsOnlyAct)
+        self.ui.alignmentWidget.button.setDefaultAction(self.ui.alignCorpusAct)
 
-        self.options_act = DefaultAction('cog',
-            parent=self, text="Preferences...",
-            statusTip="Edit preferences", triggered=self.open_options)
+        self.ui.alignCorpusAct.triggered.connect(self.begin_alignment)
+        self.ui.diarizationWidget.refresh_ivectors_action.triggered.connect(self.begin_speaker_diarization)
+        self.ui.alignUtteranceAct.triggered.connect(self.begin_utterance_alignment)
+        self.ui.segmentUtteranceAct.triggered.connect(self.begin_utterance_segmentation)
+        self.ui.evaluateAlignmentsAct.triggered.connect(self.begin_alignment_evaluation)
+        self.ui.selectMappingFileAct.triggered.connect(self.change_custom_mapping)
 
-        self.load_corpus_act = DefaultAction('folder-open',
-            parent=self, text="Load a corpus",
-            statusTip="Load a corpus", triggered=self.change_corpus)
+        self.undo_act = self.undo_group.createUndoAction(self, 'Undo')
+        self.undo_act.setIcon(QtGui.QIcon(':undo.svg'))
+        self.redo_act = self.undo_group.createRedoAction(self, 'Redo')
+        self.redo_act.setIcon(QtGui.QIcon(':redo.svg'))
+        self.ui.menuEdit.addAction(self.undo_act)
+        self.ui.menuEdit.addAction(self.redo_act)
+        self.undo_group.setActiveStack(self.corpus_undo_stack)
+        self.corpus_model.undoRequested.connect(self.undo_act.trigger)
+        self.corpus_model.redoRequested.connect(self.redo_act.trigger)
+        self.corpus_model.playRequested.connect(self.ui.playAct.trigger)
+        self.corpus_undo_stack.cleanChanged.connect(self.corpus_changed)
+        self.ui.lockEditAct.toggled.connect(self.undo_act.setDisabled)
+        self.ui.lockEditAct.toggled.connect(self.redo_act.setDisabled)
+        self.ui.menuWindow.addAction(self.ui.utteranceDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.dictionaryDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.oovDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.speakerDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.acousticModelDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.languageModelDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.alignmentDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.transcriptionDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.diarizationDockWidget.toggleViewAction())
 
-        self.cancel_load_corpus_act = DefaultAction('clear',
-            parent=self, text="Cancel loading current corpus",
-            statusTip="Cancel loading current corpus", triggered=self.cancel_corpus_load)
+        self.ui.getHelpAct.triggered.connect(self.open_help)
+        self.ui.reportBugAct.triggered.connect(self.report_bug)
 
-        self.loading_label.tool_bar.addAction(self.cancel_load_corpus_act)
-        w = self.loading_label.tool_bar.widgetForAction(self.cancel_load_corpus_act)
-        w.setObjectName('cancel_load')
+        self.acoustic_action_group = QtGui.QActionGroup(self)
+        self.acoustic_action_group.setExclusive(True)
 
-        self.close_corpus_act = QtGui.QAction(
-            parent=self, text="Close current corpus",
-            statusTip="Load current corpus", triggered=self.close_corpus)
+        self.g2p_action_group = QtGui.QActionGroup(self)
+        self.g2p_action_group.setExclusive(True)
 
-        self.load_acoustic_model_act = QtGui.QAction(
-            parent=self, text="Load an acoustic model",
-            statusTip="Load an acoustic model", triggered=self.change_acoustic_model)
+        self.dictionary_action_group = QtGui.QActionGroup(self)
+        self.dictionary_action_group.setExclusive(True)
 
-        self.load_dictionary_act = QtGui.QAction(
-            parent=self, text="Load a dictionary",
-            statusTip="Load a dictionary", triggered=self.change_dictionary)
+        self.language_model_action_group = QtGui.QActionGroup(self)
+        self.language_model_action_group.setExclusive(True)
 
-        self.load_g2p_act = QtGui.QAction(
-            parent=self, text="Load a G2P model",
-            statusTip="Load a G2P model", triggered=self.change_g2p)
+        self.ivector_action_group = QtGui.QActionGroup(self)
+        self.ivector_action_group.setExclusive(True)
 
-        self.load_lm_act = QtGui.QAction(
-            parent=self, text="Load a language model",
-            statusTip="Load a language model", triggered=self.change_lm)
+        self.ui.ivectorExtractorMenu.setEnabled(False)
+        self.ui.closeIvectorExtractorAct.setEnabled(False)
+        self.refresh_corpus_history()
+        self.refresh_model_actions()
 
-        self.load_ivector_extractor_act = QtGui.QAction(
-            parent=self, text="Load an ivector extractor",
-            statusTip="Load an ivector extractor", triggered=self.change_ivector_extractor)
+    def update_play_act(self, state):
+        if state == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
+            self.ui.playAct.setChecked(True)
+        else:
+            self.ui.playAct.setChecked(False)
 
-        self.undo_act = self.corpus_model.undo_stack.createUndoAction(self, 'Undo')
+    def find_duplicates(self):
+        if not self.corpus_model.corpus.has_any_ivectors():
+            return
+        self.execute_runnable('Finding duplicates', self.finish_finding_duplicates, [{
+            'threshold': 0.05,
+             "working_directory": os.path.join(self.corpus_model.corpus.output_directory, 'speaker_diarization'),
+        }])
 
-        self.redo_act = self.corpus_model.undo_stack.createRedoAction(self, 'Redo')
+    def finish_finding_duplicates(self, results):
+        self.set_application_state('loaded')
+        if not results:
+            return
+        duplicate_count, duplicate_path = results
+        self.update_status_message(f'Found {duplicate_count} duplicate files, see {duplicate_path}.')
 
-        self.addAction(self.change_temp_dir_act)
-        self.addAction(self.options_act)
-        self.addAction(self.load_corpus_act)
-        self.addAction(self.close_corpus_act)
-        self.addAction(self.cancel_load_corpus_act)
-        self.addAction(self.load_acoustic_model_act)
-        self.addAction(self.load_dictionary_act)
-        self.addAction(self.load_g2p_act)
-        self.addAction(self.load_lm_act)
-        self.addAction(self.load_ivector_extractor_act)
+    def refresh_model_actions(self):
+        self.ui.menuDownload_acoustic_model.clear()
+        self.ui.menuDownload_G2P_model.clear()
+        self.ui.menuDownload_language_model.clear()
+        self.ui.menuDownload_dictionary.clear()
+        self.ui.menuDownload_ivector_extractor.clear()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            for m, in session.query(anchor.db.AcousticModel.name).filter_by(available_locally=False).order_by(anchor.db.AcousticModel.name):
+                a = QtGui.QAction(m, parent=self)
+                a.triggered.connect(self.download_acoustic_model)
+                self.ui.menuDownload_acoustic_model.addAction(a)
+            for m, in session.query(anchor.db.LanguageModel.name).filter_by(available_locally=False).order_by(anchor.db.LanguageModel.name):
+                a = QtGui.QAction(m, parent=self)
+                a.triggered.connect(self.download_language_model)
+                self.ui.menuDownload_language_model.addAction(a)
+            for m, in session.query(anchor.db.G2PModel.name).filter_by(available_locally=False).order_by(anchor.db.G2PModel.name):
+                a = QtGui.QAction(m, parent=self)
+                a.triggered.connect(self.download_g2p_model)
+                self.ui.menuDownload_G2P_model.addAction(a)
+            for m, in session.query(anchor.db.Dictionary.name).filter_by(available_locally=False).order_by(anchor.db.Dictionary.name):
+                a = QtGui.QAction(m, parent=self)
+                a.triggered.connect(self.download_dictionary)
+                self.ui.menuDownload_dictionary.addAction(a)
+            for m, in session.query(anchor.db.IvectorExtractor.name).filter_by(available_locally=False).order_by(anchor.db.IvectorExtractor.name):
+                a = QtGui.QAction(m, parent=self)
+                a.triggered.connect(self.download_ivector_extractor)
+                self.ui.menuDownload_ivector_extractor.addAction(a)
+
+            current_corpus = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.acoustic_model
+            ), sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.language_model
+            ), sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.dictionary
+            ), sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.ivector_extractor
+            ), sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.g2p_model
+            ), sqlalchemy.orm.joinedload(
+                anchor.db.AnchorCorpus.sad_model
+            )).filter(anchor.db.AnchorCorpus.current==True).first()
+            path_chars = 50
+            for m in session.query(anchor.db.AcousticModel).filter_by(available_locally=True):
+                a = QtGui.QAction(f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                a.setCheckable(True)
+                if current_corpus is not None and current_corpus.acoustic_model is not None and current_corpus.acoustic_model == m:
+                    a.setChecked(True)
+                a.triggered.connect(self.change_acoustic_model)
+                self.acoustic_action_group.addAction(a)
+                self.ui.acousticModelMenu.addAction(a)
+
+            for m in session.query(anchor.db.Dictionary).filter_by(available_locally=True):
+                a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                if current_corpus is not None and current_corpus.dictionary is not None and current_corpus.dictionary == m:
+                    a.setChecked(True)
+                a.triggered.connect(self.change_dictionary)
+                self.dictionary_action_group.addAction(a)
+                self.ui.mfaDictionaryMenu.addAction(a)
+
+            for m in session.query(anchor.db.LanguageModel).filter_by(available_locally=True):
+                a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                if current_corpus is not None and current_corpus.language_model is not None and current_corpus.language_model == m:
+                    a.setChecked(True)
+                a.triggered.connect(self.change_language_model)
+                self.ui.languageModelMenu.addAction(a)
+                self.language_model_action_group.addAction(a)
+
+            for m in session.query(anchor.db.G2PModel).filter_by(available_locally=True):
+                a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                if current_corpus is not None and current_corpus.g2p_model is not None and current_corpus.g2p_model == m:
+                    a.setChecked(True)
+                a.triggered.connect(self.change_g2p)
+                self.ui.g2pMenu.addAction(a)
+                self.g2p_action_group.addAction(a)
+
+            if FOUND_SPEECHBRAIN:
+                m = session.query(anchor.db.IvectorExtractor).filter(anchor.db.IvectorExtractor.path=='speechbrain').first()
+                if m is None:
+                    session.add(anchor.db.IvectorExtractor(name='speechbrain', path='speechbrain', available_locally=True))
+                    session.commit()
+                a = QtGui.QAction(text='speechbrain', parent=self)
+                a.setData(m.id)
+                a.triggered.connect(self.change_ivector_extractor)
+                self.ui.ivectorExtractorMenu.addAction(a)
+                self.ivector_action_group.addAction(a)
+
+            for m in session.query(anchor.db.IvectorExtractor).filter(
+                    anchor.db.IvectorExtractor.available_locally==True,
+                    anchor.db.IvectorExtractor.name != 'speechbrain'
+            ):
+                a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                if current_corpus is not None and current_corpus.ivector_extractor is not None and current_corpus.ivector_extractor == m:
+                    a.setChecked(True)
+                a.triggered.connect(self.change_ivector_extractor)
+                self.ui.ivectorExtractorMenu.addAction(a)
+                self.ivector_action_group.addAction(a)
+
+    def toggle_lock(self, locked):
+        self.settings.setValue(AnchorSettings.LOCKED, locked)
+
+    def handleAudioState(self, state):
+        if state == QtMultimedia.QMediaPlayer.PlaybackState.StoppedState:
+            self.ui.playAct.setChecked(False)
+
+    def update_mute_status(self, is_muted):
+        if is_muted:
+            self.previous_volume = self.media_player.volume()
+            self.change_volume_act.widget.setValue(0)
+        else:
+            self.change_volume_act.widget.setValue(self.previous_volume)
+        self.media_player.setMuted(is_muted)
+
+    def change_corpus(self):
+        corpus_name = self.sender().text()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            session.query(anchor.db.AnchorCorpus).update({anchor.db.AnchorCorpus.current: False})
+            session.flush()
+            m = session.query(anchor.db.AnchorCorpus).filter(anchor.db.AnchorCorpus.name == corpus_name).first()
+            if m is None:
+                corpus_directory = QtWidgets.QFileDialog.getExistingDirectory(parent=self, caption='Select a corpus directory',
+                                                                              dir=self.settings.value(AnchorSettings.DEFAULT_CORPUS_DIRECTORY))
+                if not corpus_directory or not os.path.exists(corpus_directory):
+                    return
+                corpus_name = os.path.basename(corpus_directory)
+                self.settings.setValue(AnchorSettings.DEFAULT_CORPUS_DIRECTORY, os.path.dirname(corpus_directory))
+                m = session.query(anchor.db.AnchorCorpus).filter(anchor.db.AnchorCorpus.name == corpus_name).first()
+                if m is None:
+                    m = anchor.db.AnchorCorpus(name=corpus_name, path=corpus_directory, current=True)
+                    session.add(m)
+            m.current = True
+            session.commit()
+        self.refresh_corpus_history()
+        self.load_corpus()
+        self.deleted_utts = []
+
+    def load_reference_alignments(self):
+        reference_directory = QtWidgets.QFileDialog.getExistingDirectory(parent=self, caption='Select a reference directory',
+                                                                      dir=self.settings.value(AnchorSettings.DEFAULT_CORPUS_DIRECTORY))
+        if not reference_directory or not os.path.exists(reference_directory):
+            return
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
+            c.reference_directory = reference_directory
+            session.commit()
+        self.load_reference_worker.set_params(self.corpus_model.corpus, reference_directory)
+        self.load_reference_worker.start()
+
+    def close_corpus(self):
+        self.set_application_state('unloaded')
+        self.selection_model.clearSelection()
+        if self.corpus_model.corpus is not None:
+            self.corpus_model.session.close()
+        self.corpus_model.setCorpus(None)
+        self.settings.setValue(AnchorSettings.CURRENT_CORPUS, '')
+
+    def load_corpus(self):
+        self.selection_model.clearSelection()
+        self.corpus_model.setCorpus(None)
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(anchor.db.AnchorCorpus).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.dictionary)).filter_by(current=True).first()
+            if c is None:
+                self.set_application_state('unloaded')
+                return
+            self.set_application_state('loading')
+            self.ui.loadingScreen.setCorpusName(f'Loading {c.path}...')
+            dictionary_path = None
+            if c.dictionary is not None:
+                dictionary_path = c.dictionary.path
+        self.corpus_worker.set_params(c.path, dictionary_path)
+        self.corpus_worker.start()
+
+    def reload_corpus(self):
+        self.selection_model.clearSelection()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
+            corpus_path = c.path
+            dictionary_path = None
+            if c.dictionary is not None:
+                dictionary_path = c.dictionary.path
+
+        self.corpus_worker.set_params(corpus_path, dictionary_path, reset=True)
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Reloading {c.path}...')
+        self.corpus_worker.start()
+
+    def cancel_corpus_load(self):
+        self.ui.cancelCorpusLoadAct.setEnabled(False)
+        self.ui.loadingScreen.text_label.setText("Cancelling...")
+        self.corpus_worker.stop()
+        self.reload_corpus_worker.stop()
+
+    def save_completed(self):
+        self.set_application_state('loaded')
+        self.check_actions()
+
+    def fully_loaded(self):
+        if self.corpus is not None:
+
+            self.set_application_state('loaded')
+        else:
+            self.set_application_state('unloaded')
+        self.check_actions()
+
+    def finalize_load_corpus(self, corpus:AcousticCorpus):
+        if corpus is None:
+            self.set_application_state('unloaded')
+        self.corpus = corpus
+        self.corpus_model.setCorpus(corpus)
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
+            if c.custom_mapping_path:
+                self.dictionary_model.set_custom_mapping(c.custom_mapping_path)
+
+    def finalize_reload_corpus(self):
+        self.set_application_state('loaded')
+        self.check_actions()
+
+    def finalize_load_dictionary(self, corpus):
+        self.set_application_state('loaded')
+        self.corpus_model.setCorpus(corpus)
+        self.corpus_model.dictionaryChanged.emit()
+        self.check_actions()
+        self.ui.loadDictionaryAct.setEnabled(True)
+
+    def finalize_oov_count(self, corpus):
+        self.set_application_state('loaded')
+        self.corpus_model.setCorpus(corpus)
+        self.corpus_model.dictionaryChanged.emit()
+        self.dictionary_model.finish_refresh_word_counts()
+        self.check_actions()
+        self.ui.loadDictionaryAct.setEnabled(True)
+
+    def finalize_load_acoustic_model(self, model: AcousticModel):
+        self.acoustic_model = model
+        self.corpus_model.set_acoustic_model(model)
+        self.check_actions()
+        self.ui.acousticModelMenu.setEnabled(True)
+
+    def finalize_load_language_model(self, model: LanguageModel):
+        self.language_model = model
+        self.corpus_model.set_language_model(model)
+        self.check_actions()
+        self.ui.languageModelMenu.setEnabled(True)
+
+    def finalize_load_g2p_model(self, generator: PyniniValidator):
+        self.dictionary_model.set_g2p_generator(generator)
+        self.check_actions()
+        self.ui.g2pMenu.setEnabled(True)
+
+    def finalize_load_ivector_extractor(self, model: IvectorExtractorModel):
+        self.ivector_extractor = model
+        self.corpus_model.set_ivector_extractor(model)
+        self.check_actions()
+        self.ui.ivectorExtractorMenu.setEnabled(True)
+
+    def begin_alignment(self):
+        self.enableMfaActions(False)
+        self.alignment_worker.set_params(self.corpus_model.corpus,
+                                             self.acoustic_model,
+                                         self.ui.alignmentWidget.parameters())
+        self.alignment_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Performing alignment...')
+
+    def begin_speaker_diarization(self, reset=False):
+        self.enableMfaActions(False)
+        self.speaker_diarization_worker.set_params(self.corpus_model.corpus,
+                                             self.ivector_extractor, reset=False)
+        self.speaker_diarization_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Calculating ivectors...')
+
+    def begin_cluster_utterances(self):
+        self.enableMfaActions(False)
+        self.cluster_utterances_worker.set_params(self.corpus_model.corpus,
+                                             self.ivector_extractor)
+        self.cluster_utterances_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Clustering speakers...')
+
+    def begin_classify_speakers(self):
+        self.enableMfaActions(False)
+        self.classify_speakers_worker.set_params(self.corpus_model.corpus,
+                                             self.ivector_extractor)
+        self.classify_speakers_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Clustering speakers...')
+
+    def begin_utterance_alignment(self):
+        self.enableMfaActions(False)
+        utterance = self.selection_model.currentUtterance()
+        self.alignment_utterance_worker.set_params(self.corpus_model.corpus,
+                                             self.acoustic_model, utterance.id)
+        self.alignment_utterance_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Performing alignment...')
+
+    def begin_utterance_segmentation(self):
+        utterance = self.selection_model.currentUtterance()
+        self.segment_utterance_worker.set_params(self.corpus_model.corpus,
+                                             self.acoustic_model, utterance.id)
+        self.segment_utterance_worker.start()
+
+    def begin_alignment_evaluation(self):
+        self.enableMfaActions(False)
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
+            self.alignment_evaluation_worker.set_params(self.corpus_model.corpus,
+                                                 self.acoustic_model, c.custom_mapping_path)
+        self.alignment_evaluation_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Performing alignment evaluation...')
+
+    def begin_transcription(self):
+        self.enableMfaActions(False)
+        if self.corpus_model.language_model is not None:
+            self.transcription_worker.set_params(self.corpus_model.corpus,
+                                                 self.acoustic_model, self.language_model)
+            self.transcription_worker.start()
+        else:
+            self.validation_worker.set_params(self.corpus_model.corpus,
+                                                 self.acoustic_model,
+                                            self.ui.transcriptionWidget.frequent_words_edit.value(), test_transcriptions=True)
+            self.validation_worker.start()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(f'Performing transcription...')
+
+
+    def enableMfaActions(self, enabled):
+        self.ui.alignCorpusAct.setEnabled(enabled)
+        self.ui.transcribeCorpusAct.setEnabled(enabled)
+        self.ui.evaluateAlignmentsAct.setEnabled(enabled)
+
+    def finalize_adding_ivectors(self):
+        self.corpus_model.corpus.inspect_database()
+        selection = self.selection_model.selection()
+        self.selection_model.clearSelection()
+        self.selection_model.select(selection, QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent|QtCore.QItemSelectionModel.SelectionFlag.Rows)
+        self.corpus_model.update_data()
+        self.check_actions()
+        self.ui.diarizationWidget.refresh()
+        self.set_application_state('loaded')
+
+    def finalize_clustering_utterances(self):
+        self.corpus_model.corpus.inspect_database()
+        self.corpus_model.corpus._num_speakers = None
+        self.corpus_model.refresh_speakers()
+
+        selection = self.selection_model.selection()
+        self.selection_model.clearSelection()
+        self.selection_model.select(selection, QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent|QtCore.QItemSelectionModel.SelectionFlag.Rows)
+        self.corpus_model.update_data()
+        self.check_actions()
+        self.set_application_state('loaded')
+
+    def finalize_adding_intervals(self):
+        self.corpus_model.corpus.inspect_database()
+        self.corpus_model.corpusLoaded.emit()
+        selection = self.selection_model.selection()
+        self.selection_model.clearSelection()
+        self.selection_model.select(selection, QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent|QtCore.QItemSelectionModel.SelectionFlag.Rows)
+        self.corpus_model.update_data()
+        self.check_actions()
+        self.set_application_state('loaded')
+
+    def finalize_utterance_alignment(self, utterance_id: int):
+        self.corpus_model.session.expire_all()
+        self.corpus_model.update_data()
+        self.check_actions()
+        self.set_application_state('loaded')
+
+    def finalize_segmentation(self, data):
+        original_utterance_id, split_data = data
+        self.corpus_model.split_vad_utterance(original_utterance_id, split_data)
+        self.corpus_model.session.expire_all()
+        self.corpus_model.update_data()
+
+    def finalize_saving(self):
+        self.check_actions()
 
     def set_application_state(self, state):
+        self.selection_model.clearSelection()
         if state == 'loading':
-            self.list_widget.setVisible(False)
-            self.list_dock.setVisible(False)
-            self.dictionary_dock.setVisible(False)
-            self.dictionary_widget.setVisible(False)
-            self.speaker_dock.setVisible(False)
-            self.speaker_widget.setVisible(False)
+            self.ui.utteranceDockWidget.setVisible(False)
+            self.ui.dictionaryDockWidget.setVisible(False)
+            self.ui.oovDockWidget.setVisible(False)
+            self.ui.speakerDockWidget.setVisible(False)
+            self.ui.acousticModelDockWidget.setVisible(False)
+            self.ui.transcriptionDockWidget.setVisible(False)
+            self.ui.alignmentDockWidget.setVisible(False)
+            self.ui.languageModelDockWidget.setVisible(False)
+            self.ui.diarizationDockWidget.setVisible(False)
+            self.ui.toolBar.setVisible(False)
 
-            self.detail_widget.setVisible(False)
-            self.title_screen.setVisible(False)
-            self.loading_label.setVisible(True)
+            self.ui.utteranceDetailWidget.setVisible(False)
+            self.ui.titleScreen.setVisible(False)
+            self.ui.loadingScreen.setVisible(True)
 
-            self.change_temp_dir_act.setEnabled(False)
-            self.options_act.setEnabled(True)
-            self.cancel_load_corpus_act.setEnabled(True)
-            self.load_corpus_act.setEnabled(False)
-            self.open_recent_menu.setEnabled(False)
-            self.close_corpus_act.setEnabled(False)
-            self.load_acoustic_model_act.setEnabled(False)
-            self.load_dictionary_act.setEnabled(False)
-            self.load_g2p_act.setEnabled(False)
-            self.load_lm_act.setEnabled(False)
-            self.load_ivector_extractor_act.setEnabled(False)
+            self.ui.changeTemporaryDirectoryAct.setEnabled(False)
+            self.ui.openPreferencesAct.setEnabled(True)
+            self.ui.cancelCorpusLoadAct.setEnabled(True)
+            self.ui.loadCorpusAct.setEnabled(False)
+            self.ui.loadRecentCorpusMenu.setEnabled(False)
+            self.ui.closeCurrentCorpusAct.setEnabled(False)
+            self.ui.acousticModelMenu.setEnabled(False)
+            self.ui.languageModelMenu.setEnabled(False)
+            self.ui.ivectorExtractorMenu.setEnabled(False)
+            self.ui.g2pMenu.setEnabled(False)
+            self.ui.loadAcousticModelAct.setEnabled(False)
+            self.ui.loadDictionaryAct.setEnabled(False)
+            self.ui.loadG2PModelAct.setEnabled(False)
+            self.ui.loadLanguageModelAct.setEnabled(False)
+            self.ui.loadIvectorExtractorAct.setEnabled(False)
         elif state == 'loaded':
-            self.loading_label.setVisible(False)
+            self.ui.loadingScreen.setVisible(False)
+            self.ui.titleScreen.setVisible(False)
 
-            self.list_widget.setVisible(True)
-            self.dictionary_widget.setVisible(True)
-            self.speaker_widget.setVisible(True)
-            self.list_dock.setVisible(True)
-            self.dictionary_dock.setVisible(True)
-            self.speaker_dock.setVisible(True)
+            self.ui.utteranceDockWidget.setVisible(self.settings.value(AnchorSettings.UTTERANCES_VISIBLE))
+            self.ui.dictionaryDockWidget.setVisible(self.settings.value(AnchorSettings.DICTIONARY_VISIBLE))
+            self.ui.oovDockWidget.setVisible(self.settings.value(AnchorSettings.OOV_VISIBLE))
+            self.ui.speakerDockWidget.setVisible(self.settings.value(AnchorSettings.SPEAKERS_VISIBLE))
+            self.ui.languageModelDockWidget.setVisible(self.settings.value(AnchorSettings.LM_VISIBLE))
+            self.ui.acousticModelDockWidget.setVisible(self.settings.value(AnchorSettings.AM_VISIBLE))
+            self.ui.transcriptionDockWidget.setVisible(self.settings.value(AnchorSettings.TRANSCRIPTION_VISIBLE))
+            self.ui.alignmentDockWidget.setVisible(self.settings.value(AnchorSettings.ALIGNMENT_VISIBLE))
+            self.ui.diarizationDockWidget.setVisible(self.settings.value(AnchorSettings.DIARIZATION_VISIBLE))
+            self.ui.toolBar.setVisible(True)
 
 
-            self.detail_widget.setVisible(True)
-            self.title_screen.setVisible(False)
+            self.ui.utteranceDetailWidget.setVisible(True)
 
-            self.change_temp_dir_act.setEnabled(True)
-            self.options_act.setEnabled(True)
-            self.cancel_load_corpus_act.setEnabled(False)
-            self.load_corpus_act.setEnabled(True)
-            self.open_recent_menu.setEnabled(True)
-            self.close_corpus_act.setEnabled(True)
-            self.load_acoustic_model_act.setEnabled(True)
-            self.load_dictionary_act.setEnabled(True)
-            self.load_g2p_act.setEnabled(True)
-            self.load_lm_act.setEnabled(True)
-            self.load_ivector_extractor_act.setEnabled(True)
-            self.update_icons()
+            self.ui.changeTemporaryDirectoryAct.setEnabled(True)
+            self.ui.openPreferencesAct.setEnabled(True)
+            self.ui.cancelCorpusLoadAct.setEnabled(False)
+            self.ui.loadCorpusAct.setEnabled(True)
+            self.ui.loadRecentCorpusMenu.setEnabled(True)
+            self.ui.closeCurrentCorpusAct.setEnabled(True)
+            self.ui.loadAcousticModelAct.setEnabled(True)
+            self.ui.loadDictionaryAct.setEnabled(True)
+            self.ui.loadDictionaryAct.setEnabled(True)
+            self.ui.loadG2PModelAct.setEnabled(True)
+            self.ui.loadLanguageModelAct.setEnabled(True)
+            self.ui.loadIvectorExtractorAct.setEnabled(True)
+            self.ui.acousticModelMenu.setEnabled(True)
+            self.ui.languageModelMenu.setEnabled(True)
+            self.ui.ivectorExtractorMenu.setEnabled(True)
+            self.ui.g2pMenu.setEnabled(True)
         elif state == 'unloaded':
-            self.loading_label.setVisible(False)
-            self.list_widget.setVisible(False)
-            self.list_dock.setVisible(False)
-            self.dictionary_dock.setVisible(False)
-            self.dictionary_widget.setVisible(False)
-            self.speaker_dock.setVisible(False)
-            self.speaker_widget.setVisible(False)
-            self.detail_widget.setVisible(False)
-            self.title_screen.setVisible(True)
+            self.ui.loadingScreen.setVisible(False)
+            self.ui.titleScreen.setVisible(True)
+            self.ui.toolBar.setVisible(False)
 
-            self.change_temp_dir_act.setEnabled(True)
-            self.options_act.setEnabled(True)
-            self.cancel_load_corpus_act.setEnabled(False)
-            self.load_corpus_act.setEnabled(True)
-            self.open_recent_menu.setEnabled(True)
-            self.close_corpus_act.setEnabled(False)
-            self.load_acoustic_model_act.setEnabled(True)
-            self.load_dictionary_act.setEnabled(True)
-            self.load_g2p_act.setEnabled(True)
-            self.load_lm_act.setEnabled(True)
-            self.load_ivector_extractor_act.setEnabled(True)
+            self.ui.utteranceDockWidget.setVisible(False)
+            self.ui.dictionaryDockWidget.setVisible(False)
+            self.ui.oovDockWidget.setVisible(False)
+            self.ui.acousticModelDockWidget.setVisible(False)
+            self.ui.transcriptionDockWidget.setVisible(False)
+            self.ui.alignmentDockWidget.setVisible(False)
+            self.ui.languageModelDockWidget.setVisible(False)
+            self.ui.speakerDockWidget.setVisible(False)
+            self.ui.utteranceDetailWidget.setVisible(False)
+            self.ui.diarizationDockWidget.setVisible(False)
+
+            self.ui.changeTemporaryDirectoryAct.setEnabled(True)
+            self.ui.openPreferencesAct.setEnabled(True)
+            self.ui.cancelCorpusLoadAct.setEnabled(False)
+            self.ui.loadCorpusAct.setEnabled(True)
+            self.ui.loadRecentCorpusMenu.setEnabled(True)
+            self.ui.closeCurrentCorpusAct.setEnabled(False)
+            self.ui.loadAcousticModelAct.setEnabled(True)
+            self.ui.loadDictionaryAct.setEnabled(True)
+            self.ui.loadG2PModelAct.setEnabled(True)
+            self.ui.loadLanguageModelAct.setEnabled(True)
+            self.ui.loadIvectorExtractorAct.setEnabled(True)
+            self.ui.acousticModelMenu.setEnabled(True)
+            self.ui.languageModelMenu.setEnabled(True)
+            self.ui.ivectorExtractorMenu.setEnabled(True)
+            self.ui.g2pMenu.setEnabled(True)
+
+    def enable_zoom(self):
+        if self.selection_model.selected_min_time is None or self.selection_model.selected_max_time is None or \
+                not self.selection_model.hasSelection():
+            self.ui.zoomToSelectionAct.setEnabled(False)
+        else:
+            self.ui.zoomToSelectionAct.setEnabled(True)
 
     def play_audio(self):
-        if self.media_player.state() in [QtMultimedia.QMediaPlayer.StoppedState,
-                                          QtMultimedia.QMediaPlayer.PausedState]:
+        if self.media_player.playbackState() in [QtMultimedia.QMediaPlayer.PlaybackState.StoppedState,
+                                          QtMultimedia.QMediaPlayer.PlaybackState.PausedState]:
             self.media_player.play()
-        elif self.media_player.state() == QtMultimedia.QMediaPlayer.PlayingState:
+        elif self.media_player.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
             self.media_player.pause()
-
-    def setup_key_binds(self):
-
-        self.play_act = DefaultAction('play', checkable=True,
-            parent=self, text="Play audio",
-            statusTip="Play current loaded file", triggered=self.play_audio)
-
-
-        self.zoom_in_act = DefaultAction('search-plus',
-            parent=self, text="Zoom in",
-            statusTip="Zoom in", triggered=self.selection_model.zoom_in)
-
-        self.zoom_out_act = DefaultAction('search-minus',
-            parent=self, text="Zoom out",
-            statusTip="Zoom out", triggered=self.selection_model.zoom_out)
-
-        self.pan_left_act = DefaultAction('caret-left', buttonless=True,
-            parent=self, text="Pan left",
-            statusTip="Pan left", triggered=self.detail_widget.pan_left)
-
-        self.pan_right_act = DefaultAction('caret-right', buttonless=True,
-            parent=self, text="Pan right",
-            statusTip="Pan right", triggered=self.detail_widget.pan_right)
-
-        self.merge_act = DefaultAction('compress',
-            parent=self, text="Merge utterances",
-            statusTip="Merge utterances", triggered=self.merge_utterances)
-
-        self.split_act = DefaultAction('expand',
-            parent=self, text="Split utterances",
-            statusTip="Split utterances", triggered=self.split_utterances)
-
-        self.search_act = DefaultAction('search',
-            parent=self, text="Search corpus",
-            statusTip="Search corpus", triggered=self.open_search)
-
-        self.delete_act = DefaultAction(icon_name='trash',
-            parent=self, text="Delete utterances",
-            statusTip="Delete utterances", triggered=self.delete_utterances)
-
-        self.save_act = DefaultAction('save',
-            parent=self, text="Save file",
-            statusTip="Save a current file", triggered=self.save_file)
-
-        self.show_all_speakers_act = DefaultAction('users', checkable=True,
-            parent=self, text="Show all speakers",
-            statusTip="Show all speakers", triggered=self.detail_widget.plot_widget.update_show_speakers)
-
-        self.mute_act = DefaultAction('volume-up', checkable=True,
-            parent=self, text="Mute",
-            statusTip="Mute", triggered=self.update_mute_status)
-
-        self.change_volume_act = AnchorAction('volume',
-            parent=self, text="Adjust volume",
-            statusTip="Adjust volume")
-        self.change_volume_act.widget.valueChanged.connect(self.media_player.set_volume)
-
-        self.change_speaker_act = AnchorAction('speaker',
-            parent=self, text="Change utterance speaker",
-            statusTip="Change utterance speaker", triggered=self.update_speaker)
-
-        self.save_current_file_act = DefaultAction('save',
-            parent=self, text="Save file",
-            statusTip="Save file", triggered=self.save_file)
-        self.save_current_file_act.setDisabled(True)
-
-        self.revert_changes_act = DefaultAction('undo',
-            parent=self, text="Undo changes",
-            statusTip="Undo changes", triggered=self.restore_deleted_utts)
-        self.revert_changes_act.setDisabled(True)
-        self.corpus_model.undoAvailable.connect(self.revert_changes_act.setEnabled)
-
-        self.add_new_speaker_act = DefaultAction('user-plus',
-            parent=self, text="Add new speaker",
-            statusTip="Add new speaker", triggered=self.add_new_speaker)
-        self.add_new_speaker_act.setEnabled(False)
-
-        self.save_dictionary_act = DefaultAction('book-save',
-            parent=self, text="Save dictionary",
-            statusTip="Save dictionary", triggered=self.save_dictionary)
-        self.save_dictionary_act.setEnabled(False)
-
-        self.reset_dictionary_act = DefaultAction('book-undo',
-            parent=self, text="Revert changes",
-            statusTip="Revert changes", triggered=self.load_dictionary)
-        self.reset_dictionary_act.setEnabled(False)
-
-        self.change_speaker_act.setEnabled(False)
-        self.addAction(self.play_act)
-        self.addAction(self.zoom_in_act)
-        self.addAction(self.zoom_out_act)
-        self.addAction(self.pan_left_act)
-        self.addAction(self.pan_right_act)
-        self.addAction(self.merge_act)
-        self.addAction(self.split_act)
-        self.addAction(self.delete_act)
-        self.addAction(self.save_act)
-        self.addAction(self.show_all_speakers_act)
-        self.addAction(self.mute_act)
-        self.addAction(self.change_volume_act)
-        self.addAction(self.change_speaker_act)
-        self.addAction(self.add_new_speaker_act)
-        self.addAction(self.save_current_file_act)
-        self.addAction(self.save_dictionary_act)
-        self.addAction(self.reset_dictionary_act)
-        self.addAction(self.search_act)
-        self.speaker_widget.tool_bar.addAction(self.add_new_speaker_act)
-        self.speaker_widget.speaker_edit.returnPressed.connect(self.add_new_speaker_act.trigger)
-
-        self.list_widget.tool_bar.addAction(self.save_current_file_act)
-        self.list_widget.tool_bar.addSeparator()
-        self.list_widget.tool_bar.addAction(self.revert_changes_act)
-
-        self.detail_widget.tool_bar.addAction(self.play_act)
-        self.detail_widget.tool_bar.addSeparator()
-        self.detail_widget.tool_bar.addAction(self.mute_act)
-        self.detail_widget.tool_bar.addWidget(self.change_volume_act.widget)
-        self.detail_widget.tool_bar.addSeparator()
-        self.detail_widget.tool_bar.addAction(self.show_all_speakers_act)
-        self.detail_widget.tool_bar.addWidget(self.change_speaker_act.widget)
-        self.detail_widget.tool_bar.addSeparator()
-        self.detail_widget.tool_bar.addAction(self.zoom_in_act)
-        self.detail_widget.tool_bar.addAction(self.zoom_out_act)
-
-        self.detail_widget.pan_left_button.setDefaultAction(self.pan_left_act)
-        self.detail_widget.pan_right_button.setDefaultAction(self.pan_right_act)
-
-        self.detail_widget.tool_bar.addSeparator()
-        self.detail_widget.tool_bar.addAction(self.merge_act)
-        self.detail_widget.tool_bar.addAction(self.split_act)
-
-        self.detail_widget.tool_bar.addAction(self.delete_act)
-        w = self.detail_widget.tool_bar.widgetForAction(self.delete_act)
-        w.setObjectName('delete_utterance')
-
-        self.dictionary_widget.tool_bar.addAction(self.save_dictionary_act)
-        self.dictionary_widget.tool_bar.addSeparator()
-        self.dictionary_widget.tool_bar.addAction(self.reset_dictionary_act)
 
     def report_bug(self):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl('https://github.com/MontrealCorpusTools/Anchor-annotator/issues'))
@@ -1942,18 +1243,15 @@ QMainWindow::separator:hover {{
         QtGui.QDesktopServices.openUrl(QtCore.QUrl('https://anchor-annotator.readthedocs.io/en/latest/'))
 
     def add_new_speaker(self):
-        new_speaker = self.speaker_widget.speaker_edit.text()
+        new_speaker = self.ui.speakerWidget.newSpeakerEdit.text()
         if new_speaker in self.corpus.speak_utt_mapping:
             return
         if not new_speaker:
             return
-        self.corpus.speak_utt_mapping[new_speaker] = []
         self.newSpeaker.emit(self.corpus.speakers)
-        self.speaker_widget.speaker_edit.clear()
+        self.ui.speakerWidget.newSpeakerEdit.clear()
 
-
-
-    def open_search(self):
+    def open_search(self, search_term = None):
 
         dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
 
@@ -1966,8 +1264,69 @@ QMainWindow::separator:hover {{
                     dock_tab_bar.setCurrentIndex(i)
                     break
             else:
-                self.list_dock.toggleViewAction().trigger()
-            self.list_widget.search_widget.search_box.setFocus()
+                self.ui.utteranceDockWidget.toggleViewAction().trigger()
+            self.ui.utteranceListWidget.search_box.setFocus()
+            if search_term is not None:
+                self.ui.utteranceListWidget.search_box.setQuery(search_term)
+
+    def open_search_speaker(self, search_term = None, show=False):
+        if search_term is not None:
+            self.ui.utteranceListWidget.speaker_dropdown.line_edit.setText(search_term)
+            self.ui.utteranceListWidget.file_dropdown.line_edit.setText('')
+            self.ui.utteranceListWidget.search_box.setText('')
+            if self.corpus_model.corpus.has_any_ivectors():
+                self.ui.utteranceListWidget.table_widget.horizontalHeader().setSortIndicator(self.corpus_model.ivector_distance_column, QtCore.Qt.SortOrder.AscendingOrder)
+            self.ui.utteranceListWidget.search()
+            if show:
+                dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+                for j in range(len(dock_tab_bars)):
+                    dock_tab_bar = dock_tab_bars[j]
+                    if not dock_tab_bar.count():
+                        continue
+                    for i in range(dock_tab_bar.count()):
+                        if dock_tab_bar.tabText(i) == 'Utterances':
+                            dock_tab_bar.setCurrentIndex(i)
+                            break
+                    else:
+                        self.ui.utteranceDockWidget.toggleViewAction().trigger()
+
+    def open_search_file(self, search_term = None, show=False):
+        if search_term is not None:
+            self.ui.utteranceListWidget.file_dropdown.line_edit.setText(search_term)
+            self.ui.utteranceListWidget.speaker_dropdown.line_edit.setText('')
+            self.ui.utteranceListWidget.search_box.setText('')
+            self.ui.utteranceListWidget.table_widget.horizontalHeader().setSortIndicator(self.corpus_model.begin_column, QtCore.Qt.SortOrder.AscendingOrder)
+            self.ui.utteranceListWidget.search()
+            if show:
+                dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+                for j in range(len(dock_tab_bars)):
+                    dock_tab_bar = dock_tab_bars[j]
+                    if not dock_tab_bar.count():
+                        continue
+                    for i in range(dock_tab_bar.count()):
+                        if dock_tab_bar.tabText(i) == 'Utterances':
+                            dock_tab_bar.setCurrentIndex(i)
+                            break
+                    else:
+                        self.ui.utteranceDockWidget.toggleViewAction().trigger()
+
+    def refresh_shortcuts(self):
+        self.ui.playAct.setShortcut(self.settings.value(AnchorSettings.PLAY_KEYBIND))
+        self.ui.zoomInAct.setShortcut(self.settings.value(AnchorSettings.ZOOM_IN_KEYBIND))
+        self.ui.zoomOutAct.setShortcut(self.settings.value(AnchorSettings.ZOOM_OUT_KEYBIND))
+        self.ui.zoomToSelectionAct.setShortcut(self.settings.value(AnchorSettings.ZOOM_TO_SELECTION_KEYBIND))
+        self.ui.panLeftAct.setShortcut(self.settings.value(AnchorSettings.PAN_LEFT_KEYBIND))
+        self.ui.panRightAct.setShortcut(self.settings.value(AnchorSettings.PAN_RIGHT_KEYBIND))
+        self.ui.mergeUtterancesAct.setShortcut(self.settings.value(AnchorSettings.MERGE_KEYBIND))
+        self.ui.splitUtterancesAct.setShortcut(self.settings.value(AnchorSettings.SPLIT_KEYBIND))
+        self.ui.deleteUtterancesAct.setShortcut(self.settings.value(AnchorSettings.DELETE_KEYBIND))
+        self.ui.saveChangesAct.setShortcut(self.settings.value(AnchorSettings.SAVE_KEYBIND))
+        self.ui.searchAct.setShortcut(self.settings.value(AnchorSettings.SEARCH_KEYBIND))
+        self.undo_act.setShortcut(self.settings.value(AnchorSettings.UNDO_KEYBIND))
+        self.redo_act.setShortcut(self.settings.value(AnchorSettings.REDO_KEYBIND))
+        #self.ui.changeVolumeAct.widget.setValue(self.config['volume'])
 
     def open_dictionary(self):
 
@@ -1982,335 +1341,463 @@ QMainWindow::separator:hover {{
                     dock_tab_bar.setCurrentIndex(i)
                     break
             else:
-                self.dictionary_dock.toggleViewAction().trigger()
-
-    def refresh_shortcuts(self):
-        self.play_act.setShortcut(QtGui.QKeySequence(self.config['play_keybind']))
-        self.zoom_in_act.setShortcut(QtGui.QKeySequence(self.config['zoom_in_keybind']))
-        self.zoom_out_act.setShortcut(QtGui.QKeySequence(self.config['zoom_out_keybind']))
-        self.pan_left_act.setShortcut(QtGui.QKeySequence(self.config['pan_left_keybind']))
-        self.pan_right_act.setShortcut(QtGui.QKeySequence(self.config['pan_right_keybind']))
-        self.merge_act.setShortcut(QtGui.QKeySequence(self.config['merge_keybind']))
-        self.split_act.setShortcut(QtGui.QKeySequence(self.config['split_keybind']))
-        self.delete_act.setShortcut(QtGui.QKeySequence(self.config['delete_keybind']))
-        self.save_act.setShortcut(QtGui.QKeySequence(self.config['save_keybind']))
-        self.search_act.setShortcut(QtGui.QKeySequence(self.config['search_keybind']))
-        self.undo_act.setShortcut(QtGui.QKeySequence(self.config['undo_keybind']))
-        self.redo_act.setShortcut(QtGui.QKeySequence(self.config['redo_keybind']))
-        self.change_volume_act.widget.setValue(self.config['volume'])
-
-        for a in self.actions():
-            if isinstance(a, (DefaultAction, AnchorAction)):
-                a.update_icons(self.config.is_mfa)
-
-    def create_menus(self):
-        self.corpus_menu = self.menuBar().addMenu("Corpus")
-        self.corpus_menu.addAction(self.load_corpus_act)
-        self.open_recent_menu = self.corpus_menu.addMenu("Load recent corpus")
-
-        self.corpus_menu.addAction(self.close_corpus_act)
-
-        self.file_menu = self.menuBar().addMenu("Edit")
-        self.file_menu.addAction(self.undo_act)
-        self.file_menu.addAction(self.redo_act)
-        self.file_menu.addSeparator()
-        self.file_menu.addAction(self.change_temp_dir_act)
-        self.file_menu.addAction(self.options_act)
-        self.dictionary_menu = self.menuBar().addMenu("Dictionary")
-        self.dictionary_menu.addAction(self.load_dictionary_act)
-        downloaded_dictionaries_models = self.dictionary_menu.addMenu("Downloaded dictionary")
-        for lang in DictionaryModel.get_available_models():
-            lang_action = QtGui.QAction(parent=self, text=lang)
-            lang_action.triggered.connect(lambda: self.change_dictionary(lang))
-            downloaded_dictionaries_models.addAction(lang_action)
-        self.acoustic_model_menu = self.menuBar().addMenu("Acoustic model")
-        self.acoustic_model_menu.addAction(self.load_acoustic_model_act)
-        downloaded_acoustic_models = self.acoustic_model_menu.addMenu("MFA acoustic model")
-        for lang in AcousticModel.get_available_models():
-            lang_action = QtGui.QAction(parent=self, text=lang)
-            lang_action.triggered.connect(lambda: self.change_acoustic_model(lang))
-            downloaded_acoustic_models.addAction(lang_action)
-
-        self.g2p_model_menu = self.menuBar().addMenu("G2P model")
-        self.g2p_model_menu.addAction(self.load_g2p_act)
-        downloaded_g2p_models = self.g2p_model_menu.addMenu("MFA G2P model")
-        for lang in G2PModel.get_available_models():
-            lang_action = QtGui.QAction(parent=self, text=lang)
-            lang_action.triggered.connect(lambda: self.change_g2p(lang))
-            downloaded_g2p_models.addAction(lang_action)
-
-        self.windows_menu = self.menuBar().addMenu('Window')
-        self.windows_menu.addAction(self.list_dock.toggleViewAction())
-        self.windows_menu.addAction(self.dictionary_dock.toggleViewAction())
-        self.windows_menu.addAction(self.speaker_dock.toggleViewAction())
-
-        self.help_act = DefaultAction('help',
-            parent=self, text="Help",
-            statusTip="Help")
-
-        self.open_help_act = DefaultAction('help',
-            parent=self, text="Open documentation",
-            statusTip="Open documentation", triggered=self.open_help)
-        self.report_bug_act = DefaultAction('bug',
-            parent=self, text="Report a bug",
-            statusTip="Report a bug", triggered=self.report_bug)
-
-        self.corner_tool_bar = QtWidgets.QToolBar()
-        self.help_widget = HelpDropDown()
-        self.help_widget.setDefaultAction(self.help_act)
-
-        self.help_widget.addAction(self.open_help_act)
-        self.corner_tool_bar.addWidget(self.help_widget)
-
-        self.corner_tool_bar.addAction(self.report_bug_act)
-        self.menuBar().setCornerWidget(self.corner_tool_bar, QtCore.Qt.Corner.TopRightCorner)
-        #self.language_model_menu = self.menuBar().addMenu("Language model")
-        #self.language_model_menu.addAction(self.load_lm_act)
-        #downloaded_language_models = self.language_model_menu.addMenu("MFA language model")
-        #for lang in get_available_lm_languages():
-        #    lang_action = QtGui.QAction(
-        #        parent=self, text=lang,
-        #        statusTip=lang, triggered=lambda: self.change_lm(lang))
-        #    downloaded_language_models.addAction(lang_action)
-
-        #self.ivector_menu = self.menuBar().addMenu("Speaker classification")
-        #self.ivector_menu.addAction(self.load_ivector_extractor_act)
-        #downloaded_ie_models = self.ivector_menu.addMenu("MFA ivector extractor")
-        #for lang in get_available_ivector_languages():
-        #    lang_action = QtGui.QAction(
-        #        parent=self, text=lang,
-        #        statusTip=lang, triggered=lambda: self.change_ivector_extractor(lang))
-        #    downloaded_ie_models.addAction(lang_action)
-
+                self.ui.dictionaryDockWidget.toggleViewAction().trigger()
 
     def change_temp_dir(self):
-        self.configUpdated.emit(self.config)
-
-    def change_corpus(self):
-        default_dir = self.default_directory
-        if self.config['current_corpus_path']:
-            default_dir = os.path.dirname(self.config['current_corpus_path'])
-        corpus_directory = QtWidgets.QFileDialog.getExistingDirectory(caption='Select a corpus directory',
-                                                                      directory=default_dir)
-        if not corpus_directory or not os.path.exists(corpus_directory):
+        directory = QtWidgets.QFileDialog.getExistingDirectory(parent=self, caption='Select a temporary directory',
+                                                                      dir=self.settings.temp_directory)
+        if not directory or not os.path.exists(directory):
             return
-        self.default_directory = os.path.dirname(corpus_directory)
-        self.config['current_corpus_path'] = corpus_directory
-        self.load_corpus()
-        self.configUpdated.emit(self.config)
-        self.deleted_utts = []
+        config = MfaConfiguration()
+        config.profiles['anchor'].temporary_directory = directory
+        config.save()
 
-    def close_corpus(self):
-        self.title_screen.setVisible(True)
-        self.list_widget.setVisible(False)
-        self.detail_widget.setVisible(False)
-        self.loading_label.setVisible(False)
-        self.corpus = None
-        self.current_corpus_path = None
-        self.config['current_corpus_path'] = ''
-        self.corpusLoaded.emit(None)
-        self.configUpdated.emit(self.config)
+    def open_options(self):
+        dialog = OptionsDialog(self)
+        if dialog.exec_():
+            self.settings.sync()
+            self.refresh_settings()
 
-    def load_corpus(self):
-        self.loading_corpus = True
-        directory = self.config['current_corpus_path']
-        if directory is None or not os.path.exists(directory):
-            self.title_screen.setVisible(True)
-            self.list_widget.setVisible(False)
-            self.detail_widget.setVisible(False)
-            self.loading_label.setVisible(False)
-            return
-        self.load_corpus_path(directory)
-
-    def load_corpus_path(self, directory):
-        self.current_corpus_path = directory
-        self.set_application_state('loading')
-
-        self.loading_label.setCorpusName(f'Loading {directory}...')
-        self.corpus_worker.setParams(directory, self.config['temp_directory'])
-        self.corpus_worker.start()
+    def refresh_style_sheets(self):
+        self.setStyleSheet(self.settings.style_sheet)
 
 
-    def cancel_corpus_load(self):
-        self.cancel_load_corpus_act.setEnabled(False)
-        self.loading_label.text_label.setText("Cancelling...")
-        self.corpus_worker.stop()
+    def refresh_corpus_history(self):
+        self.ui.loadRecentCorpusMenu.clear()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            corpora = session.query(anchor.db.AnchorCorpus).filter_by(current=False)
+            for c in corpora:
+                a = QtGui.QAction(c.name, parent=self)
+                a.triggered.connect(self.change_corpus)
+                self.ui.loadRecentCorpusMenu.addAction(a)
 
-    def finish_cancelling(self):
-        self.loading_corpus = False
-        self.corpus = None
-        self.corpus_model.setCorpus(None)
-        self.current_corpus_path = None
+    def refresh_settings(self):
+        self.refresh_fonts()
+        self.refresh_shortcuts()
+        self.refresh_style_sheets()
+        self.corpus_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.dictionary_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.speaker_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.merge_speaker_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.ui.utteranceListWidget.refresh_settings()
+        self.ui.dictionaryWidget.refresh_settings()
+        self.ui.speakerWidget.refresh_settings()
+        self.ui.loadingScreen.refresh_settings()
+        self.media_player.refresh_settings()
 
-        self.set_application_state('unloaded')
-        self.corpusLoaded.emit()
-        self.set_current_utterance(None, False)
+    def refresh_fonts(self):
+        base_font = self.settings.font
+        self.menuBar().setFont(base_font)
+        self.ui.utteranceDockWidget.setFont(base_font)
+        self.ui.speakerDockWidget.setFont(base_font)
+        self.ui.dictionaryDockWidget.setFont(base_font)
+        self.ui.oovDockWidget.setFont(base_font)
+        self.ui.diarizationDockWidget.setFont(base_font)
 
-    def finalize_load_corpus(self, corpus):
-        self.corpus = corpus
-        self.corpus_model.setCorpus(corpus)
+    def download_language_model(self):
+        self.download_worker.set_params(self.db_string, 'language_model', self.sender().text(), self.model_manager)
+        self.download_worker.start()
 
-        self.loading_corpus = False
-        self.corpusLoaded.emit()
-        self.change_speaker_act.widget.refresh_speaker_dropdown(self.corpus.speakers)
-        self.set_application_state('loaded')
+    def download_g2p_model(self):
+        self.download_worker.set_params(self.db_string, 'g2p', self.sender().text(), self.model_manager)
+        self.download_worker.start()
 
-    def change_acoustic_model(self, lang=None):
-        if not isinstance(lang, str):
-            am_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select an acoustic model',
-                                                               directory=self.default_directory,
-                                                               filter="Model files (*.zip)")
-        else:
-            am_path = AcousticModel.get_pretrained_path(lang)
-        if not am_path or not os.path.exists(am_path):
-            return
-        self.default_directory = os.path.dirname(am_path)
-        self.config['current_acoustic_model_path'] = am_path
-        self.load_acoustic_model()
-        self.configUpdated.emit(self.config)
+    def download_acoustic_model(self):
+        self.download_worker.set_params(self.db_string, 'acoustic', self.sender().text(), self.model_manager)
+        self.download_worker.start()
+
+    def download_dictionary(self):
+        self.download_worker.set_params(self.db_string, 'dictionary', self.sender().text(), self.model_manager)
+        self.download_worker.start()
+
+    def download_ivector_extractor(self):
+        self.download_worker.set_params(self.db_string, 'ivector', self.sender().text(), self.model_manager)
+        self.download_worker.start()
 
     def load_acoustic_model(self):
-        self.loading_am = True
-        am_path = self.config['current_acoustic_model_path']
-        if am_path is None or not os.path.exists(am_path):
-            return
-        am_name, _ = os.path.splitext(os.path.basename(am_path))
-        self.acoustic_model = AcousticModel(am_path, root_directory=self.config['temp_directory'])
-        self.acousticModelLoaded.emit(self.acoustic_model)
-        self.loading_am = False
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.acoustic_model)).filter_by(current=True).first()
+            if c is None or c.acoustic_model is None:
+                return
+            self.acoustic_model_worker.set_params(c.acoustic_model.path)
+        self.acoustic_model_worker.start()
 
-    def change_ivector_extractor(self, lang=None):
-        if not isinstance(lang, str):
-            ie_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select a ivector extractor model',
-                                                               directory=self.default_directory,
+    def change_acoustic_model(self):
+        m_id = self.sender().data()
+        if m_id:
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                m = session.get(anchor.db.AcousticModel, m_id)
+                am_path = m.path
+
+                session.query(
+                    anchor.db.AnchorCorpus
+                ).filter_by(current=True).update({anchor.db.AnchorCorpus.acoustic_model_id: m_id})
+                session.commit()
+        else:
+            am_path, _ = QtWidgets.QFileDialog.getOpenFileName(parent=self, caption='Select an acoustic model',
+                                                               dir=self.settings.value(AnchorSettings.DEFAULT_ACOUSTIC_DIRECTORY),
                                                                filter="Model files (*.zip)")
+            self.settings.setValue(AnchorSettings.DEFAULT_ACOUSTIC_DIRECTORY, os.path.dirname(am_path))
+            if not am_path or not os.path.exists(am_path):
+                return
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(
+                    anchor.db.AnchorCorpus
+                ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.acoustic_model)).filter_by(current=True).first()
+                m = session.query(anchor.db.AcousticModel).filter_by(path=am_path).first()
+                if not m:
+                    m_name = os.path.splitext(os.path.basename(am_path))[0]
+                    m = anchor.db.AcousticModel(name=m_name, path=am_path, available_locally=True)
+                    session.add(m)
+                c.acoustic_model = m
+                session.commit()
+
+        self.acoustic_model_worker.set_params(am_path)
+        self.acoustic_model_worker.start()
+
+    def change_custom_mapping(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(parent=self, caption='Select a mapping file',
+                                                           dir=self.settings.value(AnchorSettings.DEFAULT_DIRECTORY),
+                                                           filter="Configuration files (*.yaml)")
+
+        if not path or not os.path.exists(path):
+            return
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.dictionary)).filter_by(current=True).first()
+            c.custom_mapping_path = path
+        self.settings.setValue(AnchorSettings.DEFAULT_DIRECTORY, os.path.dirname(path))
+        self.settings.sync()
+        self.dictionary_model.set_custom_mapping(path)
+
+    def change_dictionary(self):
+        m_id = self.sender().data()
+        if m_id:
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                m = session.get(anchor.db.Dictionary, m_id)
+                dictionary_path = m.path
+
+                session.query(
+                    anchor.db.AnchorCorpus
+                ).filter_by(current=True).update({anchor.db.AnchorCorpus.dictionary_id: m_id})
+                session.commit()
         else:
-            ie_path = IvectorExtractorModel.get_pretrained_path(lang)
-        if not ie_path or not os.path.exists(ie_path):
-            return
-        self.default_directory = os.path.dirname(ie_path)
-        self.config['current_ivector_extractor_path'] = ie_path
-        self.load_ivector_extractor()
-        self.configUpdated.emit(self.config)
+            dictionary_path, _ = QtWidgets.QFileDialog.getOpenFileName(parent=self, caption='Select a dictionary',
+                                                                       dir=self.settings.value(AnchorSettings.DEFAULT_DICTIONARY_DIRECTORY),
+                                                                       filter="Dictionary files (*.dict *.txt *.yaml)")
+            if not dictionary_path or not os.path.exists(dictionary_path):
+                return
+            self.settings.setValue(AnchorSettings.DEFAULT_DICTIONARY_DIRECTORY, os.path.dirname(dictionary_path))
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(
+                    anchor.db.AnchorCorpus
+                ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.dictionary)).filter_by(current=True).first()
+                d = session.query(anchor.db.Dictionary).filter_by(path=dictionary_path).first()
+                if not d:
+                    d_name = os.path.splitext(os.path.basename(dictionary_path))[0]
+                    d = anchor.db.Dictionary(name=d_name, path=dictionary_path, available_locally=True)
+                    session.add(d)
+                c.dictionary = d
+                session.commit()
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(
+            f'Loading {dictionary_path}...')
+        self.dictionary_worker.set_params(self.corpus_model.corpus, dictionary_path)
+        self.dictionary_worker.start()
 
-    def load_ivector_extractor(self):
-        self.loading_ie = True
-        ie_path = self.config['current_ivector_extractor_path']
-        if ie_path is None or not os.path.exists(ie_path):
-            return
-        ie_name, _ = os.path.splitext(os.path.basename(ie_path))
-        self.ie_model = IvectorExtractorModel(ie_path, root_directory=self.config['temp_directory'])
-        self.ivectorExtractorLoaded.emit(self.ie_model)
-        self.loading_ie = False
+    def calculate_oovs(self):
+        self.set_application_state('loading')
+        self.ui.loadingScreen.setCorpusName(
+            f'Calculating OOV counts...')
+        self.oov_worker.set_params(self.corpus_model.corpus)
+        self.oov_worker.start()
 
-    def change_dictionary(self, lang=None):
-        if not isinstance(lang, str):
-            lang = None
-        if lang is None:
-            dictionary_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select a dictionary',
-                                                                       directory=self.default_directory,
-                                                                       filter="Dictionary files (*.dict *.txt)")
+    def change_language_model(self):
+        m_id = self.sender().data()
+        if m_id:
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                m = session.get(anchor.db.LanguageModel, m_id)
+                path = m.path
+
+                session.query(
+                    anchor.db.AnchorCorpus
+                ).filter_by(current=True).update({anchor.db.AnchorCorpus.language_model_id: m_id})
+                session.commit()
         else:
-            dictionary_path = DictionaryModel.get_pretrained_path(lang)
-        if not dictionary_path or not os.path.exists(dictionary_path):
-            return
-        self.default_directory = os.path.dirname(dictionary_path)
-        self.config['current_dictionary_path'] = dictionary_path
-        self.load_dictionary()
-        self.configUpdated.emit(self.config)
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(parent=self, caption='Select a language model',
+                                                               dir=self.settings.value(AnchorSettings.DEFAULT_LM_DIRECTORY),
+                                                               filter="Model files (*.zip)")
+            if not path or not os.path.exists(path):
+                return
+            self.settings.setValue(AnchorSettings.DEFAULT_LM_DIRECTORY, os.path.dirname(path))
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(
+                    anchor.db.AnchorCorpus
+                ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.language_model)).filter_by(current=True).first()
+                m = session.query(anchor.db.LanguageModel).filter_by(path=path).first()
+                if not m:
+                    m_name = os.path.splitext(os.path.basename(path))[0]
+                    m = anchor.db.LanguageModel(name=m_name, path=path, available_locally=True)
+                    session.add(m)
+                c.language_model = m
+                session.commit()
+        self.language_model_worker.set_params(path)
+        self.language_model_worker.start()
 
-    def load_dictionary(self):
-        self.loading_dictionary = True
-        dictionary_path = self.config['current_dictionary_path']
-        if dictionary_path is None or not os.path.exists(dictionary_path):
-            return
-
-        dictionary_name, _ = os.path.splitext(os.path.basename(dictionary_path))
-        dictionary_temp_dir = os.path.join(self.config['temp_directory'], dictionary_name)
-        self.dictionary = PronunciationDictionary(dictionary_path, dictionary_temp_dir)
-        self.dictionaryLoaded.emit(self.dictionary)
-        self.corpus_model.setDictionary(self.dictionary)
-        self.loading_dictionary = False
-        self.save_dictionary_act.setEnabled(False)
-        self.reset_dictionary_act.setEnabled(False)
-
-    def save_file(self):
-        if not self.corpus_model.corpus:
-            return
-        if self.saving_utterance:
-            return
-        self.saving_utterance = True
-
-        self.status_label.setText('Saving {}...'.format(self.corpus_model.file_name))
-        try:
-            self.corpus_model.corpus.save_text_file(self.corpus_model.file_name)
-        except Exception as e:
-            exc_type, exc_value, exc_traceback = sys.exc_info()
-            print(traceback.format_exception(exc_type, exc_value, exc_traceback))
-            reply = DetailedMessageBox()
-            reply.setDetailedText('\n'.join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
-            ret = reply.exec_()
-        self.saving_utterance = False
-        self.save_current_file_act.setEnabled(False)
-        self.status_label.setText('Saved {}!'.format(self.corpus_model.file_name))
-
-    def save_dictionary(self):
-        if self.saving_dictionary:
-            return
-        words = self.dictionary_widget.create_dictionary_for_save()
-        if not words:
-            self.save_dictionary_act.setText('Issue encountered')
-            return
-        self.dictionary.words = words
-        self.saving_dictionary = True
-        with open(self.config['current_dictionary_path'], 'w', encoding='utf8') as f:
-            for word, prons in sorted(self.dictionary.words.items()):
-                for p in prons:
-                    pronunciation = ' '.join(p['pronunciation'])
-                    f.write('{} {}\n'.format(word, pronunciation))
-        self.saving_dictionary = False
-        self.dictionaryLoaded.emit(self.dictionary)
-        self.save_dictionary_act.setEnabled(False)
-        self.reset_dictionary_act.setEnabled(False)
-        self.save_dictionary_act.setText('Dictionary saved!')
+    def load_language_model(self):
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.language_model)).filter_by(current=True).first()
+            if c is None or c.language_model is None:
+                return
+            self.language_model_worker.set_params(c.language_model.path)
+        self.language_model_worker.start()
+        self.settings.setValue(AnchorSettings.DEFAULT_LM_DIRECTORY, os.path.dirname(c.language_model.path))
 
     def load_g2p(self):
-        self.loading_g2p = True
-        g2p_path = self.config['current_g2p_model_path']
-        if g2p_path is None or not os.path.exists(g2p_path):
-            return
-        g2p_name, _ = os.path.splitext(os.path.basename(g2p_path))
-        self.g2p_model = G2PModel(g2p_path, root_directory=self.config['temp_directory'])
-        self.g2pLoaded.emit(self.g2p_model)
-        self.loading_g2p = False
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.g2p_model)).filter_by(current=True).first()
+            if c is None or c.g2p_model is None:
+                return
+            self.g2p_model_worker.set_params(c.g2p_model.path)
+        self.g2p_model_worker.start()
+        self.settings.setValue(AnchorSettings.DEFAULT_G2P_DIRECTORY, os.path.dirname(c.g2p_model.path))
 
-    def change_g2p(self, lang=None):
-        if not isinstance(lang, str):
-            g2p_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select a g2p model',
-                                                                directory=self.default_directory,
+    def change_g2p(self):
+        m_id = self.sender().data()
+        if m_id:
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                m = session.get(anchor.db.G2PModel, m_id)
+                g2p_path = m.path
+
+                session.query(
+                    anchor.db.AnchorCorpus
+                ).filter_by(current=True).update({anchor.db.AnchorCorpus.g2p_model_id: m_id})
+                session.commit()
+        else:
+            g2p_path, _ = QtWidgets.QFileDialog.getOpenFileName(parent=self, caption='Select a g2p model',
+                                                                dir=self.settings.value(AnchorSettings.DEFAULT_G2P_DIRECTORY),
                                                                 filter="Model files (*.zip)")
-        else:
-            g2p_path = G2PModel.get_pretrained_path(lang)
-        if not g2p_path or not os.path.exists(g2p_path):
-            return
-        self.default_directory = os.path.dirname(g2p_path)
-        self.config['current_g2p_model_path'] = g2p_path
-        self.load_g2p()
-        self.configUpdated.emit(self.config)
+            if not g2p_path or not os.path.exists(g2p_path):
+                return
+            self.settings.setValue(AnchorSettings.DEFAULT_G2P_DIRECTORY, os.path.dirname(g2p_path))
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(
+                    anchor.db.AnchorCorpus
+                ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.g2p_model)).filter_by(current=True).first()
+                m = session.query(anchor.db.G2PModel).filter_by(path=g2p_path).first()
+                if not m:
+                    m_name = os.path.splitext(os.path.basename(g2p_path))[0]
+                    m = anchor.db.G2PModel(name=m_name, path=g2p_path, available_locally=True)
+                    session.add(m)
+                c.g2p_model = m
+                session.commit()
+        self.g2p_model_worker.set_params(g2p_path)
+        self.g2p_model_worker.start()
 
-    def load_lm(self):
-        pass
+    def change_ivector_extractor(self):
+        m_id = self.sender().data()
+        if m_id:
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                m = session.get(anchor.db.IvectorExtractor, m_id)
+                ie_path = m.path
 
-    def change_lm(self, lang=None):
-        if not isinstance(lang, str):
-            lm_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select a language model',
-                                                               directory=self.default_directory,
-                                                               filter="Model files (*.zip)")
+                session.query(
+                    anchor.db.AnchorCorpus
+                ).filter_by(current=True).update({anchor.db.AnchorCorpus.ivector_extractor_id: m_id})
+                session.commit()
         else:
-            lm_path = LanguageModel.get_pretrained_path(lang)
-        if not lm_path or not os.path.exists(lm_path):
+            ie_path, _ = QtWidgets.QFileDialog.getOpenFileName(caption='Select a ivector extractor model',
+                                                               dir=self.settings.value(self.settings.DEFAULT_IVECTOR_DIRECTORY),
+                                                               filter="Ivector extractors (*.ivector *.zip)", parent=self)
+
+            if not ie_path or not os.path.exists(ie_path):
+                return
+            self.settings.setValue(AnchorSettings.DEFAULT_IVECTOR_DIRECTORY, os.path.dirname(ie_path))
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(
+                    anchor.db.AnchorCorpus
+                ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.ivector_extractor)).filter_by(current=True).first()
+                m = session.query(anchor.db.IvectorExtractor).filter_by(path=ie_path).first()
+                if not m:
+                    m_name = os.path.splitext(os.path.basename(ie_path))[0]
+                    m = anchor.db.IvectorExtractor(name=m_name, path=ie_path, available_locally=True)
+                    session.add(m)
+                c.ivector_extractor = m
+                session.commit()
+        self.ivector_extractor_worker.set_params(ie_path)
+        self.ivector_extractor_worker.start()
+
+    def load_ivector_extractor(self):
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            c = session.query(
+                anchor.db.AnchorCorpus
+            ).options(sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.ivector_extractor)).filter_by(current=True).first()
+            if c is None or c.ivector_extractor is None:
+                return
+            self.ivector_extractor_worker.set_params(c.ivector_extractor.path)
+        self.ivector_extractor_worker.start()
+        self.settings.setValue(AnchorSettings.DEFAULT_IVECTOR_DIRECTORY, os.path.dirname(c.ivector_extractor.path))
+
+    def export_files(self):
+        if not self.corpus_model.corpus:
             return
-        self.default_directory = os.path.dirname(lm_path)
-        self.config['current_language_model_path'] = lm_path
-        self.load_lm()
-        self.configUpdated.emit(self.config)
+        try:
+            self.corpus_model.export_changes()
+        except Exception as e:
+            exctype, value = sys.exc_info()[:2]
+            self.handle_error((exctype, value, traceback.format_exc()))
+
+    def handle_error(self, trace_args):
+        exctype, value, trace = trace_args
+        reply = DetailedMessageBox(detailed_message=trace)
+        reply.reportBug.connect(self.ui.reportBugAct.trigger)
+        _ = reply.exec_()
+        self.check_actions()
+        if self.corpus_model.corpus is not None:
+            self.set_application_state('loaded')
+
+    def save_dictionary(self):
+        self.ui.saveDictionaryAct.setEnabled(False)
+        self.execute_runnable('Exporting dictionary', self.save_completed, [{'dictionary_id':self.dictionary_model.current_dictionary_id}])
+
+
+
+class FormLayout(QtWidgets.QVBoxLayout):
+    def addRow(self, label, widget):
+        row_layout = QtWidgets.QHBoxLayout()
+        label = QtWidgets.QLabel(label)
+        label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        row_layout.addWidget(label)
+        row_layout.addWidget(widget)
+        super(FormLayout, self).addLayout(row_layout)
+
+
+class DetailedMessageBox(QtWidgets.QDialog):  # pragma: no cover
+    reportBug = QtCore.Signal()
+    def __init__(self, detailed_message, *args,**kwargs):
+        super(DetailedMessageBox, self).__init__(*args, **kwargs)
+        self.ui = Ui_ErrorDialog()
+        self.ui.setupUi(self)
+        self.settings = AnchorSettings()
+        self.ui.detailed_message.setText(detailed_message)
+        self.setStyleSheet(self.settings.style_sheet)
+        self.ui.buttonBox.report_bug_button.clicked.connect(self.reportBug.emit)
+        self.ui.buttonBox.rejected.connect(self.reject)
+        self.ui.label.setFont(self.settings.font)
+        self.ui.label_2.setFont(self.settings.font)
+        self.ui.detailed_message.setFont(self.settings.font)
+
+
+class OptionsDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super(OptionsDialog, self).__init__(parent=parent)
+        self.ui = Ui_PreferencesDialog()
+        self.ui.setupUi(self)
+        self.settings = AnchorSettings()
+        config = MfaConfiguration()
+
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
+
+        self.ui.primaryBaseEdit.set_color(self.settings.value(self.settings.PRIMARY_BASE_COLOR))
+        self.ui.primaryLightEdit.set_color(self.settings.value(self.settings.PRIMARY_LIGHT_COLOR))
+        self.ui.primaryDarkEdit.set_color(self.settings.value(self.settings.PRIMARY_DARK_COLOR))
+        self.ui.primaryVeryLightEdit.set_color(self.settings.value(self.settings.PRIMARY_VERY_LIGHT_COLOR))
+        self.ui.primaryVeryDarkEdit.set_color(self.settings.value(self.settings.PRIMARY_VERY_DARK_COLOR))
+
+        self.ui.accentBaseEdit.set_color(self.settings.value(self.settings.ACCENT_BASE_COLOR))
+        self.ui.accentLightEdit.set_color(self.settings.value(self.settings.ACCENT_LIGHT_COLOR))
+        self.ui.accentDarkEdit.set_color(self.settings.value(self.settings.ACCENT_DARK_COLOR))
+        self.ui.accentVeryLightEdit.set_color(self.settings.value(self.settings.ACCENT_VERY_LIGHT_COLOR))
+        self.ui.accentVeryDarkEdit.set_color(self.settings.value(self.settings.ACCENT_VERY_DARK_COLOR))
+
+        self.ui.mainTextColorEdit.set_color(self.settings.value(self.settings.MAIN_TEXT_COLOR))
+        self.ui.selectedTextColorEdit.set_color(self.settings.value(self.settings.SELECTED_TEXT_COLOR))
+        self.ui.errorColorEdit.set_color(self.settings.value(self.settings.ERROR_COLOR))
+
+        self.ui.fontEdit.set_font(self.settings.font)
+
+        self.ui.playAudioShortcutEdit.setKeySequence(self.settings.value(self.settings.PLAY_KEYBIND))
+        self.ui.zoomInShortcutEdit.setKeySequence(self.settings.value(self.settings.ZOOM_IN_KEYBIND))
+        self.ui.zoomToSelectionShortcutEdit.setKeySequence(self.settings.value(self.settings.ZOOM_TO_SELECTION_KEYBIND))
+        self.ui.zoomOutShortcutEdit.setKeySequence(self.settings.value(self.settings.ZOOM_OUT_KEYBIND))
+        self.ui.panLeftShortcutEdit.setKeySequence(self.settings.value(self.settings.PAN_LEFT_KEYBIND))
+        self.ui.panRightShortcutEdit.setKeySequence(self.settings.value(self.settings.PAN_RIGHT_KEYBIND))
+        self.ui.mergeShortcutEdit.setKeySequence(self.settings.value(self.settings.MERGE_KEYBIND))
+        self.ui.splitShortcutEdit.setKeySequence(self.settings.value(self.settings.SPLIT_KEYBIND))
+        self.ui.deleteShortcutEdit.setKeySequence(self.settings.value(self.settings.DELETE_KEYBIND))
+        self.ui.saveShortcutEdit.setKeySequence(self.settings.value(self.settings.SAVE_KEYBIND))
+        self.ui.searchShortcutEdit.setKeySequence(self.settings.value(self.settings.SEARCH_KEYBIND))
+        self.ui.undoShortcutEdit.setKeySequence(self.settings.value(self.settings.UNDO_KEYBIND))
+        self.ui.redoShortcutEdit.setKeySequence(self.settings.value(self.settings.REDO_KEYBIND))
+
+        self.ui.autosaveOnExitCheckBox.setChecked(self.settings.value(self.settings.AUTOSAVE))
+        self.ui.cudaCheckBox.setChecked(self.settings.value(self.settings.CUDA))
+        self.ui.autoloadLastUsedCorpusCheckBox.setChecked(self.settings.value(self.settings.AUTOLOAD))
+
+        self.ui.audioDeviceEdit.clear()
+        for o in QtMultimedia.QMediaDevices.audioOutputs():
+
+            self.ui.audioDeviceEdit.addItem(o.description(), userData=o.id())
+        self.ui.numJobsEdit.setValue(config.profiles['anchor'].num_jobs)
+        try:
+            self.ui.useMpCheckBox.setChecked(config.profiles['anchor'].use_mp)
+        except TypeError:
+            self.ui.useMpCheckBox.setChecked(True)
+        self.setWindowTitle('Preferences')
+
+    def accept(self) -> None:
+        self.settings.setValue(self.settings.PRIMARY_BASE_COLOR, self.ui.primaryBaseEdit.color)
+        self.settings.setValue(self.settings.PRIMARY_LIGHT_COLOR, self.ui.primaryLightEdit.color)
+        self.settings.setValue(self.settings.PRIMARY_DARK_COLOR, self.ui.primaryDarkEdit.color)
+        self.settings.setValue(self.settings.PRIMARY_VERY_LIGHT_COLOR, self.ui.primaryVeryLightEdit.color)
+        self.settings.setValue(self.settings.PRIMARY_VERY_DARK_COLOR, self.ui.primaryVeryDarkEdit.color)
+
+        self.settings.setValue(self.settings.ACCENT_BASE_COLOR, self.ui.accentBaseEdit.color)
+        self.settings.setValue(self.settings.ACCENT_LIGHT_COLOR, self.ui.accentLightEdit.color)
+        self.settings.setValue(self.settings.ACCENT_DARK_COLOR, self.ui.accentDarkEdit.color)
+        self.settings.setValue(self.settings.ACCENT_VERY_LIGHT_COLOR, self.ui.accentVeryLightEdit.color)
+        self.settings.setValue(self.settings.ACCENT_VERY_DARK_COLOR, self.ui.accentVeryDarkEdit.color)
+
+        self.settings.setValue(self.settings.MAIN_TEXT_COLOR, self.ui.mainTextColorEdit.color)
+        self.settings.setValue(self.settings.SELECTED_TEXT_COLOR, self.ui.selectedTextColorEdit.color)
+        self.settings.setValue(self.settings.ERROR_COLOR, self.ui.errorColorEdit.color)
+
+        self.settings.setValue(self.settings.FONT, self.ui.fontEdit.font.toString())
+
+        self.settings.setValue(self.settings.PLAY_KEYBIND, self.ui.playAudioShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.ZOOM_IN_KEYBIND, self.ui.zoomInShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.ZOOM_OUT_KEYBIND, self.ui.zoomOutShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.ZOOM_TO_SELECTION_KEYBIND, self.ui.zoomToSelectionShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.PAN_LEFT_KEYBIND, self.ui.panLeftShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.PAN_RIGHT_KEYBIND, self.ui.panRightShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.MERGE_KEYBIND, self.ui.mergeShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.SPLIT_KEYBIND, self.ui.splitShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.DELETE_KEYBIND, self.ui.deleteShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.SAVE_KEYBIND, self.ui.saveShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.SEARCH_KEYBIND, self.ui.searchShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.UNDO_KEYBIND, self.ui.undoShortcutEdit.keySequence().toString())
+        self.settings.setValue(self.settings.REDO_KEYBIND, self.ui.redoShortcutEdit.keySequence().toString())
+
+        self.settings.setValue(self.settings.AUTOLOAD, self.ui.autoloadLastUsedCorpusCheckBox.isChecked())
+        self.settings.setValue(self.settings.CUDA, self.ui.cudaCheckBox.isChecked())
+        self.settings.setValue(self.settings.AUTOSAVE, self.ui.autosaveOnExitCheckBox.isChecked())
+        self.settings.setValue(self.settings.AUDIO_DEVICE, self.ui.audioDeviceEdit.currentData())
+        self.settings.sync()
+        config = MfaConfiguration()
+        config.current_profile_name = 'anchor'
+        config.profiles['anchor'].use_mp = self.ui.useMpCheckBox.isChecked()
+        config.profiles['anchor'].num_jobs = int(self.ui.numJobsEdit.value())
+        config.profiles['anchor'].github_token = self.ui.githubTokenEdit.text()
+        config.save()
+        super(OptionsDialog, self).accept()
+
+
+class Application(QtWidgets.QApplication):
+    pass
