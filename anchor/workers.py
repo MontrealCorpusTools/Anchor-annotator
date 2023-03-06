@@ -30,7 +30,6 @@ import typing
 import sqlalchemy
 import soundfile as sf
 from queue import Queue
-from line_profiler_pycharm import profile
 
 from anchor.settings import AnchorSettings
 from sqlalchemy.orm import joinedload, selectinload, subqueryload
@@ -1290,7 +1289,6 @@ def dictionaries_function(Session, progress_callback: typing.Optional[ProgressCa
     return dictionaries, word_sets, speaker_mapping
 
 
-@profile
 def files_function(Session: sqlalchemy.orm.scoped_session, progress_callback: typing.Optional[ProgressCallback]=None, stopped:typing.Optional[Stopped]=None):
     begin = time.time()
     conn = Session.bind.raw_connection()

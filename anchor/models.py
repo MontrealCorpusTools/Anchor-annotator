@@ -1438,7 +1438,6 @@ class CorpusModel(TableModel):
     def refresh_speakers(self):
         self.runFunction.emit('Loading speakers', self.finish_update_speakers, [])
 
-    #@profile
     def data(self, index, role):
         try:
             data = self._data[index.row()][index.column()]

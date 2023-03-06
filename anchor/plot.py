@@ -5,7 +5,6 @@ import re
 import logging
 import typing
 from typing import Optional
-from line_profiler_pycharm import profile
 from threading import Lock
 
 import numpy as np
@@ -384,7 +383,6 @@ class UtteranceView(QtWidgets.QWidget):
         self.selection_model.channelChanged.connect(self.update_channel)
         self.selection_model.resetView.connect(self.reset_plot)
 
-    @profile
     def finalize_loading_utterances(self, results):
         utterances, file_id = results
         if self.selection_model.current_file is None or file_id != self.selection_model.current_file.id:
@@ -501,7 +499,6 @@ class UtteranceView(QtWidgets.QWidget):
     def update_channel(self):
         self.get_latest_waveform()
 
-    @profile
     def set_up_new_file(self, *args):
         self.audio_plot.spectrogram.hide()
         self.audio_plot.wave_form.hide()
@@ -602,7 +599,6 @@ class UtteranceView(QtWidgets.QWidget):
         self.audio_plot.pitch_track.clear()
         self.audio_plot.spectrogram.clear()
 
-    @profile
     def update_plot(self, *args):
         if self.corpus_model.rowCount() == 0:
             return
@@ -739,7 +735,6 @@ class SpeakerComboBox(QtWidgets.QComboBox):
         super().hidePopup()
 
 class UtteranceSpeakerDropDownItem(pg.TextItem):
-    @profile
     def __init__(self, utterance, corpus_model: CorpusModel, font=None, anchor=(1, 1)):
         self.corpus_model = corpus_model
         self.anchor = pg.Point(anchor)
@@ -1188,7 +1183,7 @@ class MfaRegion(pg.LinearRegionItem):
     viewRequested = QtCore.Signal(object, object)
 
     settings = AnchorSettings()
-    @profile
+
     def __init__(self, item: CtmInterval, corpus_model:CorpusModel, dictionary_model: typing.Optional[DictionaryTableModel],
                  selection_model:CorpusSelectionModel, selected:bool=False,
                  bottom_point:float=0, top_point:float = 1):
@@ -1350,7 +1345,6 @@ class MfaRegion(pg.LinearRegionItem):
 
 class AlignmentRegion(MfaRegion):
 
-    @profile
     def __init__(self, phone_interval:CtmInterval, corpus_model:CorpusModel,
                  selection_model:CorpusSelectionModel, selected:bool=False,
                  bottom_point:float=0, top_point:float = 1):
@@ -1365,7 +1359,6 @@ class AlignmentRegion(MfaRegion):
         self.text.setParentItem(self)
         self.per_tier_range = self.top_point - self.bottom_point
 
-    @profile
     def boundingRect(self):
         br = QtCore.QRectF(self.viewRect())  # bounds of containing ViewBox mapped to local coords.
         vb = self.getViewBox()
@@ -1404,21 +1397,18 @@ class AlignmentRegion(MfaRegion):
 
 class PhoneRegion(AlignmentRegion):
 
-    @profile
     def __init__(self, phone_interval:CtmInterval, corpus_model:CorpusModel,
                  selection_model:CorpusSelectionModel, selected:bool=False,
                  bottom_point:float=0, top_point:float = 1):
         super().__init__(phone_interval, corpus_model, selection_model, selected, bottom_point, top_point)
 
 class WordRegion(AlignmentRegion):
-    @profile
     def __init__(self, phone_interval:CtmInterval, corpus_model:CorpusModel,
                  selection_model:CorpusSelectionModel, selected:bool=False,
                  bottom_point:float=0, top_point:float = 1):
         super().__init__(phone_interval, corpus_model, selection_model, selected, bottom_point, top_point)
 
 class UtteranceRegion(MfaRegion):
-    @profile
     def __init__(self, utterance: Utterance, corpus_model:CorpusModel, dictionary_model: DictionaryTableModel,
                  selection_model:CorpusSelectionModel, selected:bool=False,
                  bottom_point:float=0, top_point:float = 1, extra_tiers=None, available_speakers=None, search_term=None):
@@ -2069,7 +2059,6 @@ class SpeakerTier(pg.GraphicsObject):
         self.visible_utterances = {}
         self.other_intervals = []
 
-    @profile
     def refresh(self, *args):
         if self.selection_model.min_time is None:
             return
