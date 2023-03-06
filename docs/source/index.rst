@@ -91,4 +91,3 @@ Attribution
 ===========
 
 The Anchor Annotator uses icons from `FontAwesome <https://fontawesome.com/>`_.
-

@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import collections
 import typing
+
+import psycopg2.errors
 import pynini.lib
 import sqlalchemy
-import numpy as np
-import os
-import psycopg2.errors
-from sqlalchemy.orm import make_transient, make_transient_to_detached
-
-from PySide6 import QtGui, QtCore, QtWidgets, QtMultimedia, QtSvg
-from montreal_forced_aligner.db import File, Speaker, Utterance, Pronunciation, Word, SpeakerOrdering, Corpus
 from montreal_forced_aligner.data import WordType
-from montreal_forced_aligner.corpus.classes import UtteranceData
+from montreal_forced_aligner.db import (
+    File,
+    Pronunciation,
+    Speaker,
+    SpeakerOrdering,
+    Utterance,
+    Word,
+)
+from PySide6 import QtCore, QtGui
+from sqlalchemy.orm import make_transient
 
 if typing.TYPE_CHECKING:
-    from anchor.models import CorpusModel, DictionaryTableModel, TextFilterQuery, SpeakerModel
+    from anchor.models import CorpusModel, DictionaryTableModel, SpeakerModel, TextFilterQuery
 
 
 class CorpusCommand(QtGui.QUndoCommand):
@@ -59,6 +63,7 @@ class CorpusCommand(QtGui.QUndoCommand):
             self.corpus_model.session.commit()
         self.update_data()
 
+
 class DictionaryCommand(QtGui.QUndoCommand):
     def __init__(self, dictionary_model: DictionaryTableModel):
         super().__init__()
@@ -96,6 +101,7 @@ class DictionaryCommand(QtGui.QUndoCommand):
                     pass
             self.dictionary_model.corpus_model.session.commit()
         self.dictionary_model.update_data()
+
 
 class SpeakerCommand(QtGui.QUndoCommand):
     def __init__(self, speaker_model: SpeakerModel):
@@ -142,13 +148,18 @@ class SpeakerCommand(QtGui.QUndoCommand):
             self.speaker_model.corpus_model.session.commit()
         self.update_data()
 
+
 class DeleteUtteranceCommand(CorpusCommand):
     def __init__(self, deleted_utterances: list[Utterance], corpus_model: CorpusModel):
         super().__init__(corpus_model)
         self.deleted_utterances = deleted_utterances
         self.resets_tier = True
-        self.channels = [x.channel if x.channel is not None else 0 for x in self.deleted_utterances]
-        self.setText(QtCore.QCoreApplication.translate('DeleteUtteranceCommand', 'Delete utterances'))
+        self.channels = [
+            x.channel if x.channel is not None else 0 for x in self.deleted_utterances
+        ]
+        self.setText(
+            QtCore.QCoreApplication.translate("DeleteUtteranceCommand", "Delete utterances")
+        )
 
     def _redo(self) -> None:
         for utt in self.deleted_utterances:
@@ -181,8 +192,12 @@ class SplitUtteranceCommand(CorpusCommand):
         super().__init__(corpus_model)
         self.split_utterances = split_utterances
         self.resets_tier = True
-        self.channels = [x[0].channel if x[0].channel is not None else 0 for x in self.split_utterances]
-        self.setText(QtCore.QCoreApplication.translate('SplitUtteranceCommand', 'Split utterances'))
+        self.channels = [
+            x[0].channel if x[0].channel is not None else 0 for x in self.split_utterances
+        ]
+        self.setText(
+            QtCore.QCoreApplication.translate("SplitUtteranceCommand", "Split utterances")
+        )
 
     def _redo(self) -> None:
         for i, splits in enumerate(self.split_utterances):
@@ -237,7 +252,12 @@ class SplitUtteranceCommand(CorpusCommand):
 
 
 class MergeUtteranceCommand(CorpusCommand):
-    def __init__(self, unmerged_utterances: list[Utterance], merged_utterance: Utterance, corpus_model: CorpusModel):
+    def __init__(
+        self,
+        unmerged_utterances: list[Utterance],
+        merged_utterance: Utterance,
+        corpus_model: CorpusModel,
+    ):
         super().__init__(corpus_model)
         self.unmerged_utterances = unmerged_utterances
         self.merged_utterance = merged_utterance
@@ -245,7 +265,9 @@ class MergeUtteranceCommand(CorpusCommand):
         self.channel = self.merged_utterance.channel
         if self.channel is None:
             self.channel = 0
-        self.setText(QtCore.QCoreApplication.translate('MergeUtteranceCommand', 'Merge utterances'))
+        self.setText(
+            QtCore.QCoreApplication.translate("MergeUtteranceCommand", "Merge utterances")
+        )
 
     def _redo(self) -> None:
         for old_utt in self.unmerged_utterances:
@@ -269,7 +291,7 @@ class MergeUtteranceCommand(CorpusCommand):
             old_utt.duration = None
             old_utt.kaldi_id = None
             self.corpus_model.session.add(old_utt)
-        #self.corpus_model.session.refresh(self.merged_utterance)
+        # self.corpus_model.session.refresh(self.merged_utterance)
         self.corpus_model.session.delete(self.merged_utterance)
 
     def redo(self) -> None:
@@ -291,45 +313,59 @@ class MergeSpeakersCommand(CorpusCommand):
         self.resets_tier = True
         self.utt_mapping = collections.defaultdict(list)
         self.file_mapping = collections.defaultdict(list)
-        q = self.corpus_model.session.query(Utterance.id, Utterance.file_id, Utterance.speaker_id).filter(Utterance.speaker_id.in_(self.speakers))
+        q = self.corpus_model.session.query(
+            Utterance.id, Utterance.file_id, Utterance.speaker_id
+        ).filter(Utterance.speaker_id.in_(self.speakers))
         self.files = []
         for utt_id, file_id, speaker_id in q:
             self.utt_mapping[speaker_id].append(utt_id)
             self.file_mapping[speaker_id].append(file_id)
             self.files.append(file_id)
-        self.deleted_speakers = [self.corpus_model.session.query(Speaker).get(x) for x in self.speakers]
-        self.setText(QtCore.QCoreApplication.translate('MergeSpeakersCommand', 'Merge speakers'))
+        self.deleted_speakers = [
+            self.corpus_model.session.query(Speaker).get(x) for x in self.speakers
+        ]
+        self.setText(QtCore.QCoreApplication.translate("MergeSpeakersCommand", "Merge speakers"))
 
     def finish_recalculate(self, *args, **kwargs):
         pass
 
     def _redo(self) -> None:
-        self.corpus_model.session.query(Utterance).filter(Utterance.speaker_id.in_(self.speakers)).update(
-            {Utterance.speaker_id: self.merged_speaker})
-        self.corpus_model.session.query(SpeakerOrdering).filter(SpeakerOrdering.c.speaker_id.in_(self.speakers)).update(
-            {SpeakerOrdering.c.speaker_id: self.merged_speaker})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.speaker_id.in_(self.speakers)
+        ).update({Utterance.speaker_id: self.merged_speaker})
+        self.corpus_model.session.query(SpeakerOrdering).filter(
+            SpeakerOrdering.c.speaker_id.in_(self.speakers)
+        ).update({SpeakerOrdering.c.speaker_id: self.merged_speaker})
         self.corpus_model.session.query(File).filter(File.id.in_(self.files)).update(
-            {File.modified: True})
-        self.corpus_model.runFunction.emit('Recalculate speaker ivector', self.finish_recalculate, [
-            {'speaker_id': self.merged_speaker,
-
-             }])
+            {File.modified: True}
+        )
+        self.corpus_model.runFunction.emit(
+            "Recalculate speaker ivector",
+            self.finish_recalculate,
+            [
+                {
+                    "speaker_id": self.merged_speaker,
+                }
+            ],
+        )
 
         for s in self.deleted_speakers:
             self.corpus_model.session.delete(s)
-
 
     def _undo(self) -> None:
         for s in self.deleted_speakers:
             self.corpus_model.session.merge(s)
         for speaker, utts in self.utt_mapping.items():
             self.corpus_model.session.query(Utterance).filter(Utterance.id.in_(utts)).update(
-                {Utterance.speaker_id: speaker})
+                {Utterance.speaker_id: speaker}
+            )
         for speaker, files in self.file_mapping.items():
-            self.corpus_model.session.query(SpeakerOrdering).filter(SpeakerOrdering.c.file_id.in_(files)).update(
-                {SpeakerOrdering.c.speaker_id: speaker})
+            self.corpus_model.session.query(SpeakerOrdering).filter(
+                SpeakerOrdering.c.file_id.in_(files)
+            ).update({SpeakerOrdering.c.speaker_id: speaker})
         self.corpus_model.session.query(File).filter(File.id.in_(self.files)).update(
-            {File.modified: True})
+            {File.modified: True}
+        )
 
 
 class CreateUtteranceCommand(CorpusCommand):
@@ -340,7 +376,9 @@ class CreateUtteranceCommand(CorpusCommand):
         self.channel = self.new_utterance.channel
         if self.channel is None:
             self.channel = 0
-        self.setText(QtCore.QCoreApplication.translate('CreateUtteranceCommand', 'Create utterance'))
+        self.setText(
+            QtCore.QCoreApplication.translate("CreateUtteranceCommand", "Create utterance")
+        )
 
     def _redo(self) -> None:
         make_transient(self.new_utterance)
@@ -369,24 +407,28 @@ class CreateUtteranceCommand(CorpusCommand):
 
 
 class UpdateUtteranceTimesCommand(CorpusCommand):
-    def __init__(self, utterance: Utterance, begin: float, end:float, corpus_model: CorpusModel):
+    def __init__(self, utterance: Utterance, begin: float, end: float, corpus_model: CorpusModel):
         super().__init__(corpus_model)
         self.utterance_id = utterance.id
         self.new_begin = begin
         self.old_begin = utterance.begin
         self.new_end = end
         self.old_end = utterance.end
-        self.setText(QtCore.QCoreApplication.translate('UpdateUtteranceTimesCommand', 'Update utterance times'))
+        self.setText(
+            QtCore.QCoreApplication.translate(
+                "UpdateUtteranceTimesCommand", "Update utterance times"
+            )
+        )
 
     def _redo(self) -> None:
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance_id).update({
-            Utterance.begin: self.new_begin,
-            Utterance.end: self.new_end})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance_id
+        ).update({Utterance.begin: self.new_begin, Utterance.end: self.new_end})
 
     def _undo(self) -> None:
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance_id).update({
-            Utterance.begin: self.old_begin,
-            Utterance.end: self.old_end})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance_id
+        ).update({Utterance.begin: self.old_begin, Utterance.end: self.old_end})
 
     def update_data(self):
         super().update_data()
@@ -395,35 +437,48 @@ class UpdateUtteranceTimesCommand(CorpusCommand):
 
 
 class UpdateUtteranceTextCommand(CorpusCommand):
-    def __init__(self, utterance: Utterance,  new_text: str, corpus_model: CorpusModel):
+    def __init__(self, utterance: Utterance, new_text: str, corpus_model: CorpusModel):
         super().__init__(corpus_model)
         self.utterance_id = utterance.id
         self.speaker_id = utterance.speaker_id
         self.old_text = utterance.text
         self.new_text = new_text
-        self.setText(QtCore.QCoreApplication.translate('UpdateUtteranceTextCommand', 'Update utterance text'))
+        self.setText(
+            QtCore.QCoreApplication.translate(
+                "UpdateUtteranceTextCommand", "Update utterance text"
+            )
+        )
 
     def _redo(self) -> None:
         oovs = set()
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance_id).update({
-            Utterance.text: self.new_text,
-            Utterance.normalized_text: self.new_text, # FIXME: Update this
-            Utterance.oovs: ' '.join(oovs),
-            Utterance.ignored: not self.new_text})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance_id
+        ).update(
+            {
+                Utterance.text: self.new_text,
+                Utterance.normalized_text: self.new_text,  # FIXME: Update this
+                Utterance.oovs: " ".join(oovs),
+                Utterance.ignored: not self.new_text,
+            }
+        )
 
     def _undo(self) -> None:
         oovs = set()
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance_id).update({
-            Utterance.text: self.old_text,
-            Utterance.oovs: ' '.join(oovs),
-            Utterance.ignored: not self.old_text
-        })
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance_id
+        ).update(
+            {
+                Utterance.text: self.old_text,
+                Utterance.oovs: " ".join(oovs),
+                Utterance.ignored: not self.old_text,
+            }
+        )
 
     def update_data(self):
         super().update_data()
@@ -435,7 +490,7 @@ class UpdateUtteranceTextCommand(CorpusCommand):
     def id(self) -> int:
         return 1
 
-    def mergeWith(self, other:UpdateUtteranceTextCommand) -> bool:
+    def mergeWith(self, other: UpdateUtteranceTextCommand) -> bool:
         if other.id() != self.id() or other.utterance_id != self.utterance_id:
             return False
         self.new_text = other.new_text
@@ -443,22 +498,24 @@ class UpdateUtteranceTextCommand(CorpusCommand):
 
 
 class ReplaceAllCommand(CorpusCommand):
-    def __init__(self, search_query: TextFilterQuery,  replacement_string: str, corpus_model: CorpusModel):
+    def __init__(
+        self, search_query: TextFilterQuery, replacement_string: str, corpus_model: CorpusModel
+    ):
         super().__init__(corpus_model)
         self.search_query = search_query
         self.replacement_string = replacement_string
         self.old_texts = {}
         self.new_texts = None
         self.current_texts = None
-        self.setText(QtCore.QCoreApplication.translate('ReplaceAllCommand', 'Replace all'))
+        self.setText(QtCore.QCoreApplication.translate("ReplaceAllCommand", "Replace all"))
 
     def _redo(self) -> None:
-        mapping = [{'id': k, 'text': v} for k,v in self.new_texts.items()]
+        mapping = [{"id": k, "text": v} for k, v in self.new_texts.items()]
         self.corpus_model.session.bulk_update_mappings(Utterance, mapping)
         self.current_texts = self.new_texts
 
     def _undo(self) -> None:
-        mapping = [{'id': k, 'text': v} for k,v in self.old_texts.items()]
+        mapping = [{"id": k, "text": v} for k, v in self.old_texts.items()]
         self.corpus_model.session.bulk_update_mappings(Utterance, mapping)
         self.current_texts = self.old_texts
 
@@ -466,7 +523,9 @@ class ReplaceAllCommand(CorpusCommand):
         super().update_data()
         self.corpus_model.changeCommandFired.emit()
         self.corpus_model.update_texts(self.current_texts)
-        self.corpus_model.statusUpdate.emit(f'Replaced {len(self.current_texts)} instances of {self.search_query.generate_expression()}')
+        self.corpus_model.statusUpdate.emit(
+            f"Replaced {len(self.current_texts)} instances of {self.search_query.generate_expression()}"
+        )
 
     def finish_replace_all(self, result):
         if result is None:
@@ -479,22 +538,29 @@ class ReplaceAllCommand(CorpusCommand):
 
     def redo(self) -> None:
         if self.new_texts is None:
-            self.corpus_model.runFunction.emit('Replacing query', self.finish_replace_all,
-                                               [self.search_query, self.replacement_string])
+            self.corpus_model.runFunction.emit(
+                "Replacing query",
+                self.finish_replace_all,
+                [self.search_query, self.replacement_string],
+            )
         else:
             super().redo()
 
 
 class ChangeSpeakerCommand(SpeakerCommand):
-    def __init__(self, utterance_ids: typing.List[int],
-                 old_speaker_id: int,
-                 new_speaker_id:int, speaker_model: SpeakerModel):
+    def __init__(
+        self,
+        utterance_ids: typing.List[int],
+        old_speaker_id: int,
+        new_speaker_id: int,
+        speaker_model: SpeakerModel,
+    ):
         super().__init__(speaker_model)
         self.utterance_ids = utterance_ids
         self.old_speaker_id = old_speaker_id
         self.new_speaker_id = new_speaker_id
         self.auto_refresh = False
-        self.setText(QtCore.QCoreApplication.translate('ChangeSpeakerCommand', 'Change speakers'))
+        self.setText(QtCore.QCoreApplication.translate("ChangeSpeakerCommand", "Change speakers"))
 
     def finish_recalculate(self):
         pass
@@ -502,50 +568,76 @@ class ChangeSpeakerCommand(SpeakerCommand):
     def update_data(self):
         super().update_data()
         self.speaker_model.corpus_model.changeCommandFired.emit()
-        self.speaker_model.corpus_model.statusUpdate.emit(f'Changed speaker for {len(self.utterance_ids)} utterances')
+        self.speaker_model.corpus_model.statusUpdate.emit(
+            f"Changed speaker for {len(self.utterance_ids)} utterances"
+        )
         self.speaker_model.speakersChanged.emit()
 
     def finish_changing_speaker(self, new_speaker_id):
         self.new_speaker_id = new_speaker_id
         self.speaker_model.indices_updated(self.utterance_ids, self.old_speaker_id)
-        self.speaker_model.corpus_model.runFunction.emit('Recalculate speaker ivector', self.finish_recalculate, [
-            {'speaker_id': self.old_speaker_id,
-
-             }])
-        self.speaker_model.corpus_model.runFunction.emit('Recalculate speaker ivector', self.finish_recalculate, [
-            {'speaker_id': self.new_speaker_id,
-
-             }])
+        self.speaker_model.corpus_model.runFunction.emit(
+            "Recalculate speaker ivector",
+            self.finish_recalculate,
+            [
+                {
+                    "speaker_id": self.old_speaker_id,
+                }
+            ],
+        )
+        self.speaker_model.corpus_model.runFunction.emit(
+            "Recalculate speaker ivector",
+            self.finish_recalculate,
+            [
+                {
+                    "speaker_id": self.new_speaker_id,
+                }
+            ],
+        )
 
     def _redo(self) -> None:
-        self.speaker_model.corpus_model.runFunction.emit('Changing speakers', self.finish_changing_speaker,
-                                           [self.utterance_ids, self.new_speaker_id, self.old_speaker_id])
+        self.speaker_model.corpus_model.runFunction.emit(
+            "Changing speakers",
+            self.finish_changing_speaker,
+            [self.utterance_ids, self.new_speaker_id, self.old_speaker_id],
+        )
 
     def _undo(self) -> None:
-        self.speaker_model.corpus_model.runFunction.emit('Changing speakers', self.finish_changing_speaker,
-                                           [self.utterance_ids, self.old_speaker_id, self.new_speaker_id])
+        self.speaker_model.corpus_model.runFunction.emit(
+            "Changing speakers",
+            self.finish_changing_speaker,
+            [self.utterance_ids, self.old_speaker_id, self.new_speaker_id],
+        )
 
 
 class UpdateSpeakerCommand(SpeakerCommand):
-    def __init__(self,
-                 speaker_id: int, old_name: str,new_name: str,
-                 speaker_model: SpeakerModel):
+    def __init__(self, speaker_id: int, old_name: str, new_name: str, speaker_model: SpeakerModel):
         super().__init__(speaker_model)
         self.speaker_id = speaker_id
         self.old_name = old_name
         self.new_name = new_name
-        self.setText(QtCore.QCoreApplication.translate('UpdateSpeakerCommand', 'Update speaker name'))
-
+        self.setText(
+            QtCore.QCoreApplication.translate("UpdateSpeakerCommand", "Update speaker name")
+        )
 
     def _redo(self) -> None:
-        self.speaker_model.corpus_model.session.query(Speaker).filter(Speaker.id == self.speaker_id).update({Speaker.name: self.new_name})
+        self.speaker_model.corpus_model.session.query(Speaker).filter(
+            Speaker.id == self.speaker_id
+        ).update({Speaker.name: self.new_name})
 
     def _undo(self) -> None:
-        self.speaker_model.corpus_model.session.query(Speaker).filter(Speaker.id == self.speaker_id).update({Speaker.name: self.old_name})
+        self.speaker_model.corpus_model.session.query(Speaker).filter(
+            Speaker.id == self.speaker_id
+        ).update({Speaker.name: self.old_name})
 
 
 class UpdateUtteranceSpeakerCommand(CorpusCommand):
-    def __init__(self, utterance: Utterance,  new_speaker: typing.Union[Speaker, int], corpus_model: CorpusModel):
+    def __init__(
+        self,
+        utterance: Utterance,
+        new_speaker: typing.Union[Speaker, int],
+        corpus_model: CorpusModel,
+    ):
         super().__init__(corpus_model)
         self.utterance = utterance
         self.old_speaker = utterance.speaker
@@ -553,17 +645,36 @@ class UpdateUtteranceSpeakerCommand(CorpusCommand):
         if isinstance(self.new_speaker, Speaker):
             self.new_speaker = self.new_speaker.id
         self.resets_tier = True
-        if self.corpus_model.session.query(SpeakerOrdering).filter(SpeakerOrdering.c.speaker_id==self.new_speaker, SpeakerOrdering.c.file_id == utterance.file_id).first() is None:
-
-            self.corpus_model.session.execute(sqlalchemy.insert(SpeakerOrdering).values(speaker_id=self.new_speaker, file_id=self.utterance.file_id, index=2))
+        if (
+            self.corpus_model.session.query(SpeakerOrdering)
+            .filter(
+                SpeakerOrdering.c.speaker_id == self.new_speaker,
+                SpeakerOrdering.c.file_id == utterance.file_id,
+            )
+            .first()
+            is None
+        ):
+            self.corpus_model.session.execute(
+                sqlalchemy.insert(SpeakerOrdering).values(
+                    speaker_id=self.new_speaker, file_id=self.utterance.file_id, index=2
+                )
+            )
             self.corpus_model.session.commit()
-        self.setText(QtCore.QCoreApplication.translate('UpdateUtteranceSpeakerCommand', 'Update utterance speaker'))
+        self.setText(
+            QtCore.QCoreApplication.translate(
+                "UpdateUtteranceSpeakerCommand", "Update utterance speaker"
+            )
+        )
 
     def _redo(self) -> None:
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance.id).update({Utterance.speaker_id: self.new_speaker})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance.id
+        ).update({Utterance.speaker_id: self.new_speaker})
 
     def _undo(self) -> None:
-        self.corpus_model.session.query(Utterance).filter(Utterance.id == self.utterance.id).update({Utterance.speaker_id: self.old_speaker.id})
+        self.corpus_model.session.query(Utterance).filter(
+            Utterance.id == self.utterance.id
+        ).update({Utterance.speaker_id: self.old_speaker.id})
 
     def update_data(self):
         super().update_data()
@@ -572,23 +683,39 @@ class UpdateUtteranceSpeakerCommand(CorpusCommand):
 
 
 class UpdatePronunciationCommand(DictionaryCommand):
-    def __init__(self, pronunciation_id: int,  old_pronunciation: str, new_pronunciation:str, dictionary_model: DictionaryTableModel):
+    def __init__(
+        self,
+        pronunciation_id: int,
+        old_pronunciation: str,
+        new_pronunciation: str,
+        dictionary_model: DictionaryTableModel,
+    ):
         super().__init__(dictionary_model)
         self.pronunciation_id = pronunciation_id
-        self.pronunciation: Pronunciation = self.dictionary_model.corpus_model.session.query(Pronunciation).get(pronunciation_id)
+        self.pronunciation: Pronunciation = self.dictionary_model.corpus_model.session.query(
+            Pronunciation
+        ).get(pronunciation_id)
         self.old_pronunciation = old_pronunciation
         self.new_pronunciation = new_pronunciation
-        self.setText(QtCore.QCoreApplication.translate('UpdatePronunciationCommand', 'Update pronunciation'))
+        self.setText(
+            QtCore.QCoreApplication.translate("UpdatePronunciationCommand", "Update pronunciation")
+        )
 
     def _redo(self) -> None:
-        self.pronunciation.pronunciation=self.new_pronunciation
+        self.pronunciation.pronunciation = self.new_pronunciation
 
     def _undo(self) -> None:
-        self.pronunciation.pronunciation=self.old_pronunciation
+        self.pronunciation.pronunciation = self.old_pronunciation
+
 
 class AddPronunciationCommand(DictionaryCommand):
-    def __init__(self, word:str, pronunciation: str, dictionary_model: DictionaryTableModel,
-                 word_id:typing.Optional[int]=None):
+    def __init__(
+        self,
+        word: str,
+        pronunciation: str,
+        dictionary_model: DictionaryTableModel,
+        word_id: typing.Optional[int] = None,
+    ):
         super().__init__(dictionary_model)
         self.pronunciation = pronunciation
         self.oov_phone = dictionary_model.corpus_model.corpus.oov_phone
@@ -603,70 +730,133 @@ class AddPronunciationCommand(DictionaryCommand):
         self.pronunciation_id = None
         self.word_id = word_id
         self.word = word
-        self.setText(QtCore.QCoreApplication.translate('AddPronunciationCommand', 'Add pronunciation'))
+        self.setText(
+            QtCore.QCoreApplication.translate("AddPronunciationCommand", "Add pronunciation")
+        )
 
     def _redo(self) -> None:
         if self.word_id is None:
-            self.word_id = self.dictionary_model.corpus_model.session.query(Word.id).filter(Word.word == self.word).first()[0]
-            if self.word_id is None:
-                self.word_id = self.dictionary_model.corpus_model.session.query(sqlalchemy.func.max(Word.id)).scalar() + 1
-                word_mapping_id = self.dictionary_model.corpus_model.session.query(
-                    sqlalchemy.func.max(Word.mapping_id)
-                ).filter(
-                    Word.dictionary_id == self.dictionary_model.current_dictionary_id
-                ).scalar() + 1
-                self.dictionary_model.corpus_model.session.execute(
-                    sqlalchemy.insert(Word).values(id=self.word_id, mapping_id=word_mapping_id,
-                                                            word=self.word,
-                                                            dictionary_id = self.dictionary_model.current_dictionary_id,
-                                                            word_type=WordType.speech))
-        self.pronunciation_id = self.dictionary_model.corpus_model.session.query(Pronunciation.id).filter(
-            Pronunciation.word_id == self.word_id,
-            Pronunciation.pronunciation == self.oov_phone).scalar()
-        if self.pronunciation_id is None:
-            self.pronunciation_id = self.dictionary_model.corpus_model.session.query(sqlalchemy.func.max(Pronunciation.id)).scalar() + 1
-            self.dictionary_model.corpus_model.session.execute(sqlalchemy.insert(Pronunciation).values(word_id=self.word_id, id=self.pronunciation_id,
-                                 pronunciation=self.pronunciation, base_pronunciation_id=self.pronunciation_id))
-        else:
-            self.dictionary_model.corpus_model.session.query(Pronunciation).filter(Pronunciation.id == self.pronunciation_id).update(
-                {Pronunciation.pronunciation: self.pronunciation}
+            self.word_id = (
+                self.dictionary_model.corpus_model.session.query(Word.id)
+                .filter(Word.word == self.word)
+                .first()[0]
             )
-        self.dictionary_model.corpus_model.session.query(Word).filter(Word.id == self.word_id).update({Word.word_type: WordType.speech})
+            if self.word_id is None:
+                self.word_id = (
+                    self.dictionary_model.corpus_model.session.query(
+                        sqlalchemy.func.max(Word.id)
+                    ).scalar()
+                    + 1
+                )
+                word_mapping_id = (
+                    self.dictionary_model.corpus_model.session.query(
+                        sqlalchemy.func.max(Word.mapping_id)
+                    )
+                    .filter(Word.dictionary_id == self.dictionary_model.current_dictionary_id)
+                    .scalar()
+                    + 1
+                )
+                self.dictionary_model.corpus_model.session.execute(
+                    sqlalchemy.insert(Word).values(
+                        id=self.word_id,
+                        mapping_id=word_mapping_id,
+                        word=self.word,
+                        dictionary_id=self.dictionary_model.current_dictionary_id,
+                        word_type=WordType.speech,
+                    )
+                )
+        self.pronunciation_id = (
+            self.dictionary_model.corpus_model.session.query(Pronunciation.id)
+            .filter(
+                Pronunciation.word_id == self.word_id,
+                Pronunciation.pronunciation == self.oov_phone,
+            )
+            .scalar()
+        )
+        if self.pronunciation_id is None:
+            self.pronunciation_id = (
+                self.dictionary_model.corpus_model.session.query(
+                    sqlalchemy.func.max(Pronunciation.id)
+                ).scalar()
+                + 1
+            )
+            self.dictionary_model.corpus_model.session.execute(
+                sqlalchemy.insert(Pronunciation).values(
+                    word_id=self.word_id,
+                    id=self.pronunciation_id,
+                    pronunciation=self.pronunciation,
+                    base_pronunciation_id=self.pronunciation_id,
+                )
+            )
+        else:
+            self.dictionary_model.corpus_model.session.query(Pronunciation).filter(
+                Pronunciation.id == self.pronunciation_id
+            ).update({Pronunciation.pronunciation: self.pronunciation})
+        self.dictionary_model.corpus_model.session.query(Word).filter(
+            Word.id == self.word_id
+        ).update({Word.word_type: WordType.speech})
 
     def _undo(self) -> None:
-        self.dictionary_model.corpus_model.session.execute(sqlalchemy.delete(Pronunciation).where(Pronunciation.id == self.pronunciation_id))
-        count = self.dictionary_model.corpus_model.session.query(sqlalchemy.func.count(Pronunciation.id)).filter(Pronunciation.word_id == self.word_id).scalar()
+        self.dictionary_model.corpus_model.session.execute(
+            sqlalchemy.delete(Pronunciation).where(Pronunciation.id == self.pronunciation_id)
+        )
+        count = (
+            self.dictionary_model.corpus_model.session.query(
+                sqlalchemy.func.count(Pronunciation.id)
+            )
+            .filter(Pronunciation.word_id == self.word_id)
+            .scalar()
+        )
         if count == 0:
-            self.dictionary_model.corpus_model.session.query(Word).filter(Word.id == self.word_id).update({Word.word_type: WordType.oov})
+            self.dictionary_model.corpus_model.session.query(Word).filter(
+                Word.id == self.word_id
+            ).update({Word.word_type: WordType.oov})
 
 
 class DeletePronunciationCommand(DictionaryCommand):
-    def __init__(self, pronunciation_ids: typing.List[int], dictionary_model: DictionaryTableModel):
+    def __init__(
+        self, pronunciation_ids: typing.List[int], dictionary_model: DictionaryTableModel
+    ):
         super().__init__(dictionary_model)
         self.pronunciation_ids = pronunciation_ids
-        self.pronunciations = self.dictionary_model.corpus_model.session.query(Pronunciation).filter(Pronunciation.id.in_(pronunciation_ids)).all()
-        self.setText(QtCore.QCoreApplication.translate('DeletePronunciationCommand', 'Delete pronunciation'))
+        self.pronunciations = (
+            self.dictionary_model.corpus_model.session.query(Pronunciation)
+            .filter(Pronunciation.id.in_(pronunciation_ids))
+            .all()
+        )
+        self.setText(
+            QtCore.QCoreApplication.translate("DeletePronunciationCommand", "Delete pronunciation")
+        )
 
     def _redo(self) -> None:
-        self.dictionary_model.corpus_model.session.query(Pronunciation).filter(Pronunciation.id.in_(self.pronunciation_ids)).delete()
+        self.dictionary_model.corpus_model.session.query(Pronunciation).filter(
+            Pronunciation.id.in_(self.pronunciation_ids)
+        ).delete()
 
     def _undo(self) -> None:
         for p in self.pronunciations:
             make_transient(p)
             self.dictionary_model.corpus_model.session.merge(p)
 
+
 class DeleteWordCommand(DictionaryCommand):
     def __init__(self, word_ids: typing.List[int], dictionary_model: DictionaryTableModel):
         super().__init__(dictionary_model)
         self.word_id = word_ids
-        query = self.dictionary_model.corpus_model.session.query(Word, Word.pronunciations).join(Word.pronunciations).filter(Word.id.in_(word_ids))
+        query = (
+            self.dictionary_model.corpus_model.session.query(Word, Word.pronunciations)
+            .join(Word.pronunciations)
+            .filter(Word.id.in_(word_ids))
+        )
         self.words = []
         self.pronunciations = []
         for word, pronunciation in query:
             if word not in self.words:
                 self.words.append(word)
             self.pronunciations.append(pronunciation)
-        self.setText(QtCore.QCoreApplication.translate('DeletePronunciationCommand', 'Delete pronunciation'))
+        self.setText(
+            QtCore.QCoreApplication.translate("DeletePronunciationCommand", "Delete pronunciation")
+        )
 
     def _redo(self) -> None:
         for p in self.pronunciations:
@@ -684,13 +874,15 @@ class DeleteWordCommand(DictionaryCommand):
 
 
 class UpdateWordCommand(DictionaryCommand):
-    def __init__(self, word_id: int,  old_word: str, new_word:str, dictionary_model: DictionaryTableModel):
+    def __init__(
+        self, word_id: int, old_word: str, new_word: str, dictionary_model: DictionaryTableModel
+    ):
         super().__init__(dictionary_model)
         self.word_id = word_id
         self.word: Word = self.dictionary_model.corpus_model.session.query(Word).get(word_id)
         self.old_word = old_word
         self.new_word = new_word
-        self.setText(QtCore.QCoreApplication.translate('UpdateWordCommand', 'Update orthography'))
+        self.setText(QtCore.QCoreApplication.translate("UpdateWordCommand", "Update orthography"))
 
     def _redo(self) -> None:
         self.word.word = self.new_word

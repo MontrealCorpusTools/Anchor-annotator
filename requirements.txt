@@ -1,3 +1,16 @@
 montreal-forced-aligner
 pyqtgraph
 pyside6
+librosa
+numba
+numpy
+resampy
+joblib
+sqlalchemy
+pysoundfile
+tqdm
+pyyaml
+scipy
+scikit-learn
+pynini
+biopython

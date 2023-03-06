@@ -1,17 +1,12 @@
-
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String
-from sqlalchemy.ext.orderinglist import ordering_list
 import sqlalchemy
-import typing
-from sqlalchemy.orm import Bundle, column_property, declarative_base, relationship
 from montreal_forced_aligner.db import PathType
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import declarative_base, relationship
 
 AnchorSqlBase = declarative_base()
 
 
-
 class AcousticModel(AnchorSqlBase):
-
     __tablename__ = "acoustic_model"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -25,8 +20,8 @@ class AcousticModel(AnchorSqlBase):
         back_populates="acoustic_model",
     )
 
-class LanguageModel(AnchorSqlBase):
 
+class LanguageModel(AnchorSqlBase):
     __tablename__ = "language_model"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -40,8 +35,8 @@ class LanguageModel(AnchorSqlBase):
         back_populates="language_model",
     )
 
-class G2PModel(AnchorSqlBase):
 
+class G2PModel(AnchorSqlBase):
     __tablename__ = "g2p_model"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -55,8 +50,8 @@ class G2PModel(AnchorSqlBase):
         back_populates="g2p_model",
     )
 
-class Dictionary(AnchorSqlBase):
 
+class Dictionary(AnchorSqlBase):
     __tablename__ = "dictionary"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -70,8 +65,8 @@ class Dictionary(AnchorSqlBase):
         back_populates="dictionary",
     )
 
-class IvectorExtractor(AnchorSqlBase):
 
+class IvectorExtractor(AnchorSqlBase):
     __tablename__ = "ivector_extractor"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -85,8 +80,8 @@ class IvectorExtractor(AnchorSqlBase):
         back_populates="ivector_extractor",
     )
 
-class SadModel(AnchorSqlBase):
 
+class SadModel(AnchorSqlBase):
     __tablename__ = "sad_model"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -100,8 +95,8 @@ class SadModel(AnchorSqlBase):
         back_populates="sad_model",
     )
 
-class AnchorCorpus(AnchorSqlBase):
 
+class AnchorCorpus(AnchorSqlBase):
     __tablename__ = "corpus"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -123,12 +118,13 @@ class AnchorCorpus(AnchorSqlBase):
     g2p_model_id = Column(Integer, ForeignKey("g2p_model.id"), index=True, nullable=True)
     g2p_model = relationship("G2PModel", back_populates="corpora")
 
-    ivector_extractor_id = Column(Integer, ForeignKey("ivector_extractor.id"), index=True, nullable=True)
+    ivector_extractor_id = Column(
+        Integer, ForeignKey("ivector_extractor.id"), index=True, nullable=True
+    )
     ivector_extractor = relationship("IvectorExtractor", back_populates="corpora")
 
     sad_model_id = Column(Integer, ForeignKey("sad_model.id"), index=True, nullable=True)
     sad_model = relationship("SadModel", back_populates="corpora")
-
 
 
 MODEL_TYPES = {

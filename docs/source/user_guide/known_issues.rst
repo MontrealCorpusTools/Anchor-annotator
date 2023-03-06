@@ -20,4 +20,3 @@ Launching Anchor
    * `Bash <https://www.howtogeek.com/668503/how-to-set-environment-variables-in-bash-on-linux/>`_
    * `Mac OSX <https://support.apple.com/guide/terminal/use-environment-variables-apd382cc5fa-4f58-4449-b20a-41c53c006f8f/mac>`_
    * `Windows command line <https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/set_1>`_
-
