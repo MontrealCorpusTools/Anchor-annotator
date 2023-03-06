@@ -268,4 +268,3 @@ background-color: var(--base-yellow);
 html[data-theme="dark"] dt:target{
     background-color: var(--dark-blue);
 }
-

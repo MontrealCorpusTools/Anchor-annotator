@@ -1,148 +1,143 @@
-from typing import Optional, Any, Union
 import pathlib
-from PySide6 import QtGui, QtCore
+from typing import Any, Optional
 
 from montreal_forced_aligner.config import get_temporary_directory
+from PySide6 import QtCore, QtGui
+
 
 class AnchorSettings(QtCore.QSettings):
+    DEFAULT_DIRECTORY = "anchor/default_directory"
+    DEFAULT_CORPUS_DIRECTORY = "anchor/default_corpus_directory"
+    DEFAULT_DICTIONARY_DIRECTORY = "anchor/default_dictionary_directory"
+    DEFAULT_G2P_DIRECTORY = "anchor/default_g2p_directory"
+    DEFAULT_ACOUSTIC_DIRECTORY = "anchor/default_acoustic_directory"
+    DEFAULT_LM_DIRECTORY = "anchor/default_lm_directory"
+    DEFAULT_IVECTOR_DIRECTORY = "anchor/default_ivector_directory"
+    DEFAULT_SAD_DIRECTORY = "anchor/default_sad_directory"
+    CORPORA = "anchor/corpora"
+    CURRENT_CORPUS = "anchor/current_corpus"
 
-    DEFAULT_DIRECTORY = 'anchor/default_directory'
-    DEFAULT_CORPUS_DIRECTORY = 'anchor/default_corpus_directory'
-    DEFAULT_DICTIONARY_DIRECTORY = 'anchor/default_dictionary_directory'
-    DEFAULT_G2P_DIRECTORY = 'anchor/default_g2p_directory'
-    DEFAULT_ACOUSTIC_DIRECTORY = 'anchor/default_acoustic_directory'
-    DEFAULT_LM_DIRECTORY = 'anchor/default_lm_directory'
-    DEFAULT_IVECTOR_DIRECTORY = 'anchor/default_ivector_directory'
-    DEFAULT_SAD_DIRECTORY = 'anchor/default_sad_directory'
-    CORPORA = 'anchor/corpora'
-    CURRENT_CORPUS = 'anchor/current_corpus'
+    CORPUS_PATH = "path"
+    DICTIONARY_PATH = "dictionary_path"
+    ACOUSTIC_MODEL_PATH = "acoustic_model_path"
+    G2P_MODEL_PATH = "g2p_model_path"
+    LANGUAGE_MODEL_PATH = "language_model_path"
+    IE_MODEL_PATH = "ie_model_path"
+    PHONE_MAPPING_PATH = "phone_mapping_path"
+    REFERENCE_ALIGNMENT_PATH = "reference_alignment_path"
 
-    CORPUS_PATH = 'path'
-    DICTIONARY_PATH = 'dictionary_path'
-    ACOUSTIC_MODEL_PATH = 'acoustic_model_path'
-    G2P_MODEL_PATH = 'g2p_model_path'
-    LANGUAGE_MODEL_PATH = 'language_model_path'
-    IE_MODEL_PATH = 'ie_model_path'
-    PHONE_MAPPING_PATH = 'phone_mapping_path'
-    REFERENCE_ALIGNMENT_PATH = 'reference_alignment_path'
+    AUTOSAVE = "anchor/autosave"
+    AUTOLOAD = "anchor/autoload"
 
-    AUTOSAVE = 'anchor/autosave'
-    AUTOLOAD = 'anchor/autoload'
+    VOLUME = "anchor/audio/volume"
+    AUDIO_DEVICE = "anchor/audio/device"
 
-    VOLUME = 'anchor/audio/volume'
-    AUDIO_DEVICE = 'anchor/audio/device'
+    GEOMETRY = "anchor/MainWindow/geometry"
+    WINDOW_STATE = "anchor/MainWindow/windowState"
 
-    GEOMETRY = 'anchor/MainWindow/geometry'
-    WINDOW_STATE = 'anchor/MainWindow/windowState'
+    UTTERANCES_VISIBLE = "anchor/MainWindow/utterancesVisible"
+    DICTIONARY_VISIBLE = "anchor/MainWindow/dictionaryVisible"
+    OOV_VISIBLE = "anchor/MainWindow/oovVisible"
+    SPEAKERS_VISIBLE = "anchor/MainWindow/speakersVisible"
+    LM_VISIBLE = "anchor/MainWindow/languageModelVisible"
+    AM_VISIBLE = "anchor/MainWindow/acousticModelVisible"
+    TRANSCRIPTION_VISIBLE = "anchor/MainWindow/transcriptionVisible"
+    ALIGNMENT_VISIBLE = "anchor/MainWindow/alignmentVisible"
+    DIARIZATION_VISIBLE = "anchor/MainWindow/diarizationVisible"
 
-    UTTERANCES_VISIBLE = 'anchor/MainWindow/utterancesVisible'
-    DICTIONARY_VISIBLE = 'anchor/MainWindow/dictionaryVisible'
-    OOV_VISIBLE = 'anchor/MainWindow/oovVisible'
-    SPEAKERS_VISIBLE = 'anchor/MainWindow/speakersVisible'
-    LM_VISIBLE = 'anchor/MainWindow/languageModelVisible'
-    AM_VISIBLE = 'anchor/MainWindow/acousticModelVisible'
-    TRANSCRIPTION_VISIBLE = 'anchor/MainWindow/transcriptionVisible'
-    ALIGNMENT_VISIBLE = 'anchor/MainWindow/alignmentVisible'
-    DIARIZATION_VISIBLE = 'anchor/MainWindow/diarizationVisible'
+    FONT = "anchor/theme/font"
+    MAIN_TEXT_COLOR = "anchor/theme/text_color"
+    SELECTED_TEXT_COLOR = "anchor/theme/selected_text_color"
+    ERROR_COLOR = "anchor/theme/error_color"
+    PRIMARY_BASE_COLOR = "anchor/theme/primary_color/base"
+    PRIMARY_LIGHT_COLOR = "anchor/theme/primary_color/light"
+    PRIMARY_DARK_COLOR = "anchor/theme/primary_color/dark"
+    PRIMARY_VERY_LIGHT_COLOR = "anchor/theme/primary_color/very_light"
+    PRIMARY_VERY_DARK_COLOR = "anchor/theme/primary_color/very_dark"
+    ACCENT_BASE_COLOR = "anchor/theme/accent_color/base"
+    ACCENT_LIGHT_COLOR = "anchor/theme/accent_color/light"
+    ACCENT_DARK_COLOR = "anchor/theme/accent_color/dark"
+    ACCENT_VERY_LIGHT_COLOR = "anchor/theme/accent_color/very_light"
+    ACCENT_VERY_DARK_COLOR = "anchor/theme/accent_color/very_dark"
 
-    FONT = 'anchor/theme/font'
-    MAIN_TEXT_COLOR = 'anchor/theme/text_color'
-    SELECTED_TEXT_COLOR = 'anchor/theme/selected_text_color'
-    ERROR_COLOR = 'anchor/theme/error_color'
-    PRIMARY_BASE_COLOR = 'anchor/theme/primary_color/base'
-    PRIMARY_LIGHT_COLOR = 'anchor/theme/primary_color/light'
-    PRIMARY_DARK_COLOR = 'anchor/theme/primary_color/dark'
-    PRIMARY_VERY_LIGHT_COLOR = 'anchor/theme/primary_color/very_light'
-    PRIMARY_VERY_DARK_COLOR = 'anchor/theme/primary_color/very_dark'
-    ACCENT_BASE_COLOR = 'anchor/theme/accent_color/base'
-    ACCENT_LIGHT_COLOR = 'anchor/theme/accent_color/light'
-    ACCENT_DARK_COLOR = 'anchor/theme/accent_color/dark'
-    ACCENT_VERY_LIGHT_COLOR = 'anchor/theme/accent_color/very_light'
-    ACCENT_VERY_DARK_COLOR = 'anchor/theme/accent_color/very_dark'
+    PLAY_KEYBIND = "anchor/keybinds/play"
+    DELETE_KEYBIND = "anchor/keybinds/delete"
+    SAVE_KEYBIND = "anchor/keybinds/save"
+    SEARCH_KEYBIND = "anchor/keybinds/search"
+    SPLIT_KEYBIND = "anchor/keybinds/split"
+    MERGE_KEYBIND = "anchor/keybinds/merge"
+    ZOOM_IN_KEYBIND = "anchor/keybinds/zoom_in"
+    ZOOM_OUT_KEYBIND = "anchor/keybinds/zoom_out"
+    ZOOM_TO_SELECTION_KEYBIND = "anchor/keybinds/zoom_to_selection"
+    PAN_LEFT_KEYBIND = "anchor/keybinds/pan_left"
+    PAN_RIGHT_KEYBIND = "anchor/keybinds/pan_right"
+    UNDO_KEYBIND = "anchor/keybinds/undo"
+    REDO_KEYBIND = "anchor/keybinds/redo"
+    LOCKED = "anchor/locked"
+    CUDA = "anchor/cuda"
+    GITHUB_TOKEN = "anchor/github_token"
 
-    PLAY_KEYBIND = 'anchor/keybinds/play'
-    DELETE_KEYBIND = 'anchor/keybinds/delete'
-    SAVE_KEYBIND = 'anchor/keybinds/save'
-    SEARCH_KEYBIND = 'anchor/keybinds/search'
-    SPLIT_KEYBIND = 'anchor/keybinds/split'
-    MERGE_KEYBIND = 'anchor/keybinds/merge'
-    ZOOM_IN_KEYBIND = 'anchor/keybinds/zoom_in'
-    ZOOM_OUT_KEYBIND = 'anchor/keybinds/zoom_out'
-    ZOOM_TO_SELECTION_KEYBIND = 'anchor/keybinds/zoom_to_selection'
-    PAN_LEFT_KEYBIND = 'anchor/keybinds/pan_left'
-    PAN_RIGHT_KEYBIND = 'anchor/keybinds/pan_right'
-    UNDO_KEYBIND = 'anchor/keybinds/undo'
-    REDO_KEYBIND = 'anchor/keybinds/redo'
-    LOCKED = 'anchor/locked'
-    CUDA = 'anchor/cuda'
-    GITHUB_TOKEN = 'anchor/github_token'
+    RESULTS_PER_PAGE = "anchor/results_per_page"
+    SPEC_DYNAMIC_RANGE = "anchor/spectrogram/dynamic_range"
+    SPEC_N_FFT = "anchor/spectrogram/n_fft"
+    SPEC_N_TIME_STEPS = "anchor/spectrogram/time_steps"
+    SPEC_WINDOW_SIZE = "anchor/spectrogram/window_size"
+    SPEC_PREEMPH = "anchor/spectrogram/preemphasis"
+    SPEC_MAX_FREQ = "anchor/spectrogram/max_frequency"
 
-    RESULTS_PER_PAGE = 'anchor/results_per_page'
-    SPEC_DYNAMIC_RANGE = 'anchor/spectrogram/dynamic_range'
-    SPEC_N_FFT = 'anchor/spectrogram/n_fft'
-    SPEC_N_TIME_STEPS = 'anchor/spectrogram/time_steps'
-    SPEC_WINDOW_SIZE = 'anchor/spectrogram/window_size'
-    SPEC_PREEMPH = 'anchor/spectrogram/preemphasis'
-    SPEC_MAX_FREQ = 'anchor/spectrogram/max_frequency'
+    CLUSTER_TYPE = "anchor/clustering/cluster_type"
 
-    CLUSTER_TYPE = 'anchor/clustering/cluster_type'
+    CLUSTERING_N_CLUSTERS = "anchor/clustering/n_clusters"
+    CLUSTERING_MIN_CLUSTER_SIZE = "anchor/clustering/min_cluster_size"
+    CLUSTERING_DISTANCE_THRESHOLD = "anchor/clustering/distance_threshold"
+    CLUSTERING_METRIC = "anchor/clustering/metric"
 
-    CLUSTERING_N_CLUSTERS = 'anchor/clustering/n_clusters'
-    CLUSTERING_MIN_CLUSTER_SIZE = 'anchor/clustering/min_cluster_size'
-    CLUSTERING_DISTANCE_THRESHOLD = 'anchor/clustering/distance_threshold'
-    CLUSTERING_METRIC = 'anchor/clustering/metric'
+    MANIFOLD_N_NEIGHBORS = "anchor/clustering/manifold/n_neighbors"
 
-    MANIFOLD_N_NEIGHBORS = 'anchor/clustering/manifold/n_neighbors'
-
-    PITCH_MIN_F0 = 'anchor/pitch/min_f0'
-    PITCH_MAX_F0 = 'anchor/pitch/max_f0'
-    PITCH_FRAME_SHIFT = 'anchor/pitch/frame_shift'
-    PITCH_FRAME_LENGTH = 'anchor/pitch/frame_length'
-    PITCH_DELTA_PITCH = 'anchor/pitch/delta_pitch'
-    PITCH_PENALTY_FACTOR = 'anchor/pitch/penalty_factor'
-
+    PITCH_MIN_F0 = "anchor/pitch/min_f0"
+    PITCH_MAX_F0 = "anchor/pitch/max_f0"
+    PITCH_FRAME_SHIFT = "anchor/pitch/frame_shift"
+    PITCH_FRAME_LENGTH = "anchor/pitch/frame_length"
+    PITCH_DELTA_PITCH = "anchor/pitch/delta_pitch"
+    PITCH_PENALTY_FACTOR = "anchor/pitch/penalty_factor"
 
     def __init__(self, *args):
         super(AnchorSettings, self).__init__()
         self.mfa_theme = {
-            AnchorSettings.MAIN_TEXT_COLOR: '#EDDDD4',
-            AnchorSettings.SELECTED_TEXT_COLOR: '#EDDDD4',
-            AnchorSettings.ERROR_COLOR: '#C63623',
-
-            AnchorSettings.PRIMARY_BASE_COLOR: '#003566',
-            AnchorSettings.PRIMARY_LIGHT_COLOR: '#0E63B3',
-            AnchorSettings.PRIMARY_DARK_COLOR: '#001D3D',
-            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: '#7AB5E6',
-            AnchorSettings.PRIMARY_VERY_DARK_COLOR: '#000814',
-
-            AnchorSettings.ACCENT_BASE_COLOR: '#FFC300',
-            AnchorSettings.ACCENT_LIGHT_COLOR: '#FFD60A',
-            AnchorSettings.ACCENT_DARK_COLOR: '#E3930D',
-            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: '#F2CD49',
-            AnchorSettings.ACCENT_VERY_DARK_COLOR: '#7A4E03'
+            AnchorSettings.MAIN_TEXT_COLOR: "#EDDDD4",
+            AnchorSettings.SELECTED_TEXT_COLOR: "#EDDDD4",
+            AnchorSettings.ERROR_COLOR: "#C63623",
+            AnchorSettings.PRIMARY_BASE_COLOR: "#003566",
+            AnchorSettings.PRIMARY_LIGHT_COLOR: "#0E63B3",
+            AnchorSettings.PRIMARY_DARK_COLOR: "#001D3D",
+            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: "#7AB5E6",
+            AnchorSettings.PRIMARY_VERY_DARK_COLOR: "#000814",
+            AnchorSettings.ACCENT_BASE_COLOR: "#FFC300",
+            AnchorSettings.ACCENT_LIGHT_COLOR: "#FFD60A",
+            AnchorSettings.ACCENT_DARK_COLOR: "#E3930D",
+            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: "#F2CD49",
+            AnchorSettings.ACCENT_VERY_DARK_COLOR: "#7A4E03",
         }
 
         self.praat_theme = {
-            AnchorSettings.MAIN_TEXT_COLOR: '#000000',
-            AnchorSettings.SELECTED_TEXT_COLOR: '#FFFFFF',
-            AnchorSettings.ERROR_COLOR: '#DC0806',
-
-            AnchorSettings.PRIMARY_BASE_COLOR: '#FFFFFF',
-            AnchorSettings.PRIMARY_LIGHT_COLOR: '#0078D7',
-            AnchorSettings.PRIMARY_DARK_COLOR: '#A0A0A0',
-            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: '#F0F0F0',
-            AnchorSettings.PRIMARY_VERY_DARK_COLOR: '#FFFFFF',
-
-            AnchorSettings.ACCENT_BASE_COLOR: '#000000',
-            AnchorSettings.ACCENT_LIGHT_COLOR: '#FAF205',
-            AnchorSettings.ACCENT_DARK_COLOR: '#000000',
-            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: '#000000',
-            AnchorSettings.ACCENT_VERY_DARK_COLOR: '#000000'
+            AnchorSettings.MAIN_TEXT_COLOR: "#000000",
+            AnchorSettings.SELECTED_TEXT_COLOR: "#FFFFFF",
+            AnchorSettings.ERROR_COLOR: "#DC0806",
+            AnchorSettings.PRIMARY_BASE_COLOR: "#FFFFFF",
+            AnchorSettings.PRIMARY_LIGHT_COLOR: "#0078D7",
+            AnchorSettings.PRIMARY_DARK_COLOR: "#A0A0A0",
+            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: "#F0F0F0",
+            AnchorSettings.PRIMARY_VERY_DARK_COLOR: "#FFFFFF",
+            AnchorSettings.ACCENT_BASE_COLOR: "#000000",
+            AnchorSettings.ACCENT_LIGHT_COLOR: "#FAF205",
+            AnchorSettings.ACCENT_DARK_COLOR: "#000000",
+            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: "#000000",
+            AnchorSettings.ACCENT_VERY_DARK_COLOR: "#000000",
         }
 
         self.default_values = {
             AnchorSettings.CORPORA: [],
-            AnchorSettings.CURRENT_CORPUS: '',
+            AnchorSettings.CURRENT_CORPUS: "",
             AnchorSettings.DEFAULT_DIRECTORY: get_temporary_directory(),
             AnchorSettings.AUTOSAVE: False,
             AnchorSettings.AUTOLOAD: False,
@@ -150,48 +145,40 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.AUDIO_DEVICE: None,
             AnchorSettings.GEOMETRY: None,
             AnchorSettings.WINDOW_STATE: None,
-            AnchorSettings.FONT: QtGui.QFont('Noto Sans', 12).toString(),
-
-            AnchorSettings.PLAY_KEYBIND: 'Tab',
-            AnchorSettings.DELETE_KEYBIND: 'Delete',
-            AnchorSettings.SAVE_KEYBIND: 'Ctrl+S',
-            AnchorSettings.SEARCH_KEYBIND: 'Ctrl+F',
-            AnchorSettings.SPLIT_KEYBIND: 'Ctrl+D',
-            AnchorSettings.MERGE_KEYBIND: 'Ctrl+M',
-            AnchorSettings.ZOOM_IN_KEYBIND: 'Ctrl+I',
-            AnchorSettings.ZOOM_OUT_KEYBIND: 'Ctrl+O',
-            AnchorSettings.ZOOM_TO_SELECTION_KEYBIND: 'Ctrl+N',
-            AnchorSettings.PAN_LEFT_KEYBIND: 'LeftArrow',
-            AnchorSettings.PAN_RIGHT_KEYBIND: 'RightArrow',
-            AnchorSettings.UNDO_KEYBIND: 'Ctrl+Z',
-            AnchorSettings.REDO_KEYBIND: 'Ctrl+Shift+Z',
-
+            AnchorSettings.FONT: QtGui.QFont("Noto Sans", 12).toString(),
+            AnchorSettings.PLAY_KEYBIND: "Tab",
+            AnchorSettings.DELETE_KEYBIND: "Delete",
+            AnchorSettings.SAVE_KEYBIND: "Ctrl+S",
+            AnchorSettings.SEARCH_KEYBIND: "Ctrl+F",
+            AnchorSettings.SPLIT_KEYBIND: "Ctrl+D",
+            AnchorSettings.MERGE_KEYBIND: "Ctrl+M",
+            AnchorSettings.ZOOM_IN_KEYBIND: "Ctrl+I",
+            AnchorSettings.ZOOM_OUT_KEYBIND: "Ctrl+O",
+            AnchorSettings.ZOOM_TO_SELECTION_KEYBIND: "Ctrl+N",
+            AnchorSettings.PAN_LEFT_KEYBIND: "LeftArrow",
+            AnchorSettings.PAN_RIGHT_KEYBIND: "RightArrow",
+            AnchorSettings.UNDO_KEYBIND: "Ctrl+Z",
+            AnchorSettings.REDO_KEYBIND: "Ctrl+Shift+Z",
             AnchorSettings.RESULTS_PER_PAGE: 100,
-
             AnchorSettings.SPEC_DYNAMIC_RANGE: 50,
             AnchorSettings.SPEC_N_FFT: 256,
             AnchorSettings.SPEC_N_TIME_STEPS: 1000,
             AnchorSettings.SPEC_MAX_FREQ: 5000,
             AnchorSettings.SPEC_WINDOW_SIZE: 0.005,
             AnchorSettings.SPEC_PREEMPH: 0.97,
-
-            AnchorSettings.CLUSTER_TYPE: 'agglomerative',
+            AnchorSettings.CLUSTER_TYPE: "agglomerative",
             AnchorSettings.CUDA: True,
-
             AnchorSettings.CLUSTERING_N_CLUSTERS: 0,
             AnchorSettings.CLUSTERING_MIN_CLUSTER_SIZE: 60,
             AnchorSettings.CLUSTERING_DISTANCE_THRESHOLD: 0.0,
-            AnchorSettings.CLUSTERING_METRIC: 'cosine',
-
+            AnchorSettings.CLUSTERING_METRIC: "cosine",
             AnchorSettings.MANIFOLD_N_NEIGHBORS: 10,
-
             AnchorSettings.PITCH_MIN_F0: 50,
             AnchorSettings.PITCH_MAX_F0: 600,
             AnchorSettings.PITCH_FRAME_SHIFT: 10,
             AnchorSettings.PITCH_FRAME_LENGTH: 25,
             AnchorSettings.PITCH_PENALTY_FACTOR: 0.1,
             AnchorSettings.PITCH_DELTA_PITCH: 0.005,
-
             AnchorSettings.LOCKED: True,
             AnchorSettings.UTTERANCES_VISIBLE: True,
             AnchorSettings.DICTIONARY_VISIBLE: False,
@@ -202,7 +189,6 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TRANSCRIPTION_VISIBLE: False,
             AnchorSettings.ALIGNMENT_VISIBLE: False,
             AnchorSettings.DIARIZATION_VISIBLE: False,
-
         }
         self.default_values.update(self.mfa_theme)
         self.border_radius = 5
@@ -217,21 +203,34 @@ class AnchorSettings(QtCore.QSettings):
         self.icon_size = 25
         self.scroll_bar_border_radius = int(self.scroll_bar_height / 2) - 2
 
-    def value(self, arg__1:str, defaultValue:Optional[Any]=..., t:object=...
-              ) -> Any:
+    def value(self, arg__1: str, defaultValue: Optional[Any] = ..., t: object = ...) -> Any:
         if arg__1 == AnchorSettings.FONT:
             value = QtGui.QFont()
-            value.fromString(super(AnchorSettings, self).value(arg__1, self.default_values[arg__1]))
-        elif 'color' in arg__1:
-            value = QtGui.QColor(super(AnchorSettings, self).value(arg__1, self.default_values[arg__1]))
-        elif 'keybind' in arg__1:
-            value = QtGui.QKeySequence(super(AnchorSettings, self).value(arg__1, self.default_values[arg__1]))
-        elif 'auto' in arg__1:
+            value.fromString(
+                super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
+            )
+        elif "color" in arg__1:
+            value = QtGui.QColor(
+                super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
+            )
+        elif "keybind" in arg__1:
+            value = QtGui.QKeySequence(
+                super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
+            )
+        elif "auto" in arg__1:
             value = super(AnchorSettings, self).value(arg__1, self.default_values[arg__1], bool)
-        elif arg__1 in {AnchorSettings.GEOMETRY, AnchorSettings.WINDOW_STATE, AnchorSettings.AUDIO_DEVICE}:
+        elif arg__1 in {
+            AnchorSettings.GEOMETRY,
+            AnchorSettings.WINDOW_STATE,
+            AnchorSettings.AUDIO_DEVICE,
+        }:
             value = super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
         else:
-            value = super(AnchorSettings, self).value(arg__1, self.default_values.get(arg__1, ''), type=type(self.default_values.get(arg__1, '')))
+            value = super(AnchorSettings, self).value(
+                arg__1,
+                self.default_values.get(arg__1, ""),
+                type=type(self.default_values.get(arg__1, "")),
+            )
 
         return value
 
@@ -273,18 +272,18 @@ class AnchorSettings(QtCore.QSettings):
     @property
     def plot_theme(self):
         return {
-            'background_color': self.value(AnchorSettings.PRIMARY_VERY_DARK_COLOR),
-            'play_line_color': self.value(AnchorSettings.ERROR_COLOR),
-            'selected_range_color': self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
-            'selected_interval_color': self.value(AnchorSettings.PRIMARY_BASE_COLOR),
-            'hover_line_color': self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
-            'moving_line_color': self.value(AnchorSettings.ERROR_COLOR),
-            'break_line_color': self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
-            'wave_line_color': self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            'text_color': self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            'selected_text_color': self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            'axis_color': self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
-            'interval_background_color': self.value(AnchorSettings.PRIMARY_DARK_COLOR),
+            "background_color": self.value(AnchorSettings.PRIMARY_VERY_DARK_COLOR),
+            "play_line_color": self.value(AnchorSettings.ERROR_COLOR),
+            "selected_range_color": self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
+            "selected_interval_color": self.value(AnchorSettings.PRIMARY_BASE_COLOR),
+            "hover_line_color": self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
+            "moving_line_color": self.value(AnchorSettings.ERROR_COLOR),
+            "break_line_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
+            "wave_line_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+            "text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+            "selected_text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+            "axis_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
+            "interval_background_color": self.value(AnchorSettings.PRIMARY_DARK_COLOR),
         }
 
     @property
@@ -352,8 +351,8 @@ class AnchorSettings(QtCore.QSettings):
             background-color: {background_color};
         }}
         QMenu{{
-            border-width: {self.border_width}px; 
-            border-style: solid; 
+            border-width: {self.border_width}px;
+            border-style: solid;
             border-color: {border_color};
             border-radius: {self.border_radius}px;
         }}
@@ -364,8 +363,8 @@ class AnchorSettings(QtCore.QSettings):
             background-color: {enabled_background_color};
             color: {enabled_color};
             padding: {self.text_padding}px;
-            border-width: {self.border_width}px; 
-            border-style: solid; 
+            border-width: {self.border_width}px;
+            border-style: solid;
             border-color: {enabled_border_color};
             border-radius: {self.border_radius}px;
         }}
@@ -375,7 +374,6 @@ class AnchorSettings(QtCore.QSettings):
     def generate_search_box_style_sheet(self) -> str:
         line_edit_color = self.primary_very_dark_color.name()
         line_edit_background_color = self.accent_base_color.name()
-        selection_color = self.primary_light_color.name()
         error_color = self.error_color.name()
         return f"""
         QWidget{{
@@ -391,14 +389,13 @@ class AnchorSettings(QtCore.QSettings):
                         color: {line_edit_color};
                         margin: {self.border_width}px;
         }}
-        QToolButton#clear_search_field, QToolButton#clear_field, QToolButton#clear_new_speaker_field, 
+        QToolButton#clear_search_field, QToolButton#clear_field, QToolButton#clear_new_speaker_field,
         QToolButton#regex_search_field, QToolButton#word_search_field {{
                         background-color: none;
                         border: none;
                         padding: {self.border_width}px;
         }}
 """
-
 
     def generate_combo_box_style_sheet(self) -> str:
         enabled_color = self.primary_very_dark_color.name()
@@ -430,8 +427,8 @@ class AnchorSettings(QtCore.QSettings):
 
         return f"""
         QTextEdit {{
-            background-color: rgba(0, 0, 0, 0%); 
-            color: {text_edit_color}; 
+            background-color: rgba(0, 0, 0, 0%);
+            color: {text_edit_color};
             border: 5px inset {border_color};
         }}
         QScrollBar {{
@@ -528,7 +525,7 @@ class AnchorSettings(QtCore.QSettings):
         line_edit_color = self.primary_very_dark_color.name()
         line_edit_background_color = self.accent_base_color.name()
 
-        sheet = f'''
+        sheet = f"""
         QWidget{{
             background-color: {background_color};
         }}
@@ -580,7 +577,7 @@ class AnchorSettings(QtCore.QSettings):
             width: 10px; /* when vertical */
             height: 10px; /* when horizontal */
         }}
-        
+
         QMainWindow::separator:hover {{
             background: {enabled_background_color};
         }}
@@ -736,7 +733,7 @@ class AnchorSettings(QtCore.QSettings):
             margin-right: 0px;
         }}
         QToolBar {{
-            spacing: 3px; 
+            spacing: 3px;
         }}
         #toolBar {{
             background: rgb(0, 8, 20);
@@ -756,8 +753,8 @@ class AnchorSettings(QtCore.QSettings):
             background-color: {enabled_background_color};
             color: {enabled_color};
             padding: {self.text_padding}px;
-            border-width: {self.border_width}px; 
-            border-style: solid; 
+            border-width: {self.border_width}px;
+            border-style: solid;
             border-color: {enabled_border_color};
             border-radius: {self.border_radius}px;
         }}
@@ -848,7 +845,7 @@ class AnchorSettings(QtCore.QSettings):
             margin: 0 -2px; /* expand outside the groove */
         }}
         QTableWidget, QTableView, QTreeView, QTreeWidget {{
-            alternate-background-color: {table_even_color}; 
+            alternate-background-color: {table_even_color};
             selection-background-color: {selection_color};
             selection-color: {text_edit_color};
             background-color: {table_odd_color};
@@ -859,13 +856,13 @@ class AnchorSettings(QtCore.QSettings):
             color: {table_text_color};
         }}
         QTreeView::branch:has-children:closed{{
-            alternate-background-color: {table_even_color}; 
+            alternate-background-color: {table_even_color};
             selection-background-color: {selection_color};
             border-image: none;
             image: url(:chevron-right.svg);
         }}
         QTreeView::branch:has-children:!closed{{
-            alternate-background-color: {table_even_color}; 
+            alternate-background-color: {table_even_color};
             selection-background-color: {selection_color};
             border-image: none;
             image: url(:chevron-down.svg);
@@ -875,7 +872,7 @@ class AnchorSettings(QtCore.QSettings):
             background: {background_color};
         }}
         QHeaderView::up-arrow {{
-            subcontrol-origin: padding; 
+            subcontrol-origin: padding;
             subcontrol-position: center right;
             image: url(:hover/sort-up.svg);
             height: {self.sort_indicator_size}px;
@@ -883,7 +880,7 @@ class AnchorSettings(QtCore.QSettings):
         }}
         QHeaderView::down-arrow {{
             image: url(:hover/sort-down.svg);
-            subcontrol-origin: padding; 
+            subcontrol-origin: padding;
             subcontrol-position: center right;
             height: {self.sort_indicator_size}px;
             width: {self.sort_indicator_size}px;
@@ -902,18 +899,17 @@ class AnchorSettings(QtCore.QSettings):
         QHeaderView::section:horizontal {{
             padding-right: {self.sort_indicator_padding}px;
         }}
-        '''
+        """
 
         sheet += self.generate_scroll_bar_style()
         return sheet
 
     def generate_scroll_bar_style(self):
-
         scroll_bar_background_color = self.primary_dark_color.name()
         scroll_bar_handle_color = self.accent_light_color.name()
         scroll_bar_border_color = self.primary_dark_color.name()
 
-        return f'''
+        return f"""
         QScrollBar {{
             color: {scroll_bar_handle_color};
             background: {scroll_bar_background_color};
@@ -1048,4 +1044,4 @@ class AnchorSettings(QtCore.QSettings):
             subcontrol-origin: none;
             width: 0px;
         }}
-        '''
+        """

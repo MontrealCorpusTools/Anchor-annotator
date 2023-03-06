@@ -21,12 +21,12 @@ import os
 import sys
 from datetime import date
 
-sys.path.insert(0, os.path.abspath('../../'))
-import anchor # noqa
+sys.path.insert(0, os.path.abspath("../../"))
+import anchor  # noqa
 
-project = 'Anchor Annotator'
-copyright = f'2021-{date.today().year}, Montreal Corpus Tools'
-author = 'Montreal Corpus Tools'
+project = "Anchor Annotator"
+copyright = f"2021-{date.today().year}, Montreal Corpus Tools"
+author = "Montreal Corpus Tools"
 
 # The full version, including alpha/beta/rc tags
 version = "0.5.0"
@@ -41,19 +41,19 @@ release = "0.5"
 # ones.
 extensions = [
     "sphinx_design",
-    'sphinx.ext.viewcode',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.ifconfig',
-    'sphinx.ext.autosummary',
-    'numpydoc',
-    'myst_parser',
+    "sphinx.ext.viewcode",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.ifconfig",
+    "sphinx.ext.autosummary",
+    "numpydoc",
+    "myst_parser",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
-source_suffix = ['.rst', '.md']
+templates_path = ["_templates"]
+source_suffix = [".rst", ".md"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -66,7 +66,7 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'pydata_sphinx_theme'
+html_theme = "pydata_sphinx_theme"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -77,7 +77,7 @@ html_css_files = [
     "css/style.css",
 ]
 
-html_logo = '_static/anchor-yellow.svg'
+html_logo = "_static/anchor-yellow.svg"
 html_favicon = "_static/favicon.ico"
 
 html_theme_options = {
@@ -102,8 +102,7 @@ html_theme_options = {
         "text": "Anchor Annotator",
         # "image_dark": "logo-dark.svg",
     },
-    "analytics":{
-
+    "analytics": {
         "google_analytics_id": "G-VBJ8Y5QSF5",
     },
     "show_nav_level": 1,

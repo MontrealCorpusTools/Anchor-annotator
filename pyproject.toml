@@ -4,6 +4,19 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+[project.urls]
+Home = "https://anchor-annotator.readthedocs.io/en/latest/"
+Repository = "https://github.com/MontrealCorpusTools/Anchor-annotator"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "flake8",
+    "isort",
+    "pre-commit",
+    "pyproject-flake8",
+]
+
 [tool.setuptools_scm]
 write_to = "anchor/_version.py"
 
@@ -17,3 +30,6 @@ known_first_party = [
     "anchor"
 ]
 
+[tool.flake8]
+max-line-length = 130
+exclude = [".git", "__pycache__", "dist"]
