@@ -169,6 +169,7 @@ class DeleteUtteranceCommand(CorpusCommand):
         for i, utt in enumerate(self.deleted_utterances):
             make_transient(utt)
             for x in utt.phone_intervals:
+                x.duration = None
                 make_transient(x)
             for x in utt.word_intervals:
                 make_transient(x)
@@ -208,6 +209,7 @@ class SplitUtteranceCommand(CorpusCommand):
                 if u.id is not None:
                     make_transient(u)
                 for x in u.phone_intervals:
+                    x.duration = None
                     make_transient(x)
                 for x in u.word_intervals:
                     make_transient(x)
@@ -227,6 +229,7 @@ class SplitUtteranceCommand(CorpusCommand):
             old_utt.kaldi_id = None
             make_transient(old_utt)
             for x in old_utt.phone_intervals:
+                x.duration = None
                 make_transient(x)
             for x in old_utt.word_intervals:
                 make_transient(x)
@@ -285,6 +288,7 @@ class MergeUtteranceCommand(CorpusCommand):
             if old_utt.channel is None:
                 old_utt.channel = self.channel
             for x in old_utt.phone_intervals:
+                x.duration = None
                 make_transient(x)
             for x in old_utt.word_intervals:
                 make_transient(x)

@@ -2596,6 +2596,8 @@ class SegmentUtteranceWorker(FunctionWorker):  # pragma: no cover
             segmenter.acoustic_model = self.acoustic_model
             segmenter.create_new_current_workflow(WorkflowType.segmentation)
             segmenter.setup_acoustic_model()
+
+            segmenter.write_lexicon_information(write_disambiguation=True)
             with segmenter.session() as session:
                 sub_utterances = segment_utterance(
                     session,
