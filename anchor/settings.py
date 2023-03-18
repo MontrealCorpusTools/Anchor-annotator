@@ -338,14 +338,15 @@ class AnchorSettings(QtCore.QSettings):
     def accent_very_dark_color(self) -> QtGui.QColor:
         return self.value(AnchorSettings.ACCENT_VERY_DARK_COLOR)
 
-    def generate_keyboard_style_sheet(self) -> str:
+    @property
+    def keyboard_style_sheet(self) -> str:
         border_color = self.accent_base_color.name()
         background_color = self.primary_light_color.name()
 
         enabled_color = self.primary_very_dark_color.name()
         enabled_background_color = self.accent_base_color.name()
         enabled_border_color = self.primary_very_dark_color.name()
-        scroll_bar_style = self.generate_scroll_bar_style()
+        scroll_bar_style = self.scroll_bar_style_sheet
         return f"""
         QWidget{{
             background-color: {background_color};
@@ -371,7 +372,8 @@ class AnchorSettings(QtCore.QSettings):
         {scroll_bar_style}
         """
 
-    def generate_search_box_style_sheet(self) -> str:
+    @property
+    def search_box_style_sheet(self) -> str:
         line_edit_color = self.primary_very_dark_color.name()
         line_edit_background_color = self.accent_base_color.name()
         error_color = self.error_color.name()
@@ -395,9 +397,10 @@ class AnchorSettings(QtCore.QSettings):
                         border: none;
                         padding: {self.border_width}px;
         }}
-"""
+    """
 
-    def generate_combo_box_style_sheet(self) -> str:
+    @property
+    def combo_box_style_sheet(self) -> str:
         enabled_color = self.primary_very_dark_color.name()
         enabled_background_color = self.accent_base_color.name()
 
@@ -415,7 +418,8 @@ class AnchorSettings(QtCore.QSettings):
         }}
         """
 
-    def generate_interval_style_sheet(self):
+    @property
+    def interval_style_sheet(self):
         text_edit_color = self.text_color.name()
 
         scroll_bar_background_color = self.primary_dark_color.name()
@@ -547,37 +551,34 @@ class AnchorSettings(QtCore.QSettings):
         }}
         QMenuBar::item {{
             padding: 4px 4px;
-                        color: {menu_text_color};
-                        background-color: {menu_background_color};
+            color: {menu_text_color};
+            background-color: {menu_background_color};
         }}
         QMenuBar::item:selected {{
-                        color: {hover_text_color};
-                        background-color: {hover_background_color};
+            color: {hover_text_color};
+            background-color: {hover_background_color};
         }}
         QMenuBar::item:disabled {{
-                        color: {disabled_text_color};
-                        background-color: {menu_background_color};
-                        }}
+            color: {disabled_text_color};
+            background-color: {menu_background_color};
+        }}
         ButtonWidget {{
             background-color: {table_header_background_color};
         }}
         QDockWidget {{
             background-color: {active_background_color};
             color: {active_color};
-
             titlebar-close-icon: url(:checked/times.svg);
             titlebar-normal-icon: url(:checked/external-link.svg);
         }}
         QDockWidget::title {{
             text-align: center;
         }}
-
         QMainWindow::separator {{
             background: {background_color};
             width: 10px; /* when vertical */
             height: 10px; /* when horizontal */
         }}
-
         QMainWindow::separator:hover {{
             background: {enabled_background_color};
         }}
@@ -590,7 +591,6 @@ class AnchorSettings(QtCore.QSettings):
             padding-top: 20px;
             margin-top: 0ex; /* leave space at the top for the title */
             }}
-
         UtteranceDetailWidget {{
             padding: 0px;
             border: none;
@@ -601,12 +601,9 @@ class AnchorSettings(QtCore.QSettings):
             border: {self.border_width}px solid {main_widget_border_color};
             border-top-right-radius: {self.border_radius}px;
             border-bottom-right-radius: {self.border_radius}px;
-
         }}
         QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget {{
-
             border-bottom-right-radius: {self.border_radius}px;
-
         }}
         QCheckBox::indicator{{
             width: {int(self.scroll_bar_height/2)}px;
@@ -627,7 +624,6 @@ class AnchorSettings(QtCore.QSettings):
             selection-background-color: {selection_color};
             border: {self.border_width}px solid {enabled_border_color};
         }}
-
         QGroupBox::title {{
             color: {text_edit_color};
             background-color: transparent;
@@ -636,21 +632,20 @@ class AnchorSettings(QtCore.QSettings):
             padding-top: 5px;
         }}
         QLabel {{
-                        color: {text_edit_color};
-            }}
+            color: {text_edit_color};
+        }}
         QStatusBar {{
             background-color: {text_edit_background_color};
-                        color: {text_edit_color};
-            }}
+            color: {text_edit_color};
+        }}
         WarningLabel {{
-                        color: {error_color};
-            }}
+            color: {error_color};
+        }}
         QCheckBox {{
             color: {text_edit_color};
         }}
         QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget {{ /* The tab widget frame */
             background-color: {main_widget_background_color};
-
         }}
         QTabWidget::pane  {{ /* The tab widget frame */
             border: {self.border_width}px solid {main_widget_border_color};
@@ -658,8 +653,6 @@ class AnchorSettings(QtCore.QSettings):
             background-color: {main_widget_background_color};
 
         }}
-
-
         QTabBar::tab {{
             color: {menu_text_color};
             background-color: {menu_background_color};
@@ -672,14 +665,12 @@ class AnchorSettings(QtCore.QSettings):
             padding: {self.text_padding}px;
             margin: 0px;
         }}
-
         QTabBar::scroller{{
             width: {2 * self.scroll_bar_height}px;
         }}
         QTabBar QToolButton  {{
             border-radius: 0px;
         }}
-
         QTabBar QToolButton::right-arrow  {{
             image: url(:caret-right.svg);
             height: {self.scroll_bar_height}px;
@@ -691,7 +682,6 @@ class AnchorSettings(QtCore.QSettings):
         QTabBar QToolButton::right-arrow :disabled {{
             image: url(:disabled/caret-right.svg);
         }}
-
         QTabBar QToolButton::left-arrow  {{
             image: url(:caret-left.svg);
             height: {self.scroll_bar_height}px;
@@ -703,13 +693,11 @@ class AnchorSettings(QtCore.QSettings):
         QTabBar QToolButton::left-arrow:disabled {{
             image: url(:disabled/caret-left.svg);
         }}
-
         QTabBar::tab-bar {{
             color: {menu_text_color};
             background-color: {menu_background_color};
             border: {self.border_width}px solid {main_widget_border_color};
         }}
-
         QTabBar::tab:hover {{
             color: {hover_text_color};
             background-color: {hover_background_color};
@@ -738,7 +726,6 @@ class AnchorSettings(QtCore.QSettings):
         #toolBar {{
             background: rgb(0, 8, 20);
         }}
-
         QToolBar::separator {{
             margin-left: 5px;
             margin-right: 5px;
@@ -746,9 +733,6 @@ class AnchorSettings(QtCore.QSettings):
             height: 3px;
             background: {selection_color};
         }}
-
-
-
         QPushButton, QToolButton {{
             background-color: {enabled_background_color};
             color: {enabled_color};
@@ -770,27 +754,6 @@ class AnchorSettings(QtCore.QSettings):
         }}
         QMenuBar QToolButton{{
             padding: 0px;
-        }}
-        QMenu {{
-                margin: 2px;
-                background-color: {menu_background_color};
-                color: {menu_text_color};
-                menu-scrollable: 1;
-        }}
-        QMenu::item {{
-                padding: 2px 25px 2px 20px;
-                border: {self.border_width / 2}px solid transparent;
-                background-color: {menu_background_color};
-                color: {menu_text_color};
-        }}
-        QMenu::item:disabled {{
-                border: none;
-                background-color: {disabled_background_color};
-                color: {disabled_text_color};
-        }}
-        QMenu::item:!disabled:selected {{
-            border-color: {enabled_color};
-            background-color: {selection_color};
         }}
         QComboBox {{
             color: {enabled_color};
@@ -901,10 +864,55 @@ class AnchorSettings(QtCore.QSettings):
         }}
         """
 
-        sheet += self.generate_scroll_bar_style()
+        sheet += self.scroll_bar_style_sheet
+        sheet += self.menu_style_sheet
+        sheet += self.tool_tip_style_sheet
         return sheet
 
-    def generate_scroll_bar_style(self):
+    @property
+    def tool_tip_style_sheet(self):
+        background_color = self.accent_base_color.name()
+        text_color = self.primary_very_dark_color.name()
+        return f"""
+        QToolTip {{
+            background-color: {background_color};
+            color: {text_color};
+        }}
+        """
+
+    @property
+    def menu_style_sheet(self):
+        menu_background_color = self.accent_base_color.name()
+        menu_text_color = self.primary_very_dark_color.name()
+        disabled_text_color = self.primary_dark_color.name()
+        disabled_background_color = self.accent_very_dark_color.name()
+        enabled_color = self.primary_very_dark_color.name()
+        selection_color = self.primary_light_color.name()
+        return f"""
+        QMenu {{
+                margin: 2px;
+                background-color: {menu_background_color};
+                color: {menu_text_color};
+                menu-scrollable: 1;
+        }}
+        QMenu::item {{
+                padding: 2px 25px 2px 20px;
+                border: {self.border_width / 2}px solid transparent;
+                background-color: {menu_background_color};
+                color: {menu_text_color};
+        }}
+        QMenu::item:disabled {{
+                border: none;
+                background-color: {disabled_background_color};
+                color: {disabled_text_color};
+        }}
+        QMenu::item:!disabled:selected {{
+            border-color: {enabled_color};
+            background-color: {selection_color};
+        }}"""
+
+    @property
+    def scroll_bar_style_sheet(self):
         scroll_bar_background_color = self.primary_dark_color.name()
         scroll_bar_handle_color = self.accent_light_color.name()
         scroll_bar_border_color = self.primary_dark_color.name()

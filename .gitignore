@@ -128,8 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+
+# PyCharm
 .idea/
 
+# QtCreator
 *.pyproject
+*.autosave
 
 *.user

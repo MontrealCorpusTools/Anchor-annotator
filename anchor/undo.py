@@ -386,7 +386,6 @@ class CreateUtteranceCommand(CorpusCommand):
 
     def _redo(self) -> None:
         make_transient(self.new_utterance)
-        self.new_utterance.duration = self.new_utterance.end - self.new_utterance.begin
         if self.new_utterance.channel is None:
             self.new_utterance.channel = self.channel
         self.corpus_model.session.add(self.new_utterance)
@@ -396,8 +395,6 @@ class CreateUtteranceCommand(CorpusCommand):
 
     def update_data(self):
         super().update_data()
-        self.corpus_model.changeCommandFired.emit()
-        self.corpus_model.add_table_utterances([self.new_utterance])
 
     def redo(self) -> None:
         super().redo()
@@ -789,7 +786,6 @@ class AddPronunciationCommand(DictionaryCommand):
                     word_id=self.word_id,
                     id=self.pronunciation_id,
                     pronunciation=self.pronunciation,
-                    base_pronunciation_id=self.pronunciation_id,
                 )
             )
         else:
@@ -848,33 +844,28 @@ class DeleteWordCommand(DictionaryCommand):
         super().__init__(dictionary_model)
         self.word_id = word_ids
         query = (
-            self.dictionary_model.corpus_model.session.query(Word, Word.pronunciations)
-            .join(Word.pronunciations)
+            self.dictionary_model.corpus_model.session.query(Word)
+            .options(sqlalchemy.orm.selectinload(Word.pronunciations))
             .filter(Word.id.in_(word_ids))
         )
         self.words = []
-        self.pronunciations = []
-        for word, pronunciation in query:
+        for word in query:
             if word not in self.words:
                 self.words.append(word)
-            self.pronunciations.append(pronunciation)
         self.setText(
             QtCore.QCoreApplication.translate("DeletePronunciationCommand", "Delete pronunciation")
         )
 
     def _redo(self) -> None:
-        for p in self.pronunciations:
-            self.dictionary_model.corpus_model.session.delete(p)
         for w in self.words:
             self.dictionary_model.corpus_model.session.delete(w)
 
     def _undo(self) -> None:
         for w in self.words:
             make_transient(w)
+            for p in w.pronunciations:
+                make_transient(p)
             self.dictionary_model.corpus_model.session.merge(w)
-        for p in self.pronunciations:
-            make_transient(p)
-            self.dictionary_model.corpus_model.session.merge(p)
 
 
 class UpdateWordCommand(DictionaryCommand):

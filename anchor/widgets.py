@@ -701,8 +701,8 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
         self.nowrap_delegate.refresh_settings()
         self.search_box.setFont(font)
         self.replace_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
-        self.replace_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        self.replace_box.setStyleSheet(self.settings.search_box_style_sheet)
         self.table_widget.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
 
@@ -1658,7 +1658,7 @@ class IpaKeyboard(QtWidgets.QMenu):
             widget.sizeHint().width() + self.scroll_area.verticalScrollBar().sizeHint().width()
         )
         self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setStyleSheet(self.settings.generate_keyboard_style_sheet())
+        self.setStyleSheet(self.settings.keyboard_style_sheet)
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.Type.KeyPress:
@@ -1908,7 +1908,7 @@ class EditableDelegate(QtWidgets.QStyledItemDelegate):
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> QtWidgets.QWidget:
         editor = WordInput(parent)
-        editor.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        editor.setStyleSheet(self.settings.search_box_style_sheet)
         editor.setFont(self.settings.font)
         return editor
 
@@ -1974,7 +1974,7 @@ class PronunciationDelegate(EditableDelegate):
         m: DictionaryTableModel = index.model()
         self.view = parent.parent()
         editor = PronunciationInput(m.phones, parent)
-        editor.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        editor.setStyleSheet(self.settings.search_box_style_sheet)
         editor.setFont(self.settings.font)
         editor.installEventFilter(self)
         editor.returnPressed.connect(self.accept)
@@ -2741,7 +2741,7 @@ class OovWidget(QtWidgets.QWidget):
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
 
     def search(self):
         if self.oov_model.text_filter != self.search_box.query():
@@ -2806,7 +2806,7 @@ class DictionaryWidget(QtWidgets.QWidget):
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
 
     def search(self):
         if self.dictionary_model.text_filter != self.search_box.query():
@@ -2919,7 +2919,7 @@ class SpeakerWidget(QtWidgets.QWidget):
         self.speaker_model.resultCountChanged.connect(self.pagination_toolbar.update_result_count)
         self.pagination_toolbar.offsetRequested.connect(self.speaker_model.set_offset)
         self.pagination_toolbar.set_limit(self.speaker_model.limit)
-        self.search_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
 
     def update_speaker_count(self):
         self.pagination_toolbar.update_result_count(
@@ -2931,7 +2931,7 @@ class SpeakerWidget(QtWidgets.QWidget):
         font = self.settings.font
         self.speaker_edit.setFont(font)
         self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.generate_search_box_style_sheet())
+        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(
             self.table.settings.value(self.table.settings.RESULTS_PER_PAGE)

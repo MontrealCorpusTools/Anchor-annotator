@@ -978,12 +978,7 @@ def query_function(
             else:
                 text_column = Utterance.text
             filter_regex = text_filter.generate_expression(posix=True)
-            if text_filter.regex or text_filter.word:
-                utterances = utterances.filter(text_column.op("~")(filter_regex))
-            else:
-                if not text_filter.case_sensitive:
-                    text_column = sqlalchemy.func.lower(text_column)
-                utterances = utterances.filter(text_column.contains(text_filter.search_text))
+            utterances = utterances.filter(text_column.op("~")(filter_regex))
         if count_only:
             try:
                 return utterances.count()
@@ -1074,12 +1069,7 @@ def query_dictionary_function(
             words = words.filter(Word.count > 0)
         if text_filter is not None:
             filter_regex = text_filter.generate_expression(posix=True)
-            if text_filter.regex or text_filter.word:
-                words = words.filter(text_column.op("~")(filter_regex))
-            else:
-                if not text_filter.case_sensitive:
-                    text_column = sqlalchemy.func.lower(text_column)
-                words = words.filter(text_column.contains(text_filter.search_text))
+            words = words.filter(text_column.op("~")(filter_regex))
         if kwargs.get("count", False):
             return words.count()
         if sort_index is not None and sort_index < len(columns):
@@ -1088,7 +1078,7 @@ def query_dictionary_function(
                 sort_column = sort_column.desc()
         else:
             sort_column = text_column
-        words = words.order_by(sort_column, Word.id)
+        words = words.order_by(sort_column, Word.id, Pronunciation.id)
 
         words = words.limit(kwargs.get("limit", 100)).offset(kwargs.get("current_offset", 0))
         data = []
@@ -1124,12 +1114,7 @@ def query_oovs_function(
         words = session.query(*columns).filter(Word.word_type == WordType.oov)
         if text_filter is not None:
             filter_regex = text_filter.generate_expression(posix=True)
-            if text_filter.regex or text_filter.word:
-                words = words.filter(text_column.op("~")(filter_regex))
-            else:
-                if not text_filter.case_sensitive:
-                    text_column = sqlalchemy.func.lower(text_column)
-                words = words.filter(text_column.contains(text_filter.search_text))
+            words = words.filter(text_column.op("~")(filter_regex))
         if kwargs.get("count", False):
             return words.count()
         if sort_index is not None and sort_index < len(columns):
@@ -1339,12 +1324,7 @@ def query_speakers_function(
             if text_filter is not None:
                 filter_regex = text_filter.generate_expression(posix=True)
                 text_column = Speaker.name
-                if text_filter.regex or text_filter.word:
-                    speakers = speakers.filter(text_column.op("~")(filter_regex))
-                else:
-                    if not text_filter.case_sensitive:
-                        text_column = sqlalchemy.func.lower(text_column)
-                    speakers = speakers.filter(text_column.contains(text_filter.search_text))
+                speakers = speakers.filter(text_column.op("~")(filter_regex))
             return speakers.count()
 
         if progress_callback is not None:
@@ -1369,10 +1349,7 @@ def query_speakers_function(
             text_column = columns[1]
             if not text_filter.case_sensitive:
                 text_column = sqlalchemy.func.lower(text_column)
-            if text_filter.regex or text_filter.word:
-                speakers = speakers.filter(text_column.op("~")(filter_regex))
-            else:
-                speakers = speakers.filter(text_column.contains(text_filter.search_text))
+            speakers = speakers.filter(text_column.op("~")(filter_regex))
         if sort_index is not None:
             sort_column = columns[sort_index + 1]
             if kwargs.get("sort_desc", False):
@@ -1503,12 +1480,7 @@ def replace_function(
             columns = [Utterance.id, Utterance.text]
             utterances = session.query(*columns)
 
-            if search_query.regex or search_query.word:
-                utterances = utterances.filter(text_column.op("~")(filter_regex))
-            else:
-                if not search_query.case_sensitive:
-                    text_column = sqlalchemy.func.lower(text_column)
-                utterances = utterances.filter(text_column.contains(search_query.search_text))
+            utterances = utterances.filter(text_column.op("~")(filter_regex))
             if progress_callback is not None:
                 progress_callback.update_total(utterances.count())
             for u_id, text in utterances:
@@ -1519,58 +1491,37 @@ def replace_function(
 
             utterance_table = Utterance.__table__
             utterance_statement = sqlalchemy.update(utterance_table)
-            files = session.query(File).filter(File.id == Utterance.file_id)
 
-            if search_query.regex or search_query.word:
-                files = files.filter(text_column.op("~")(filter_regex))
-
-                utterance_statement = utterance_statement.where(
-                    utterance_table.c.text.op("~")(filter_regex)
-                )
-                utterance_statement = utterance_statement.values(
-                    text=sqlalchemy.func.regexp_replace(
-                        utterance_table.c.text, filter_regex, replacement_string, "g"
-                    ),
-                    normalized_text=sqlalchemy.func.regexp_replace(
-                        utterance_table.c.normalized_text, filter_regex, replacement_string, "g"
-                    ),
-                ).execution_options(synchronize_session="fetch")
-                utterance_statement = utterance_statement.returning(
-                    utterance_table.c.id, utterance_table.c.text
-                )
-            else:
-                if not search_query.case_sensitive:
-                    text_column = sqlalchemy.func.lower(text_column)
-                files = files.filter(text_column.contains(search_query.search_text))
-
-                utterance_statement = utterance_statement.where(
-                    utterance_table.c.text.contains(search_query.search_text)
-                )
-                utterance_statement = utterance_statement.values(
-                    text=sqlalchemy.func.regexp_replace(
-                        utterance_table.c.text, filter_regex, replacement_string, "g"
-                    ),
-                    normalized_text=sqlalchemy.func.regexp_replace(
-                        utterance_table.c.normalized_text, filter_regex, replacement_string, "g"
-                    ),
-                ).execution_options(synchronize_session="fetch")
-                utterance_statement = utterance_statement.returning(
-                    utterance_table.c.id, utterance_table.c.text
-                )
+            utterance_statement = utterance_statement.where(
+                utterance_table.c.text.op("~")(filter_regex)
+            )
+            utterance_statement = utterance_statement.values(
+                text=sqlalchemy.func.regexp_replace(
+                    utterance_table.c.text, filter_regex, replacement_string, "g"
+                ),
+                normalized_text=sqlalchemy.func.regexp_replace(
+                    utterance_table.c.normalized_text, filter_regex, replacement_string, "g"
+                ),
+            ).execution_options(synchronize_session="fetch")
+            utterance_statement = utterance_statement.returning(
+                utterance_table.c.id, utterance_table.c.file_id, utterance_table.c.text
+            )
             while True:
                 try:
                     with session.begin_nested():
-                        files.update(
-                            {
-                                File.modified: True,
-                            },
-                            synchronize_session=False,
-                        )
                         results = session.execute(utterance_statement)
-                        for u_id, text in results:
+                        file_ids = []
+                        for u_id, f_id, text in results:
                             if progress_callback is not None:
                                 progress_callback.increment_progress(1)
                             new_texts[u_id] = text
+                            file_ids.append(f_id)
+                        if file_ids:
+                            session.query(File).filter(File.id.in_(file_ids)).update(
+                                {
+                                    File.modified: True,
+                                }
+                            )
                     break
                 except psycopg2.errors.DeadlockDetected:
                     pass

@@ -672,6 +672,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
         self.ui.toolBar.addWidget(w)
+        self.ui.toolBar.setAttribute(QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self.ui.lockEditAct.setEnabled(True)
         self.ui.lockEditAct.setChecked(bool(self.settings.value(AnchorSettings.LOCKED, False)))
         self.ui.lockEditAct.toggled.connect(self.corpus_model.lock_edits)

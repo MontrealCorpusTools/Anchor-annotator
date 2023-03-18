@@ -244,6 +244,11 @@ QMainWindow::separator:hover {
                 background-color: rgb(255, 195, 0);
                 color: rgb(0, 8, 20);
         }
+        QToolTip {
+                margin: 2px;
+                background-color: rgb(255, 195, 0);
+                color: rgb(0, 8, 20);
+        }
         QMenu::item {
                 padding: 2px 25px 2px 20px;
                 border: 1px solid transparent;
