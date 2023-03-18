@@ -934,6 +934,7 @@ class TextEdit(QtWidgets.QTextEdit):
 
     def __init__(self, dictionary_model, speaker_id, *args):
         super().__init__(*args)
+        self.settings = AnchorSettings()
         self.dictionary_model: DictionaryTableModel = dictionary_model
         self.speaker_id = speaker_id
         self.lookUpWord.connect(self.dictionary_model.lookup_word)
@@ -979,6 +980,7 @@ class TextEdit(QtWidgets.QTextEdit):
             createAction.triggered.connect(lambda: self.createWord.emit(word))
             createAction.triggered.connect(menu.hide)
             menu.addAction(createAction)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         # show the menu
         menu.exec_(self.mapToGlobal(location))
 
@@ -1719,10 +1721,8 @@ class UtteranceRegion(MfaRegion):
             self.text_margin_pixels,
             self.text_margin_pixels,
         )
-        self.text_edit.setStyleSheet(self.settings.generate_interval_style_sheet())
-        self.speaker_dropdown.combo_box.setStyleSheet(
-            self.settings.generate_combo_box_style_sheet()
-        )
+        self.text_edit.setStyleSheet(self.settings.interval_style_sheet)
+        self.speaker_dropdown.combo_box.setStyleSheet(self.settings.combo_box_style_sheet)
         self.text_edit.installEventFilter(self)
         self.highlighter = Highlighter(self.text_edit.document())
         self.highlighter.set_models(dictionary_model)
@@ -1821,6 +1821,7 @@ class UtteranceRegion(MfaRegion):
             a.triggered.connect(self.update_speaker)
             change_speaker_menu.addAction(a)
         menu.addMenu(change_speaker_menu)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.exec_(ev.screenPos())
 
     def update_speaker(self):

@@ -1357,7 +1357,7 @@ class CorpusModel(TableModel):
         next_pk = self.corpus.get_next_primary_key(Utterance)
         new_utt = Utterance(
             id=next_pk,
-            speaker=speaker,
+            speaker_id=speaker.id,
             file_id=file.id,
             begin=begin,
             end=end,
