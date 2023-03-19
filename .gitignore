@@ -137,3 +137,5 @@ dmypy.json
 *.autosave
 
 *.user
+
+anchor/_version.py
