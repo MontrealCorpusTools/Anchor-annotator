@@ -16,9 +16,7 @@ Installation
 
        .. code-block:: bash
 
-          conda config --add channels conda-forge
-          conda install montreal-forced-aligner
-          pip install anchor
+          conda install -c conda-forge anchor
 
        +++
 
