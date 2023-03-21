@@ -8,7 +8,7 @@ All platforms
 =============
 
 1. Install `Miniconda <https://docs.conda.io/en/latest/miniconda.html>`_/`Conda installation <https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html>`_
-2. Create new environment and install MFA: :code:`conda create -n anchor -c conda-forge anchor`
+2. Create new environment and install MFA: :code:`conda create -n anchor -c conda-forge anchor-annotator`
 
    a.  You can enable the :code:`conda-forge` channel by default by running :code:`conda config --add channels conda-forge` in order to omit the :code:`-c conda-forge` from these commands
 

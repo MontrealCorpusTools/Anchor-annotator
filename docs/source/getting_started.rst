@@ -16,7 +16,7 @@ Installation
 
        .. code-block:: bash
 
-          conda install -c conda-forge anchor-annotator
+          conda create -n anchor -c conda-forge anchor-annotator
 
        +++
 
@@ -32,6 +32,7 @@ Installation
 
        .. code-block:: bash
 
+          conda activate anchor
           mfa anchor
 
 
