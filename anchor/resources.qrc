@@ -17,6 +17,7 @@
         <file alias="splash_screen.svg">resources/splash_screen.svg</file>
         <file alias="spinning_blue.svg">resources/spinning_blue.svg</file>
         <file alias="check-circle.svg">resources/base_tool_buttons/check-circle-solid.svg</file>
+        <file alias="check.svg">resources/base_tool_buttons/check-solid.svg</file>
         <file alias="undo.svg">resources/base_tool_buttons/undo-solid.svg</file>
         <file alias="redo.svg">resources/base_tool_buttons/redo-solid.svg</file>
         <file alias="magnifying-glass.svg">resources/base_tool_buttons/magnifying-glass-solid.svg</file>

@@ -16,7 +16,7 @@ Installation
 
        .. code-block:: bash
 
-          conda install -c conda-forge anchor
+          conda install -c conda-forge anchor-annotator
 
        +++
 
