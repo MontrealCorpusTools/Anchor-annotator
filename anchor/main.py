@@ -6,10 +6,12 @@ import sys
 import traceback
 
 import sqlalchemy
+from montreal_forced_aligner.command_line.utils import check_databases
 from montreal_forced_aligner.config import GLOBAL_CONFIG, MfaConfiguration, get_temporary_directory
 from montreal_forced_aligner.corpus import AcousticCorpus
 from montreal_forced_aligner.data import WorkflowType
 from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_SPEECHBRAIN
+from montreal_forced_aligner.exceptions import DatabaseError
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
     AcousticModel,
@@ -251,15 +253,29 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._db_engine
 
     def initialize_database(self):
-        retcode = subprocess.call(
-            ["createdb", "anchor"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
-        )
-        exist_check = retcode != 0
-        if exist_check:
+        try:
+            check_databases(db_name="anchor")
             return
-        from anchor.db import AnchorSqlBase
+        except Exception:
+            try:
+                subprocess.check_call(
+                    [
+                        "createdb",
+                        f"--host={GLOBAL_CONFIG.database_socket}",
+                        "anchor",
+                    ],
+                    stderr=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                )
+            except Exception:
+                raise DatabaseError(
+                    f"There was an error connecting to the {GLOBAL_CONFIG.current_profile_name} MFA database server. "
+                    "Please ensure the server is initialized (mfa server init) or running (mfa server start)"
+                )
 
-        AnchorSqlBase.metadata.create_all(self.db_engine)
+            from anchor.db import AnchorSqlBase
+
+            AnchorSqlBase.metadata.create_all(self.db_engine)
 
     def sync_models(self):
         self.model_manager = ModelManager(token=self.settings.value(AnchorSettings.GITHUB_TOKEN))
