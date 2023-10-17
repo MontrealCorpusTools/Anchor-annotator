@@ -6,11 +6,14 @@ dependencies:
   - python>=3.10
   - pip
   - montreal-forced-aligner
+  - kalpy
   - pyside6
   - pyqtgraph
   - pytorch
   - torchaudio
   - setuptools_scm
+  - librosa
+  - resampy
   - pip:
       - build
       - twine
