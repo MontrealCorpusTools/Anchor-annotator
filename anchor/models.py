@@ -10,12 +10,15 @@ import numpy as np
 import pynini.lib.rewrite
 import sqlalchemy
 import yaml
+from _kalpy.ivector import Plda
 from dataclassy import dataclass
+from kalpy.fstext.lexicon import LexiconCompiler
+from kalpy.utterance import Utterance as KalpyUtterance
 from montreal_forced_aligner.corpus.acoustic_corpus import (
     AcousticCorpus,
     AcousticCorpusWithPronunciations,
 )
-from montreal_forced_aligner.data import PhoneType
+from montreal_forced_aligner.data import PhoneType, WordType
 from montreal_forced_aligner.db import File, Phone, Speaker, Utterance
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
@@ -26,7 +29,7 @@ from montreal_forced_aligner.models import (
 )
 from montreal_forced_aligner.utils import mfa_open
 from PySide6 import QtCore
-from sqlalchemy.orm import joinedload, scoped_session
+from sqlalchemy.orm import joinedload
 
 from anchor import undo
 from anchor.settings import AnchorSettings
@@ -219,8 +222,11 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if not rows:
             return
         for r in rows:
+            index = self.model().index(r, 0)
+            if not index.isValid():
+                continue
             self.setCurrentIndex(
-                self.model().index(r, 0),
+                index,
                 QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
                 | QtCore.QItemSelectionModel.SelectionFlag.Rows,
             )
@@ -242,7 +248,11 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
             flags |= QtCore.QItemSelectionModel.SelectionFlag.Current
             if row == self.currentIndex().row():
                 self.update_view_times(force_update=True)
-        self.select(self.model().index(row, 0), flags)
+
+        index = self.model().index(row, 0)
+        if not index.isValid():
+            return
+        self.select(index, flags)
 
     def select_audio(self, begin, end):
         if end is not None and end - begin < 0.025:
@@ -299,6 +309,8 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
     def currentText(self):
         index = self.currentIndex()
         if not index:
+            return
+        if not index.isValid():
             return
         m = self.model()
 
@@ -448,7 +460,11 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         return False
 
     def set_current_file(self, file_id, begin=None, end=None, channel=None, force_update=False):
-        if self.current_file is None or self.current_file.id != file_id:
+        try:
+            new_file = self.current_file is None or self.current_file.id != file_id
+        except sqlalchemy.orm.exc.DetachedInstanceError:
+            new_file = True
+        if new_file:
             self.selected_min_time = None
             self.selected_max_time = None
             self.fileAboutToChange.emit()
@@ -562,7 +578,7 @@ class DictionaryTableModel(TableModel):
     requestLookup = QtCore.Signal(object)
 
     def __init__(self, parent=None):
-        super().__init__(["Word", "Count", "Pronunciation"], parent=parent)
+        super().__init__(["Word", "Word type", "Count", "Pronunciation"], parent=parent)
         self.settings = AnchorSettings()
         self.font = self.settings.font
         self.current_dictionary = None
@@ -652,7 +668,7 @@ class DictionaryTableModel(TableModel):
                         self,
                     )
                 )
-            else:
+            elif index.column() == 2:
                 self.corpus_model.addCommand.emit(
                     undo.UpdatePronunciationCommand(
                         self.pron_indices[index.row()],
@@ -667,6 +683,15 @@ class DictionaryTableModel(TableModel):
     def add_word(self, word, word_id):
         self.requestLookup.emit(word)
         self.add_pronunciation(word, word_id)
+
+    def change_word_type(self, word_id: int, current_word_type: WordType):
+        if current_word_type is WordType.speech:
+            new_word_type = WordType.interjection
+        else:
+            new_word_type = WordType.speech
+        self.corpus_model.addCommand.emit(
+            undo.ChangeWordTypeCommand(word_id, current_word_type, new_word_type, self)
+        )
 
     def add_pronunciation(
         self,
@@ -709,6 +734,8 @@ class DictionaryTableModel(TableModel):
             return
         data = self._data[index.row()][index.column()]
         if role == QtCore.Qt.ItemDataRole.DisplayRole or role == QtCore.Qt.ItemDataRole.EditRole:
+            if index.column() == 1:
+                data = str(data).split(".")[-1]
             return data
 
     def finish_refresh_word_counts(self):
@@ -716,6 +743,10 @@ class DictionaryTableModel(TableModel):
         self.update_result_count()
         self.update_data()
         self.wordCountsRefreshed.emit()
+
+    def finish_rebuilding_lexicons(self, result):
+        lexicon_compiler, dictionary_id = result
+        self.corpus_model.corpus.lexicon_compilers[dictionary_id] = lexicon_compiler
 
     def refresh(self):
         self.update_result_count()
@@ -768,6 +799,13 @@ class DictionaryTableModel(TableModel):
             [{"dictionary_id": self.current_dictionary_id}],
         )
 
+    def rebuild_lexicons(self):
+        self.runFunction.emit(
+            "Rebuilding lexicon FSTs",
+            self.finish_rebuilding_lexicons,
+            [{"dictionary_id": self.current_dictionary_id}],
+        )
+
     def update_data(self):
         self.runFunction.emit("Querying dictionary", self.finish_update_data, [self.query_kwargs])
 
@@ -775,53 +813,68 @@ class DictionaryTableModel(TableModel):
 class SpeakerModel(TableModel):
     clustered = QtCore.Signal()
     mdsFinished = QtCore.Signal()
-    speakersChanged = QtCore.Signal()
+    speakersChanged = QtCore.Signal(object)
     mdsAboutToChange = QtCore.Signal()
+
+    NAME_COLUMN = 0
+    UTTERANCE_COUNT_COLUMN = 1
+    IVECTOR_COLUMN = 3
 
     def __init__(self, parent=None):
         super().__init__(
-            ["Speaker", "Utterances", "Dictionary", "Ivector distance", "View"], parent=parent
+            ["Speaker", "Utterances", "Dictionary", "Ivector distance", "View", "Compare"],
+            parent=parent,
         )
         self.settings = AnchorSettings()
         self.speaker_count = None
         self.text_filter = None
+        self.speaker_filter = None
         self.sort_index = 1
         self.sort_order = QtCore.Qt.SortOrder.DescendingOrder
         self.all_speakers = []
         self.corpus_model: Optional[CorpusModel] = None
-        self.current_speaker = None
+        self.current_speakers: typing.List[int] = []
         self.num_clusters = None
+        self.speaker_space = None
         self.mds = None
+        self.perplexity = 30.0
         self.cluster_labels = None
         self.ivectors = None
-        self.speaker_distances = None
         self.utterance_ids = None
+        self.alternate_speaker_ids = []
         self.cluster_kwargs = {}
         self.manifold_kwargs = {}
+        self.utt2spk = {}
 
     def indices_updated(self, utterance_ids, speaker_id):
-        if speaker_id != self.current_speaker:
+        print(
+            "UPDATING",
+            speaker_id,
+            utterance_ids,
+        )
+        if speaker_id not in self.current_speakers:
             return
-        indices = np.where(np.isin(self.utterance_ids, utterance_ids))
-        self.cluster_labels = np.delete(self.cluster_labels, indices, axis=0)
-        self.utterance_ids = np.delete(self.utterance_ids, indices, axis=0)
-        self.mds = np.delete(self.mds, indices, axis=0)
-        self.ivectors = np.delete(self.ivectors, indices, axis=0)
-        if self.speaker_distances is not None:
-            self.speaker_distances = np.delete(self.speaker_distances, indices, axis=0)
-        self.speakersChanged.emit()
+        if False and len(self.current_speakers) == 1:
+            indices = np.where(np.isin(self.utterance_ids, utterance_ids))
+            self.cluster_labels = np.delete(self.cluster_labels, indices, axis=0)
+            self.utterance_ids = np.delete(self.utterance_ids, indices, axis=0)
+            self.mds = np.delete(self.mds, indices, axis=0)
+            self.ivectors = np.delete(self.ivectors, indices, axis=0)
+        for u_id in utterance_ids:
+            self.utt2spk[u_id] = speaker_id
+        speakers = set(self.utt2spk.values())
+        self.current_speakers = [x for x in self.current_speakers if x in speakers]
+        self.speakersChanged.emit(False)
 
     def change_speaker(self, utterance_ids, old_speaker_id, new_speaker_id):
         self.corpus_model.addCommand.emit(
             undo.ChangeSpeakerCommand(utterance_ids, old_speaker_id, new_speaker_id, self)
         )
 
-    def set_speaker_filter(self, text_filter: TextFilterQuery):
-        if text_filter != self.text_filter:
-            self.current_offset = 0
-        self.text_filter = text_filter
-        self.update_data()
-        self.update_result_count()
+    def set_speaker_filter(self, speaker_filter: typing.Union[int, np.ndarray]):
+        if isinstance(speaker_filter, int):
+            self.current_speakers = [speaker_filter]
+        self.speaker_filter = speaker_filter
 
     def setData(
         self,
@@ -845,9 +898,19 @@ class SpeakerModel(TableModel):
     def data(self, index, role=None):
         if index.column() > 3:
             return None
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+        if role == QtCore.Qt.ItemDataRole.DisplayRole or role == QtCore.Qt.ItemDataRole.EditRole:
             return self._data[index.row()][index.column()]
         return super().data(index, role)
+
+    def flags(
+        self, index: Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex]
+    ) -> QtCore.Qt.ItemFlag:
+        if not index.isValid():
+            return QtCore.Qt.ItemFlag.ItemIsEnabled
+        flags = super().flags(index)
+        if index.column() == 0:
+            flags |= QtCore.Qt.ItemFlag.ItemIsEditable
+        return flags
 
     def speakerAt(self, row: int):
         return self._indices[row]
@@ -862,6 +925,7 @@ class SpeakerModel(TableModel):
             "limit": self.limit,
             "current_offset": self.current_offset,
             "text_filter": self.text_filter,
+            "speaker_filter": self.speaker_filter,
         }
         if self.sort_index is not None:
             kwargs["sort_index"] = self.sort_index
@@ -877,16 +941,22 @@ class SpeakerModel(TableModel):
         self.newResults.emit()
 
     def finish_clustering(self, result, *args, **kwargs):
-        speaker_id, c_labels = result
-        if speaker_id != self.current_speaker:
+        print("finishing clustering")
+        if result is None:
+            return
+        speaker_ids, c_labels = result
+        if speaker_ids != self.current_speakers:
             return
         self.cluster_labels = c_labels
         self.num_clusters = np.max(c_labels) + 1
         self.clustered.emit()
 
     def finish_mds(self, result, *args, **kwargs):
-        speaker_id, mds = result
-        if speaker_id != self.current_speaker:
+        print("finishing mds")
+        if result is None:
+            return
+        speaker_ids, mds = result
+        if speaker_ids != self.current_speakers:
             return
         self.mds = mds
         self.mdsFinished.emit()
@@ -894,35 +964,61 @@ class SpeakerModel(TableModel):
     def update_data(self):
         self.runFunction.emit("Querying speakers", self.finish_update_data, [self.query_kwargs])
 
-    def change_current_speaker(self, speaker_id):
-        if self.current_speaker == speaker_id:
-            return
+    @property
+    def count_kwargs(self) -> typing.Dict[str, typing.Any]:
+        kwargs = self.query_kwargs
+        kwargs["count"] = True
+        return kwargs
+
+    def update_result_count(self):
+        self.runFunction.emit(
+            "Counting speaker results", self.finalize_result_count, [self.count_kwargs]
+        )
+
+    def change_current_speaker(self, speaker_id: typing.Union[int, typing.List[int]], reset=False):
         self.mds = None
         self.cluster_labels = None
-        self.current_speaker = speaker_id
+        if reset:
+            self.current_speakers = []
+        if isinstance(speaker_id, int):
+            speaker_id = [speaker_id]
+        if (
+            isinstance(self.speaker_filter, int)
+            and self.speaker_filter not in self.current_speakers
+        ):
+            self.current_speakers.append(self.speaker_filter)
+        print(speaker_id, self.current_speakers)
+        for s_id in speaker_id:
+            if s_id not in self.current_speakers:
+                self.current_speakers.append(s_id)
         self.cluster_speaker_utterances()
         self.load_speaker_ivectors()
         self.mds_speaker_utterances()
 
     def finish_load_ivectors(self, result, *args, **kwargs):
-        speaker_id, utterance_ids, ivectors, speaker_distances = result
-        if speaker_id != self.current_speaker:
+        speaker_ids, utterance_ids, utt2spk, ivectors = result
+        if speaker_ids != self.current_speakers:
             return
         self.utterance_ids = utterance_ids
-        self.speaker_distances = speaker_distances
         self.ivectors = ivectors
+        self.utt2spk = utt2spk
 
     def load_speaker_ivectors(self):
+        if not self.current_speakers:
+            return
         self.ivectors = None
         self.runFunction.emit(
             "Loading speaker ivectors",
             self.finish_load_ivectors,
             [
                 {
-                    "speaker_id": self.current_speaker,
+                    "speaker_ids": self.current_speakers,
+                    "plda": self.corpus_model.plda,
+                    "speaker_plda": self.corpus_model.speaker_plda,
                     "working_directory": os.path.join(
                         self.corpus_model.corpus.output_directory, "speaker_diarization"
                     ),
+                    "limit": self.manifold_kwargs.get("limit", 500),
                 }
             ],
         )
@@ -944,11 +1040,12 @@ class SpeakerModel(TableModel):
     def cluster_speaker_utterances(self):
         if self.corpus_model.corpus is None:
             return
+        if not self.current_speakers:
+            return
         kwargs = {
-            "speaker_id": self.current_speaker,
-            "working_directory": os.path.join(
-                self.corpus_model.corpus.output_directory, "speaker_diarization"
-            ),
+            "speaker_ids": self.current_speakers,
+            "plda": self.corpus_model.plda,
+            "speaker_plda": self.corpus_model.speaker_plda,
         }
         kwargs.update(self.cluster_kwargs)
         self.cluster_labels = None
@@ -958,11 +1055,14 @@ class SpeakerModel(TableModel):
     def mds_speaker_utterances(self):
         if self.corpus_model.corpus is None:
             return
+        if not self.current_speakers:
+            return
         kwargs = {
-            "speaker_id": self.current_speaker,
-            "working_directory": os.path.join(
-                self.corpus_model.corpus.output_directory, "speaker_diarization"
-            ),
+            "speaker_ids": self.current_speakers,
+            "perplexity": self.perplexity,
+            "plda": self.corpus_model.plda,
+            "speaker_plda": self.corpus_model.speaker_plda,
+            "speaker_space": self.speaker_space,
         }
         kwargs.update(self.manifold_kwargs)
         self.mds = None
@@ -970,67 +1070,143 @@ class SpeakerModel(TableModel):
         self.runFunction.emit("Generating speaker MDS", self.finish_mds, [kwargs])
 
 
-class MergeSpeakerModel(TableModel):
-    mergeAllFinished = QtCore.Signal(object)
-
+class DiarizationModel(TableModel):
     def __init__(self, parent=None):
-        super().__init__(["Speaker", "Suggested speaker", "Distance", "Merge?"], parent=parent)
+        columns = [
+            "Utterance",
+            "Suggested speaker",
+            "#",
+            "Current speaker",
+            "#",
+            "Distance",
+            "Reassign?",
+            "Merge?",
+        ]
+        super().__init__(columns, parent=parent)
         self.settings = AnchorSettings()
         self.speaker_count = None
+        self._utterance_ids = []
+        self._file_ids = []
         self._speaker_indices = []
         self._suggested_indices = []
         self.corpus_model: Optional[CorpusModel] = None
         self.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.speaker_filter = None
+        self.alternate_speaker_filter = None
+        self.utterance_filter = None
         self.threshold = None
         self.metric = "cosine"
+        self.inverted = False
+        self.in_speakers = False
 
     def data(self, index, role=None):
-        if index.column() > 2:
+        if not index.isValid() or index.column() > 5:
             return None
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            if index.column() == 2:
-                return float(self._data[index.row()][index.column()])
+            if index.column() == 5:
+                try:
+                    return float(self._data[index.row()][index.column()])
+                except TypeError:
+                    return "N/A"
+            elif index.column() in {2, 4}:
+                try:
+                    return int(self._data[index.row()][index.column()])
+                except TypeError:
+                    return "N/A"
             return self._data[index.row()][index.column()]
         return super().data(index, role)
 
-    def speakers_at(self, row: int):
-        return self._speaker_indices[row], self._suggested_indices[row]
+    def utterance_at(self, row: int):
+        if row is None:
+            return None
+        return self.corpus_model.corpus.session.get(Utterance, self._utterance_ids[row])
 
     def set_threshold(self, threshold: float):
+        if threshold != self.threshold:
+            self.current_offset = 0
         self.threshold = threshold
 
     def set_metric(self, metric: str):
+        if metric != self.metric:
+            self.current_offset = 0
         self.metric = metric
 
+    def set_inverted(self, inverted: bool):
+        if inverted != self.inverted:
+            self.current_offset = 0
+        self.inverted = inverted
+
+    def set_speaker_lookup(self, in_speakers: bool):
+        if in_speakers != self.in_speakers:
+            self.current_offset = 0
+        self.in_speakers = in_speakers
+
+    def set_utterance_filter(self, utterance_id: int):
+        if utterance_id != self.utterance_filter:
+            self.current_offset = 0
+        self.utterance_filter = utterance_id
+
+    def set_text_filter(self, text_filter: TextFilterQuery):
+        if text_filter != self.text_filter:
+            self.current_offset = 0
+        self.text_filter = text_filter
+
     def set_speaker_filter(self, speaker_id: typing.Union[int, str, None]):
+        if speaker_id != self.speaker_filter:
+            self.utterance_filter = None
         self.speaker_filter = speaker_id
+        if speaker_id:
+            if isinstance(speaker_id, int):
+                self.speaker_filter = speaker_id
+            else:
+                current_speaker = (
+                    self.corpus_model.corpus.session.query(Speaker)
+                    .filter(Speaker.name == speaker_id)
+                    .first()
+                )
+                self.speaker_filter = current_speaker.id
 
-    def merge_all(self):
-        if not self.corpus_model.corpus.has_any_ivectors():
+    def set_alternate_speaker_filter(self, speaker_id: typing.Union[int, str, None]):
+        self.alternate_speaker_filter = speaker_id
+        if speaker_id:
+            if isinstance(speaker_id, int):
+                self.alternate_speaker_filter = speaker_id
+            else:
+                current_speaker = (
+                    self.corpus_model.corpus.session.query(Speaker)
+                    .filter(Speaker.name == speaker_id)
+                    .first()
+                )
+                self.alternate_speaker_filter = current_speaker.id
+
+    def reassign_utterance(self, row: int):
+        utterance = self.utterance_at(row)
+        if utterance is None:
             return
-        self.runFunction.emit("Merging speakers", self.mergeAllFinished.emit, [self.query_kwargs])
-
-    def merge_speakers(self, row: int):
-        speaker_id, suggested_id = self.speakers_at(row)
-        speaker_name = self._data[row][0]
-        suggested_name = self._data[row][1]
-        self.corpus_model.merge_speakers([suggested_id, speaker_id])
+        self.corpus_model.update_utterance_speaker(utterance, self._suggested_indices[row])
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
-        self._speaker_indices.pop(row)
-        self._speaker_indices = [
-            x if x != speaker_id else suggested_id for x in self._speaker_indices
-        ]
+        self._utterance_ids.pop(row)
         self._suggested_indices.pop(row)
-        self._suggested_indices = [
-            x if x != speaker_id else suggested_id for x in self._suggested_indices
-        ]
-        for d in self._data:
-            if d[0] == speaker_name:
-                d[0] = suggested_name
-            if d[1] == speaker_name:
-                d[1] = suggested_name
+        self._speaker_indices.pop(row)
+
+        self.layoutChanged.emit()
+
+    def merge_speakers(self, row: int):
+        speaker_id = self._speaker_indices[row]
+        print(self._suggested_indices[row], speaker_id)
+        if self.inverted:
+            utterance_id = self._utterance_ids[row]
+            self.corpus_model.addCommand.emit(
+                undo.ChangeSpeakerCommand([utterance_id], speaker_id, 0, self)
+            )
+        else:
+            self.corpus_model.merge_speakers([self._suggested_indices[row], speaker_id])
+        self.layoutAboutToBeChanged.emit()
+        self._data.pop(row)
+        self._utterance_ids.pop(row)
+        self._suggested_indices.pop(row)
+        self._speaker_indices.pop(row)
 
         self.layoutChanged.emit()
 
@@ -1041,9 +1217,18 @@ class MergeSpeakerModel(TableModel):
     def finish_update_data(self, result, *args, **kwargs):
         self.layoutAboutToBeChanged.emit()
         if result is None:
-            self._data, self._speaker_indices, self._suggested_indices = [], [], []
+            self._data, self._utterance_ids, self._suggested_indices, self._speaker_indices = (
+                [],
+                [],
+                [],
+            )
         else:
-            self._data, self._speaker_indices, self._suggested_indices = result
+            (
+                self._data,
+                self._utterance_ids,
+                self._suggested_indices,
+                self._speaker_indices,
+            ) = result
         self.layoutChanged.emit()
         self.newResults.emit()
 
@@ -1052,19 +1237,48 @@ class MergeSpeakerModel(TableModel):
         kwargs = {
             "limit": self.limit,
             "current_offset": self.current_offset,
+            "speaker_id": self.speaker_filter if isinstance(self.speaker_filter, int) else None,
+            "alternate_speaker_id": self.alternate_speaker_filter
+            if isinstance(self.alternate_speaker_filter, int)
+            else None,
+            "reference_utterance_id": self.utterance_filter,
+            "text_filter": self.text_filter,
+            "threshold": self.threshold,
+            "metric": self.metric,
+            "inverted": self.inverted,
+            "in_speakers": self.in_speakers,
+            "plda": self.corpus_model.plda,
+            "speaker_plda": self.corpus_model.speaker_plda,
+        }
+        return kwargs
+
+    @property
+    def count_kwargs(self) -> typing.Dict[str, typing.Any]:
+        kwargs = self.query_kwargs
+        kwargs["count"] = True
+        return kwargs
+
+    def reassign_utterances(self):
+        if not self.corpus_model.corpus.has_any_ivectors():
+            return
+        kwargs = {
             "speaker_id": self.speaker_filter,
             "threshold": self.threshold,
             "metric": self.metric,
-            "working_directory": os.path.join(
-                self.corpus_model.corpus.output_directory, "speaker_diarization"
-            ),
+            "plda": self.corpus_model.plda,
+            "speaker_plda": self.corpus_model.speaker_plda,
         }
-        return kwargs
+        self.runFunction.emit("Reassigning utterances for speaker", self.update_data, [kwargs])
+
+    def update_result_count(self):
+        self.runFunction.emit(
+            "Counting diarization results", self.finalize_result_count, [self.count_kwargs]
+        )
 
     def update_data(self):
         if not self.corpus_model.corpus.has_any_ivectors():
             return
-        self.runFunction.emit("Comparing speakers", self.finish_update_data, [self.query_kwargs])
+        self.runFunction.emit("Diarizing utterances", self.finish_update_data, [self.query_kwargs])
 
 
 class CorpusModel(TableModel):
@@ -1153,6 +1367,10 @@ class CorpusModel(TableModel):
         self.language_model: Optional[LanguageModel] = None
         self.ivector_extractor: Optional[IvectorExtractorModel] = None
         self.g2p_model: Optional[G2PModel] = None
+        self.align_lexicon_compiler: Optional[LexiconCompiler] = None
+        self.transcribe_lexicon_compiler: Optional[LexiconCompiler] = None
+        self.plda: Optional[Plda] = None
+        self.speaker_plda = None
         self.segmented = True
         self.engine: typing.Optional[sqlalchemy.engine.Engine] = None
         self.reversed_indices = {}
@@ -1162,7 +1380,8 @@ class CorpusModel(TableModel):
         self._data = []
         self.unsaved_files = set()
         self.files = []
-        self.speakers = []
+        self.speakers = {}
+        self.speaker_id_mapping = {}
         self.utterances = None
         self.utterance_count = 0
         self.speaker_count = 0
@@ -1172,6 +1391,32 @@ class CorpusModel(TableModel):
             "WER": "percent",
             "PER": "percent",
         }
+        self.has_alignments = False
+        self.has_reference_alignments = False
+        self.has_transcribed_alignments = False
+        self.has_per_speaker_transcribed_alignments = False
+
+    def get_speaker_name(self, speaker_id: int):
+        if speaker_id not in self.speaker_id_mapping:
+            with self.corpus.session() as session:
+                speaker_name = session.query(Speaker.name).filter(Speaker.id == speaker_id).first()
+                if speaker_name is None:
+                    return ""
+                speaker_name = speaker_name[0]
+                self.speaker_id_mapping[speaker_id] = speaker_name
+                self.speakers[speaker_name] = speaker_id
+        return self.speaker_id_mapping[speaker_id]
+
+    def get_speaker_id(self, speaker_name: str):
+        if speaker_name not in self.speakers:
+            with self.corpus.session() as session:
+                speaker_id = session.query(Speaker.id).filter(Speaker.name == speaker_name).first()
+                if speaker_id is None:
+                    return None
+                speaker_id = speaker_id[0]
+                self.speaker_id_mapping[speaker_id] = speaker_name
+                self.speakers[speaker_name] = speaker_id
+        return self.speakers[speaker_name]
 
     def set_dictionary_model(self, dictionary_model: DictionaryTableModel):
         self.dictionary_model = dictionary_model
@@ -1237,12 +1482,16 @@ class CorpusModel(TableModel):
             index = self.reversed_indices.pop(merged_utterance.id)
         except KeyError:
             return
+
         self.layoutAboutToBeChanged.emit()
         first = split_utterances[0]
+        self.session.merge(first)
+        file_name = self._data[index][1]
+        speaker_name = self._data[index][2]
         row_data = [
             first.oovs,
-            first.file_name,
-            first.speaker_name,
+            file_name,
+            speaker_name,
             first.begin,
             first.end,
             first.duration,
@@ -1255,6 +1504,7 @@ class CorpusModel(TableModel):
         self.reversed_indices[first.id] = index
         rows = [index]
         for utterance in split_utterances[1:]:
+            self.session.merge(utterance)
             index += 1
             rows.append(index)
             self.reversed_indices = {
@@ -1263,8 +1513,8 @@ class CorpusModel(TableModel):
 
             row_data = [
                 utterance.oovs,
-                utterance.file_name,
-                utterance.speaker_name,
+                file_name,
+                speaker_name,
                 utterance.begin,
                 utterance.end,
                 utterance.duration,
@@ -1286,6 +1536,7 @@ class CorpusModel(TableModel):
         except KeyError:
             return
         self.layoutAboutToBeChanged.emit()
+        self.session.merge(merged_utterance)
         row_data = [
             merged_utterance.oovs,
             merged_utterance.file_name,
@@ -1373,6 +1624,14 @@ class CorpusModel(TableModel):
         self.session.query(File).filter(File.id.in_(file_id)).update({File.modified: True})
         self.session.commit()
 
+    def set_speaker_modified(self, speaker_id: typing.Union[int, typing.List[int]]):
+        if isinstance(speaker_id, int):
+            speaker_id = [speaker_id]
+        self.session.query(Speaker).filter(Speaker.id.in_(speaker_id)).update(
+            {Speaker.modified: True}
+        )
+        self.session.commit()
+
     def update_utterance_text(self, utterance: Utterance, text):
         if text != utterance.text:
             self.addCommand.emit(undo.UpdateUtteranceTextCommand(utterance, text, self))
@@ -1390,26 +1649,65 @@ class CorpusModel(TableModel):
         if not self.editable:
             return
         self.addCommand.emit(undo.UpdateUtteranceSpeakerCommand(utterance, speaker, self))
-        self.set_file_modified(utterance.file_id)
 
     def delete_utterances(self, utterances: list[Utterance]):
         if not self.editable:
             return
         for u in utterances:
             self.set_file_modified(u.file_id)
+            self.set_speaker_modified(u.speaker_id)
         self.addCommand.emit(undo.DeleteUtteranceCommand(utterances, self))
 
-    def split_vad_utterance(self, original_utterance_id, replacement_utterance_data):
+    def check_align_lexicon_compiler(self):
+        if self.acoustic_model is None:
+            return
+        if self.align_lexicon_compiler is None:
+            dictionary_id = self.dictionary_model.current_dictionary_id
+            self.align_lexicon_compiler = self.corpus.build_lexicon_compiler(
+                dictionary_id, self.acoustic_model
+            )
+
+    def check_transcribe_lexicon_compiler(self):
+        if self.acoustic_model is None:
+            return
+        if self.transcribe_lexicon_compiler is None:
+            dictionary_id = self.dictionary_model.current_dictionary_id
+            self.transcribe_lexicon_compiler = self.corpus.build_lexicon_compiler(
+                dictionary_id, self.acoustic_model, disambiguation=True
+            )
+
+    def split_vad_utterance(
+        self, original_utterance_id, replacement_utterance_data: typing.List[KalpyUtterance]
+    ):
         utt = self.session.get(Utterance, original_utterance_id)
-        self.requestFileView.emit(utt.file_name)
         replacement_utterances = []
+        speaker_id = utt.speaker_id
+        file_id = utt.file_id
         next_pk = self.corpus.get_next_primary_key(Utterance)
-        for sd in replacement_utterance_data.values():
-            replacement_utterances.append(Utterance(id=next_pk, **sd))
+        for new_utt in replacement_utterance_data:
+            replacement_utterances.append(
+                Utterance(
+                    id=next_pk,
+                    begin=new_utt.segment.begin,
+                    end=new_utt.segment.end,
+                    speaker_id=speaker_id,
+                    file_id=file_id,
+                    text=new_utt.transcript,
+                    normalized_text=new_utt.transcript,
+                    features="",
+                    in_subset=False,
+                    ignored=False,
+                    channel=new_utt.segment.channel,
+                )
+            )
             next_pk += 1
         splitting_utterances = [[utt, *replacement_utterances]]
-        self.addCommand.emit(undo.SplitUtteranceCommand(splitting_utterances, self))
-        self.set_file_modified([utt[0].file_id for utt in splitting_utterances])
+        self.addCommand.emit(
+            undo.SplitUtteranceCommand(splitting_utterances, self, update_table=False)
+        )
+        self.requestFileView.emit(utt.file_name)
+        self.set_file_modified(file_id)
+        self.set_speaker_modified(speaker_id)
 
     def split_utterances(self, utterances: list[Utterance]):
         if not self.editable:
@@ -1421,7 +1719,12 @@ class CorpusModel(TableModel):
             end = utt.end
             first_text = ""
             second_text = ""
-            if utt.text:
+            if " " not in utt.text and " " in utt.normalized_text:
+                t = utt.normalized_text.split()
+                mid_ind = int(len(t) / 2)
+                first_text = t[:mid_ind]
+                second_text = t[mid_ind:]
+            elif utt.text:
                 t = utt.text.split()
                 mid_ind = int(len(t) / 2)
                 first_text = t[:mid_ind]
@@ -1434,12 +1737,13 @@ class CorpusModel(TableModel):
             next_pk = self.corpus.get_next_primary_key(Utterance)
             first_utt = Utterance(
                 id=next_pk,
-                speaker=utt.speaker,
-                file=utt.file,
+                speaker_id=utt.speaker_id,
+                file_id=utt.file_id,
                 begin=beg,
                 end=split_time,
                 channel=utt.channel,
                 text=" ".join(first_text),
+                normalized_text=" ".join(first_text),
                 oovs=" ".join(oovs),
             )
             next_pk += 1
@@ -1449,12 +1753,13 @@ class CorpusModel(TableModel):
                     oovs.add(w)
             second_utt = Utterance(
                 id=next_pk,
-                speaker=utt.speaker,
-                file=utt.file,
+                speaker_id=utt.speaker_id,
+                file_id=utt.file_id,
                 begin=split_time,
                 end=end,
                 channel=utt.channel,
                 text=" ".join(second_text),
+                normalized_text=" ".join(second_text),
                 oovs=" ".join(oovs),
             )
             splitting_utterances.append([utt, first_utt, second_utt])
@@ -1470,6 +1775,7 @@ class CorpusModel(TableModel):
         min_begin = 1000000000
         max_end = 0
         text = ""
+        normalized_text = ""
         speaker = None
         file = None
         channel = None
@@ -1488,7 +1794,9 @@ class CorpusModel(TableModel):
             if utt_text == "speech" and text.strip() == "speech":
                 continue
             text += utt_text + " "
+            normalized_text += old_utt.normalized_text + " "
         text = text[:-1]
+        normalized_text = normalized_text[:-1]
         next_pk = self.corpus.get_next_primary_key(Utterance)
         oovs = set()
         for w in text.split():
@@ -1502,6 +1810,7 @@ class CorpusModel(TableModel):
             end=max_end,
             channel=channel,
             text=text,
+            normalized_text=normalized_text,
             oovs=" ".join(oovs),
         )
         self.set_file_modified(file.id)
@@ -1512,8 +1821,9 @@ class CorpusModel(TableModel):
 
     def utteranceAt(self, index) -> Optional[Utterance]:
         if not isinstance(index, int):
+            if not index.isValid():
+                return None
             index = index.row()
-
         if index > len(self._indices) - 1:
             return None
         if len(self._indices) == 0:
@@ -1530,6 +1840,8 @@ class CorpusModel(TableModel):
 
     def fileAt(self, index) -> int:
         if not isinstance(index, int):
+            if not index.isValid():
+                return None
             index = index.row()
         return self._file_indices[index]
 
@@ -1561,7 +1873,7 @@ class CorpusModel(TableModel):
     def setCorpus(self, corpus: Optional[AcousticCorpus]):
         self.corpus = corpus
         if corpus is not None:
-            self.session = scoped_session(self.corpus.session)
+            self.session = self.corpus.session
             self.corpusLoading.emit()
             self.refresh_files()
             self.refresh_speakers()
@@ -1595,8 +1907,8 @@ class CorpusModel(TableModel):
         if self.fully_loaded:
             self.corpusLoaded.emit()
 
-    def finish_update_speakers(self, speakers):
-        self.speakers = speakers
+    def finish_update_speakers(self, result):
+        self.speakers, self.speaker_id_mapping = result
         self.speakersRefreshed.emit(self.speakers)
         if self.fully_loaded:
             self.corpusLoaded.emit()
@@ -1612,6 +1924,8 @@ class CorpusModel(TableModel):
         self.runFunction.emit("Loading speakers", self.finish_update_speakers, [])
 
     def data(self, index, role):
+        if not index.isValid():
+            return None
         try:
             data = self._data[index.row()][index.column()]
         except IndexError:

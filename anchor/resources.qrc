@@ -27,6 +27,7 @@
         <file alias="compress.svg">resources/base_tool_buttons/compress-arrows-alt-solid.svg</file>
         <file alias="expand.svg">resources/base_tool_buttons/expand-arrows-alt-solid.svg</file>
         <file alias="oov-check.svg">resources/base_tool_buttons/oov-check.svg</file>
+        <file alias="rotate.svg">resources/base_tool_buttons/rotate.svg</file>
         <file alias="keyboard.svg">resources/base_tool_buttons/keyboard-solid.svg</file>
         <file alias="anchor-yellow.svg">resources/logos/anchor-yellow.svg</file>
         <file alias="play.svg">resources/base_tool_buttons/play-solid.svg</file>

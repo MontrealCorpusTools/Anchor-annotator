@@ -11,8 +11,9 @@ from montreal_forced_aligner.data import (  # noqa
     ManifoldAlgorithm,
     PhoneSetType,
     PhoneType,
+    WordType,
 )
-from montreal_forced_aligner.db import Phone, Speaker  # noqa
+from montreal_forced_aligner.db import Corpus, Phone, Speaker, Utterance  # noqa
 from montreal_forced_aligner.utils import DatasetType, inspect_database  # noqa
 from PySide6 import QtCore, QtGui, QtMultimedia, QtSvgWidgets, QtWidgets
 
@@ -20,8 +21,8 @@ import anchor.resources_rc  # noqa
 from anchor.models import (
     CorpusModel,
     CorpusSelectionModel,
+    DiarizationModel,
     DictionaryTableModel,
-    MergeSpeakerModel,
     OovModel,
     SpeakerModel,
     TextFilterQuery,
@@ -373,7 +374,8 @@ class AnchorTableView(QtWidgets.QTableView):
 
     def setModel(self, model: QtCore.QAbstractItemModel) -> None:
         super(AnchorTableView, self).setModel(model)
-        # self.model().newResults.connect(self.scrollToTop)
+        self.model().newResults.connect(self.scrollToTop)
+        self.selectionModel().clear()
         self.horizontalHeader().sortIndicatorChanged.connect(self.model().update_sort)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
@@ -386,9 +388,9 @@ class AnchorTableView(QtWidgets.QTableView):
 
     def refresh_settings(self):
         self.settings.sync()
-        self.horizontalHeader().setFont(self.settings.big_font)
+        self.horizontalHeader().setFont(self.settings.font)
         self.setFont(self.settings.font)
-        fm = QtGui.QFontMetrics(self.settings.big_font)
+        fm = QtGui.QFontMetrics(self.settings.font)
         minimum = 100
         for i in range(self.horizontalHeader().count()):
             text = self.model().headerData(
@@ -442,8 +444,9 @@ class UtteranceListTable(AnchorTableView):
 
 # noinspection PyUnresolvedReferences
 class CompleterLineEdit(QtWidgets.QWidget):
-    def __init__(self, *args):
+    def __init__(self, *args, corpus_model: CorpusModel = None):
         super().__init__(*args)
+        self.corpus_model = corpus_model
         layout = QtWidgets.QHBoxLayout()
         self.line_edit = QtWidgets.QLineEdit(self)
         # self.model = QtCore.QStringListModel(self)
@@ -464,8 +467,15 @@ class CompleterLineEdit(QtWidgets.QWidget):
         self.setLayout(layout)
         self.completions = {}
 
+    def validate(self) -> bool:
+        if not self.line_edit.text():
+            return False
+        return self.line_edit.text() in self.completions
+
     def current_text(self):
         if self.line_edit.text():
+            if self.corpus_model is not None:
+                return self.corpus_model.get_speaker_id(self.line_edit.text())
             if self.line_edit.text() in self.completions:
                 return self.completions[self.line_edit.text()]
             return self.line_edit.text()
@@ -558,6 +568,10 @@ class PaginationWidget(QtWidgets.QToolBar):
         self.next_page_action.triggered.connect(self.next_page)
         self.previous_page_action.triggered.connect(self.previous_page)
 
+    def reset(self):
+        self.current_page = 0
+        self.num_pages = 0
+
     def first_page(self):
         self.current_page = 0
         self.offsetRequested.emit(self.current_page * self.limit)
@@ -596,7 +610,7 @@ class PaginationWidget(QtWidgets.QToolBar):
         self.next_page_action.setEnabled(True)
         if self.current_page == 0:
             self.previous_page_action.setEnabled(False)
-        if self.current_page == self.num_pages - 1:
+        if self.current_page == self.num_pages - 1 and self.num_pages > 0:
             self.next_page_action.setEnabled(False)
         self.page_label.setText(f"Page {self.current_page + 1} of {self.num_pages}")
         self.pageRequested.emit()
@@ -638,8 +652,7 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
         layout.addWidget(self.search_widget)
         self.replace_box.replaceAllActivated.connect(self.replace)
         self.search_box.searchActivated.connect(self.search)
-        self.current_search_query = None
-        self.current_search_text = ""
+        self.cached_query = None
 
         self.table_widget = UtteranceListTable(self)
         self.highlight_delegate = HighlightDelegate(self.table_widget)
@@ -655,6 +668,7 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
         self.setLayout(layout)
         self.dictionary = None
         self.refresh_settings()
+        self.requested_utterance_id = None
 
     def query_started(self):
         self.table_widget.setVisible(False)
@@ -671,6 +685,11 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
         self.speaker_dropdown.setVisible(True)
         self.file_dropdown.setVisible(True)
         self.status_indicator.setVisible(False)
+        if self.requested_utterance_id is not None:
+            self.selection_model.update_select(self.requested_utterance_id, reset=True)
+            self.selection_model.update_view_times(force_update=True)
+        else:
+            self.selection_model.clearSelection()
 
     def set_models(
         self,
@@ -708,6 +727,15 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
 
     def search(self):
         self.selection_model.clearSelection()
+        new_query = (
+            self.search_box.query,
+            self.file_dropdown.current_text(),
+            self.speaker_dropdown.current_text(),
+            self.oov_button.isChecked(),
+        )
+        if new_query != self.cached_query:
+            self.pagination_toolbar.reset()
+            self.corpus_model.current_offset = 0
         self.corpus_model.search(
             self.search_box.query(),
             self.file_dropdown.current_text(),
@@ -878,6 +906,24 @@ class LoadingScreen(QtWidgets.QWidget):
             layout.addWidget(self.exit_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
         self.setVisible(False)
         self.setLayout(layout)
+        self.worker = None
+        self.progress_bar = None
+
+    def set_worker(self, worker):
+        self.worker = worker
+
+        if self.worker is None:
+            return
+        self.progress_bar = StoppableProgressBar(worker, 0)
+        self.layout().addWidget(self.progress_bar)
+        self.progress_bar.finished.connect(self.update_finished)
+
+    def update_finished(self):
+        self.worker = None
+        if self.progress_bar is not None:
+            self.layout().removeWidget(self.progress_bar)
+            self.progress_bar.deleteLater()
+            self.progress_bar = None
 
     def refresh_settings(self):
         if not self.has_logo:
@@ -1494,6 +1540,14 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
                 self.settings.value(self.settings.CLUSTER_TYPE)
             )
         )
+
+        self.visualization_size_edit = QtWidgets.QSpinBox(self)
+        self.visualization_size_edit.setMinimum(100)
+        self.visualization_size_edit.setMaximum(10000)
+        self.visualization_size_edit.setValue(5000)
+        self.form_layout.addRow("Visualization limit", self.visualization_size_edit)
+        self.perplexity_edit = ThresholdWidget(self)
+        self.form_layout.addRow("Perplexity", self.perplexity_edit)
         self.metric_dropdown.setCurrentIndex(
             self.metric_dropdown.findText(self.settings.value(self.settings.CLUSTERING_METRIC))
         )
@@ -1525,6 +1579,7 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
         self.min_cluster_size_edit.setValue(
             self.settings.value(self.settings.CLUSTERING_MIN_CLUSTER_SIZE)
         )
+        self.perplexity_edit.setValue(30.0)
         self.scroll_area.setLayout(self.form_layout)
         layout.addWidget(self.scroll_area)
         self.scroll_area.setFixedWidth(
@@ -1570,7 +1625,8 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
         metric = DistanceMetric[self.settings.value(self.settings.CLUSTERING_METRIC)]
         kwargs = {
             "cluster_type": current_algorithm,
-            "metric": metric,
+            "metric_type": metric,
+            "limit": int(self.visualization_size_edit.value()),
         }
         if current_algorithm in [
             ClusterType.kmeans,
@@ -1593,7 +1649,11 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
 
     @property
     def manifold_kwargs(self):
-        kwargs = {"metric": DistanceMetric[self.metric_dropdown.currentText()]}
+        kwargs = {
+            "metric_type": DistanceMetric[self.metric_dropdown.currentText()],
+            "limit": int(self.visualization_size_edit.value()),
+            "perplexity": float(self.perplexity_edit.value()),
+        }
         return kwargs
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
@@ -1891,6 +1951,37 @@ class CountDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
+class WordTypeDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from anchor.main import AnchorSettings
+
+        self.settings = AnchorSettings()
+
+    def refresh_settings(self):
+        self.settings.sync()
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
+    ) -> None:
+        super().paint(painter, option, index)
+        painter.save()
+        r = option.rect
+        size = int(self.settings.icon_size / 2)
+        x = r.left() + r.width() - self.settings.icon_size
+        y = r.top()
+        options = QtWidgets.QStyleOptionViewItem(option)
+        options.rect = QtCore.QRect(x, y, size, r.height())
+        self.initStyleOption(options, index)
+        icon = QtGui.QIcon(":rotate.svg")
+        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        painter.restore()
+
+
 class EditableDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -2009,16 +2100,15 @@ class OovTableView(AnchorTableView):
         self.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditTrigger.SelectedClicked
         )
         self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(self.header)
         self.doubleClicked.connect(self.search_word)
         self.count_delegate = CountDelegate(self)
         self.setItemDelegateForColumn(1, self.count_delegate)
-        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.add_pronunciation_action = QtGui.QAction("Add pronunciation", self)
         self.add_pronunciation_action.triggered.connect(self.add_pronunciation)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.generate_context_menu)
         self.oov_model: typing.Optional[OovModel] = None
 
@@ -2061,17 +2151,18 @@ class DictionaryTableView(AnchorTableView):
         self.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditTrigger.SelectedClicked
         )
         self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(self.header)
         self.doubleClicked.connect(self.search_word)
         self.edit_delegate = EditableDelegate(self)
+        self.word_type_delegate = WordTypeDelegate(self)
         self.count_delegate = CountDelegate(self)
         self.pronunciation_delegate = PronunciationDelegate(self)
         self.setItemDelegateForColumn(0, self.edit_delegate)
-        self.setItemDelegateForColumn(1, self.count_delegate)
-        self.setItemDelegateForColumn(2, self.pronunciation_delegate)
+        self.setItemDelegateForColumn(1, self.word_type_delegate)
+        self.setItemDelegateForColumn(2, self.count_delegate)
+        self.setItemDelegateForColumn(3, self.pronunciation_delegate)
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.delete_words_action = QtGui.QAction("Delete words", self)
         self.delete_pronunciations_action = QtGui.QAction("Delete pronunciations", self)
@@ -2135,12 +2226,24 @@ class DictionaryTableView(AnchorTableView):
                 self.setSpan(i - prev_span, 1, prev_span + 1, 1)
 
     def search_word(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() != 1:
+        if not index.isValid():
             return
-        word_index = self.dictionary_model.index(index.row(), 0)
-        word = self.dictionary_model.data(word_index, QtCore.Qt.ItemDataRole.DisplayRole)
-        query = TextFilterQuery(word, False, True, False)
-        self.searchRequested.emit(query)
+        if index.column() == 1:
+            rows = self.selectionModel().selectedRows()
+            if not rows:
+                return
+            word_id = self.dictionary_model.word_indices[rows[0].row()]
+            current_word_type = self.dictionary_model.data(
+                self.dictionary_model.createIndex(rows[0].row(), 1),
+                QtCore.Qt.ItemDataRole.DisplayRole,
+            )
+            self.dictionary_model.change_word_type(word_id, WordType[current_word_type])
+
+        elif index.column() == 1:
+            word_index = self.dictionary_model.index(index.row(), 0)
+            word = self.dictionary_model.data(word_index, QtCore.Qt.ItemDataRole.DisplayRole)
+            query = TextFilterQuery(word, False, True, False)
+            self.searchRequested.emit(query)
 
 
 class SpeakerTableView(AnchorTableView):
@@ -2151,8 +2254,8 @@ class SpeakerTableView(AnchorTableView):
         self.setEditTriggers(
             QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
-            | QtWidgets.QAbstractItemView.EditTrigger.SelectedClicked
         )
+        self.speaker_model: SpeakerModel = None
         self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(self.header)
         self.button_delegate = ButtonDelegate(":magnifying-glass.svg", self)
@@ -2161,9 +2264,27 @@ class SpeakerTableView(AnchorTableView):
         self.setItemDelegateForColumn(1, self.speaker_delegate)
         self.setItemDelegateForColumn(0, self.edit_delegate)
         self.setItemDelegateForColumn(4, self.button_delegate)
+        self.setItemDelegateForColumn(5, self.button_delegate)
         self.clicked.connect(self.cluster_utterances)
-        self.merge_speaker_model: Optional[SpeakerModel] = None
         self.doubleClicked.connect(self.search_speaker)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+
+        self.customContextMenuRequested.connect(self.generate_context_menu)
+        self.add_speaker_action = QtGui.QAction("Compare speakers", self)
+        self.add_speaker_action.triggered.connect(self.add_speakers)
+
+    def add_speakers(self):
+        selected_rows = self.selectionModel().selectedRows(0)
+        if not selected_rows:
+            return
+        speakers = [self.speaker_model.speakerAt(index.row()) for index in selected_rows]
+        self.speaker_model.change_current_speaker(speakers)
+
+    def generate_context_menu(self, location):
+        menu = QtWidgets.QMenu()
+        menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.addAction(self.add_speaker_action)
+        menu.exec_(self.mapToGlobal(location))
 
     def set_models(self, model: SpeakerModel):
         self.speaker_model = model
@@ -2171,17 +2292,16 @@ class SpeakerTableView(AnchorTableView):
         self.refresh_settings()
 
     def cluster_utterances(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() != 4:
+        if not index.isValid() or index.column() < 4:
             return
         self.speaker_model.change_current_speaker(self.speaker_model.speakerAt(index.row()))
 
     def search_speaker(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() != 1:
-            return
-        speaker = self.model().data(
-            self.model().index(index.row(), 0), QtCore.Qt.ItemDataRole.DisplayRole
-        )
-        self.searchRequested.emit(speaker)
+        if index.isValid() and index.column() == 1:
+            speaker = self.model().data(
+                self.model().index(index.row(), 0), QtCore.Qt.ItemDataRole.DisplayRole
+            )
+            self.searchRequested.emit(speaker)
 
 
 class ModelInfoWidget(QtWidgets.QWidget):
@@ -2420,6 +2540,8 @@ class ButtonDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class SpeakerClustersWidget(QtWidgets.QWidget):
+    search_requested = QtCore.Signal(object)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.settings = AnchorSettings()
@@ -2427,11 +2549,11 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
         form_layout = QtWidgets.QHBoxLayout()
         self.cluster_settings_widget = SpeakerClusterSettingsWidget(self)
 
-        self.cluster_dropdown = QtWidgets.QComboBox()
-        self.cluster_dropdown.setPlaceholderText("Select a cluster...")
+        self.search_button = QtWidgets.QPushButton("Search on selection")
         self.button = QtWidgets.QPushButton("Change speaker")
-        form_layout.addWidget(self.cluster_dropdown)
+        form_layout.addWidget(self.search_button)
         form_layout.addWidget(self.button)
+        self.search_button.clicked.connect(self.search_speaker)
         self.button.clicked.connect(self.change_speaker)
         self.plot_widget = UtteranceClusterView(self)
         self.cluster_settings_widget.reclusterRequested.connect(self.recluster)
@@ -2448,12 +2570,64 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
         )
         self.speaker_model.update_cluster_kwargs(self.cluster_settings_widget.menu.cluster_kwargs)
 
-    def change_speaker(self):
+    def search_speaker(self):
         if not self.plot_widget.selected_indices:
             return
         indices = np.array(list(self.plot_widget.selected_indices))
-        utterance_ids = self.speaker_model.utterance_ids[indices].tolist()
-        self.speaker_model.change_speaker(utterance_ids, self.speaker_model.current_speaker, 0)
+        mean_ivector = np.mean(self.speaker_model.ivectors[indices, :], axis=0)
+        self.search_requested.emit(mean_ivector)
+
+    def change_speaker(self):
+        if len(self.speaker_model.current_speakers) > 1:
+            print(self.plot_widget.updated_indices)
+            if not self.plot_widget.updated_indices:
+                return
+            previous_speakers = set(
+                [
+                    self.speaker_model.utt2spk[self.speaker_model.utterance_ids[x]]
+                    for x in self.plot_widget.updated_indices
+                ]
+            )
+            for s_id in self.plot_widget.brushes.keys():
+                print("NEW", s_id)
+                current_indices = [
+                    x
+                    for x in self.plot_widget.updated_indices
+                    if self.speaker_model.cluster_labels[x] == s_id
+                    and self.speaker_model.utt2spk[self.speaker_model.utterance_ids[x]] != s_id
+                ]
+                print(current_indices)
+                if not current_indices:
+                    continue
+                if s_id <= 0:
+                    utterance_ids = self.speaker_model.utterance_ids[current_indices].tolist()
+                    self.speaker_model.change_speaker(
+                        utterance_ids, self.speaker_model.current_speakers[0], s_id
+                    )
+                    continue
+
+                for old_id in previous_speakers:
+                    if s_id == old_id:
+                        continue
+                    utterance_ids = [
+                        x
+                        for x in self.speaker_model.utterance_ids[current_indices].tolist()
+                        if self.speaker_model.utt2spk[x] == old_id
+                    ]
+
+                    if not utterance_ids:
+                        continue
+                    self.speaker_model.change_speaker(utterance_ids, old_id, s_id)
+            self.plot_widget.updated_indices = set()
+            self.plot_widget.selected_indices = set()
+        else:
+            if not self.plot_widget.selected_indices:
+                return
+            indices = np.array(list(self.plot_widget.selected_indices))
+            utterance_ids = self.speaker_model.utterance_ids[indices].tolist()
+            self.speaker_model.change_speaker(
+                utterance_ids, self.speaker_model.current_speakers[0], 0
+            )
 
     def set_models(
         self,
@@ -2469,8 +2643,10 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
         self.plot_widget.set_models(corpus_model, selection_model, speaker_model)
 
 
-class SpeakerMergeTable(AnchorTableView):
-    searchRequested = QtCore.Signal(object)
+class DiarizationTable(AnchorTableView):
+    utteranceSearchRequested = QtCore.Signal(object, object)
+    speakerSearchRequested = QtCore.Signal(object)
+    referenceUtteranceSelected = QtCore.Signal(object)
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -2481,40 +2657,134 @@ class SpeakerMergeTable(AnchorTableView):
         self.button_delegate = ButtonDelegate(":compress.svg", self)
         self.setItemDelegateForColumn(0, self.speaker_delegate)
         self.setItemDelegateForColumn(1, self.speaker_delegate)
-        self.setItemDelegateForColumn(3, self.button_delegate)
-        self.doubleClicked.connect(self.search_speaker)
-        self.clicked.connect(self.merge_speakers)
-        self.merge_speaker_model: Optional[MergeSpeakerModel] = None
+        self.setItemDelegateForColumn(3, self.speaker_delegate)
+        self.setItemDelegateForColumn(6, self.button_delegate)
+        self.setItemDelegateForColumn(7, self.button_delegate)
+        self.doubleClicked.connect(self.search_utterance)
+        self.clicked.connect(self.reassign_utterance)
+        self.diarization_model: Optional[DiarizationModel] = None
+        self.selection_model: Optional[CorpusSelectionModel] = None
+        self.set_reference_utterance_action = QtGui.QAction("Use utterance as reference", self)
+        self.set_reference_utterance_action.triggered.connect(self.set_reference_utterance)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.generate_context_menu)
 
-    def set_models(self, model: MergeSpeakerModel):
-        self.merge_speaker_model = model
+    def generate_context_menu(self, location):
+        menu = QtWidgets.QMenu()
+        menu.addAction(self.set_reference_utterance_action)
+        menu.exec_(self.mapToGlobal(location))
+
+    def set_reference_utterance(self):
+        rows = self.selectionModel().selectedRows()
+        if not rows:
+            return
+        utterance_id = self.diarization_model._utterance_ids[rows[0].row()]
+        self.diarization_model.set_utterance_filter(utterance_id)
+        self.referenceUtteranceSelected.emit(
+            self.diarization_model.data(
+                self.diarization_model.createIndex(rows[0].row(), 0),
+                QtCore.Qt.ItemDataRole.DisplayRole,
+            )
+        )
+
+    def set_models(self, model: DiarizationModel, selection_model: CorpusSelectionModel):
+        self.diarization_model = model
+        self.selection_model = selection_model
         self.setModel(model)
         self.refresh_settings()
 
-    def merge_speakers(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() != 3:
+    def reassign_utterance(self, index: QtCore.QModelIndex):
+        if not index.isValid() or index.column() < 6:
             return
-        self.merge_speaker_model.merge_speakers(index.row())
+        if index.column() == 6:
+            self.diarization_model.reassign_utterance(index.row())
+        elif index.column() == 7:
+            self.diarization_model.merge_speakers(index.row())
 
-    def search_speaker(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() > 1:
+    def search_utterance(self, index: QtCore.QModelIndex):
+        if not index.isValid() or index.column() not in {0, 1, 3}:
             return
-        speaker = self.model().data(
-            self.model().index(index.row(), index.column()), QtCore.Qt.ItemDataRole.DisplayRole
+        if index.column() == 0:
+            row = index.row()
+            utterance_id = self.diarization_model._utterance_ids[row]
+            if utterance_id is None:
+                return
+            with self.diarization_model.corpus_model.corpus.session() as session:
+                try:
+                    file_id, begin, end, channel = (
+                        session.query(
+                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
+                        )
+                        .filter(Utterance.id == utterance_id)
+                        .first()
+                    )
+                except TypeError:
+                    self.selection_model.clearSelection()
+                    return
+        else:
+            if index.column() == 1:
+                speaker_id = self.diarization_model._suggested_indices[index.row()]
+            else:
+                speaker_id = self.diarization_model._speaker_indices[index.row()]
+            with self.diarization_model.corpus_model.corpus.session() as session:
+                c = session.query(Corpus).first()
+                try:
+                    file_id, begin, end, channel = (
+                        session.query(
+                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
+                        )
+                        .join(Utterance.speaker)
+                        .filter(Utterance.speaker_id == speaker_id)
+                        .order_by(
+                            c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
+                        )
+                        .first()
+                    )
+                except TypeError:
+                    print(speaker_id)
+                    print(
+                        session.query(
+                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
+                        )
+                        .join(Utterance.speaker)
+                        .filter(Utterance.speaker_id == speaker_id)
+                        .order_by(
+                            c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
+                        )
+                    )
+                    self.selection_model.clearSelection()
+                    return
+        self.selection_model.set_current_file(
+            file_id,
+            begin,
+            end,
+            channel,
+            force_update=True,
         )
-        self.searchRequested.emit(speaker)
 
 
 class ThresholdWidget(QtWidgets.QLineEdit):
     def __init__(self, *args):
         super().__init__(*args)
         self.settings = AnchorSettings()
+        self.minimum = None
+        self.maximum = None
 
-    def validate(self):
+    def set_min_max(self, minimum, maximum):
+        self.minimum = minimum
+        self.maximum = maximum
+
+    def validate(self, required=False):
         if self.text() == "":
+            if required:
+                return False
             return True
         try:
-            float(self.text())
+            v = float(self.text())
+            if self.minimum is not None and v <= self.minimum:
+                return False
+            if self.maximum is not None and v >= self.maximum:
+                return False
         except ValueError:
             self.setProperty("error", True)
             self.style().unpolish(self)
@@ -2534,78 +2804,135 @@ class ThresholdWidget(QtWidgets.QLineEdit):
 
 
 class DiarizationWidget(QtWidgets.QWidget):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.settings = AnchorSettings()
-        form_layout = QtWidgets.QFormLayout(self)
-        form_widget = QtWidgets.QWidget(self)
-        layout = QtWidgets.QVBoxLayout(self)
+        form_layout = QtWidgets.QFormLayout()
+        form_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
         self.ivector_extractor_label = QtWidgets.QLabel("Not loaded")
         self.threshold_edit = ThresholdWidget(self)
         self.threshold_edit.returnPressed.connect(self.search)
-
+        self.inverted_check = QtWidgets.QCheckBox()
+        self.speaker_check = QtWidgets.QCheckBox()
+        form_layout.addRow(QtWidgets.QLabel("Search based on speakers"), self.speaker_check)
         self.metric_dropdown = QtWidgets.QComboBox()
         for m in DistanceMetric:
             self.metric_dropdown.addItem(m.value)
+        self.metric_dropdown.currentIndexChanged.connect(self.update_metric_language)
+        self.threshold_label = QtWidgets.QLabel("Distance threshold")
         form_layout.addRow(QtWidgets.QLabel("Ivector extractor"), self.ivector_extractor_label)
-        form_layout.addRow(QtWidgets.QLabel("Distance threshold"), self.threshold_edit)
+        form_layout.addRow(self.threshold_label, self.threshold_edit)
         form_layout.addRow(QtWidgets.QLabel("Distance metric"), self.metric_dropdown)
-        form_widget.setLayout(form_layout)
-        layout.addWidget(form_widget)
+        form_layout.addRow(QtWidgets.QLabel("Search in speaker"), self.inverted_check)
+        self.reference_utterance_label = QtWidgets.QLabel("No reference utterance")
+        self.clear_reference_utterance_button = QtWidgets.QPushButton("Clear reference utterance")
+        self.clear_reference_utterance_button.clicked.connect(self.clear_reference_utterance)
+        form_layout.addRow(self.reference_utterance_label, self.clear_reference_utterance_button)
+
         self.refresh_ivectors_action = QtGui.QAction("Refresh ivectors")
+        self.reassign_all_action = QtGui.QAction("Reassign all with threshold")
+        self.calculate_plda_action = QtGui.QAction("Calculate PLDA")
+        self.reset_ivectors_action = QtGui.QAction("Reset ivectors")
         self.search_action = QtGui.QAction("Search")
         self.search_action.triggered.connect(self.search)
+        self.reassign_all_action.triggered.connect(self.reassign_all)
         self.toolbar = QtWidgets.QToolBar()
-        self.toolbar.addAction(self.refresh_ivectors_action)
         self.toolbar.addAction(self.search_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.reassign_all_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.refresh_ivectors_action)
+        self.toolbar.addAction(self.calculate_plda_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.reset_ivectors_action)
         self.speaker_dropdown = CompleterLineEdit(self)
         self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
         self.speaker_dropdown.line_edit.returnPressed.connect(self.search)
+        self.alternate_speaker_dropdown = CompleterLineEdit(self)
+        self.alternate_speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
+        self.alternate_speaker_dropdown.line_edit.returnPressed.connect(self.search)
 
-        layout.addWidget(self.speaker_dropdown)
+        form_layout.addRow("Target speaker", self.speaker_dropdown)
+        form_layout.addRow("Alternate speaker", self.alternate_speaker_dropdown)
+        self.search_box = SearchBox(self)
+        self.search_box.searchActivated.connect(self.search)
+        form_layout.addRow("Text", self.search_box)
+        form_widget.setLayout(form_layout)
+        layout.addWidget(form_widget)
         layout.addWidget(self.toolbar)
-        self.table = SpeakerMergeTable(self)
+        self.table = DiarizationTable(self)
         layout.addWidget(self.table)
-        self.merge_speaker_model: Optional[MergeSpeakerModel] = None
+        self.diarization_model: Optional[DiarizationModel] = None
         self.current_page = 0
         self.num_pages = 0
         self.pagination_toolbar = PaginationWidget()
         self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop())
         layout.addWidget(self.pagination_toolbar)
         self.setLayout(layout)
+        self.table.referenceUtteranceSelected.connect(self.update_reference_utterance)
+
+    def update_reference_utterance(self, utterance_name):
+        self.reference_utterance_label.setText(utterance_name)
+        self.search_action.trigger()
+
+    def clear_reference_utterance(self):
+        self.reference_utterance_label.setText("No reference utterance")
+        self.diarization_model.set_utterance_filter(None)
+
+    def update_metric_language(self):
+        current_metric = self.metric_dropdown.currentText()
+        if current_metric == "plda":
+            self.threshold_label.setText("Log-likelihood threshold")
+            self.threshold_edit.set_min_max(None, None)
+        else:
+            self.threshold_label.setText("Distance threshold")
+            self.threshold_edit.set_min_max(0, 1)
 
     def search(self):
         self.table.selectionModel().clearSelection()
-        self.merge_speaker_model.set_speaker_filter(self.speaker_dropdown.current_text())
-        self.merge_speaker_model.set_threshold(self.threshold_edit.value())
-        self.merge_speaker_model.set_metric(self.metric_dropdown.currentText())
-        self.merge_speaker_model.update_data()
-
-    def merge_all(self):
-        threshold = self.threshold_edit.value()
-        if threshold is None:
+        try:
+            self.diarization_model.set_speaker_filter(self.speaker_dropdown.current_text())
+        except Exception:
             return
-        self.merge_speaker_model.set_speaker_filter(self.speaker_dropdown.current_text())
-        self.merge_speaker_model.set_threshold(self.threshold_edit.value())
-        self.merge_speaker_model.set_metric(self.metric_dropdown.currentText())
-        self.merge_speaker_model.merge_all()
+        try:
+            self.diarization_model.set_alternate_speaker_filter(
+                self.alternate_speaker_dropdown.current_text()
+            )
+        except Exception:
+            return
+        self.diarization_model.set_threshold(self.threshold_edit.value())
+        self.diarization_model.set_metric(self.metric_dropdown.currentText())
+        self.diarization_model.set_inverted(self.inverted_check.isChecked())
+        self.diarization_model.set_speaker_lookup(self.speaker_check.isChecked())
+        self.diarization_model.set_text_filter(self.search_box.query())
+        self.diarization_model.update_data()
+        self.diarization_model.update_result_count()
+
+    def reassign_all(self):
+        if not self.threshold_edit.validate(required=True) or not self.speaker_dropdown.validate():
+            return
+        self.diarization_model.set_speaker_filter(self.speaker_dropdown.current_text())
+        self.diarization_model.set_threshold(self.threshold_edit.value())
+        self.diarization_model.set_metric(self.metric_dropdown.currentText())
+        self.diarization_model.reassign_utterances()
 
     def refresh(self):
         validate_enabled = True
         if (
-            self.merge_speaker_model.corpus_model.ivector_extractor is not None
-            and self.merge_speaker_model.corpus_model.corpus is not None
+            self.diarization_model.corpus_model.ivector_extractor is not None
+            and self.diarization_model.corpus_model.corpus is not None
         ):
-            if isinstance(self.merge_speaker_model.corpus_model.ivector_extractor, str):
-                name = self.merge_speaker_model.corpus_model.ivector_extractor
+            if isinstance(self.diarization_model.corpus_model.ivector_extractor, str):
+                name = self.diarization_model.corpus_model.ivector_extractor
             else:
-                name = self.merge_speaker_model.corpus_model.ivector_extractor.name
+                name = self.diarization_model.corpus_model.ivector_extractor.name
             self.ivector_extractor_label.setText(name)
             self.search_action.setEnabled(
-                self.merge_speaker_model.corpus_model.corpus.has_any_ivectors()
+                self.diarization_model.corpus_model.corpus.has_any_ivectors()
             )
             self.threshold_edit.setEnabled(
-                self.merge_speaker_model.corpus_model.corpus.has_any_ivectors()
+                self.diarization_model.corpus_model.corpus.has_any_ivectors()
             )
         else:
             validate_enabled = False
@@ -2614,29 +2941,18 @@ class DiarizationWidget(QtWidgets.QWidget):
             self.threshold_edit.setEnabled(False)
         self.refresh_ivectors_action.setEnabled(validate_enabled)
 
-    def set_models(self, model: MergeSpeakerModel):
-        self.merge_speaker_model = model
-        self.merge_speaker_model.corpus_model.corpusLoaded.connect(self.update_speaker_count)
-        self.merge_speaker_model.corpus_model.corpusLoaded.connect(self.refresh)
-        self.table.set_models(model)
-        self.merge_speaker_model.corpus_model.ivectorExtractorChanged.connect(self.refresh)
-        self.merge_speaker_model.resultCountChanged.connect(
+    def set_models(self, model: DiarizationModel, selection_model: CorpusSelectionModel):
+        self.diarization_model = model
+        self.diarization_model.corpus_model.corpusLoaded.connect(self.refresh)
+        self.table.set_models(model, selection_model)
+        self.diarization_model.corpus_model.ivectorExtractorChanged.connect(self.refresh)
+        self.diarization_model.resultCountChanged.connect(
             self.pagination_toolbar.update_result_count
         )
-        self.pagination_toolbar.offsetRequested.connect(self.merge_speaker_model.set_offset)
-        self.pagination_toolbar.set_limit(self.merge_speaker_model.limit)
-        self.merge_speaker_model.corpus_model.speakersRefreshed.connect(
+        self.pagination_toolbar.offsetRequested.connect(self.diarization_model.set_offset)
+        self.pagination_toolbar.set_limit(self.diarization_model.limit)
+        self.diarization_model.corpus_model.speakersRefreshed.connect(
             self.speaker_dropdown.update_completions
-        )
-        self.threshold_edit.textChanged.connect(self.check_merge_all)
-
-    def check_merge_all(self):
-        for a in self.toolbar.actions():
-            a.setEnabled(self.threshold_edit.validate())
-
-    def update_speaker_count(self):
-        self.pagination_toolbar.update_result_count(
-            self.merge_speaker_model.corpus_model.corpus.num_speakers
         )
 
 
@@ -2783,6 +3099,10 @@ class DictionaryWidget(QtWidgets.QWidget):
         self.refresh_word_counts_action.setIcon(QtGui.QIcon(":oov-check.svg"))
         self.refresh_word_counts_action.setEnabled(True)
         self.toolbar.addAction(self.refresh_word_counts_action)
+        self.rebuild_lexicon_action = QtGui.QAction(self)
+        self.rebuild_lexicon_action.setIcon(QtGui.QIcon(":rotate.svg"))
+        self.rebuild_lexicon_action.setEnabled(True)
+        self.toolbar.addAction(self.rebuild_lexicon_action)
         dict_layout.addWidget(self.toolbar)
         dict_layout.addWidget(self.table)
         self.pagination_toolbar = PaginationWidget()
@@ -2840,6 +3160,7 @@ class DictionaryWidget(QtWidgets.QWidget):
         self.dictionary_model.dictionariesRefreshed.connect(self.dictionaries_refreshed)
         self.dictionary_dropdown.currentIndexChanged.connect(self.update_current_dictionary)
         self.refresh_word_counts_action.triggered.connect(self.dictionary_model.update_word_counts)
+        self.rebuild_lexicon_action.triggered.connect(self.dictionary_model.rebuild_lexicons)
         self.dictionary_model.wordCountsRefreshed.connect(self.counts_updated)
         self.refresh_word_counts_action.triggered.connect(self.updating_counts)
         self.dictionary_model.corpus_model.databaseSynced.connect(self.corpus_data_changed)
@@ -2857,6 +3178,32 @@ class DictionaryWidget(QtWidgets.QWidget):
         self.search_box.setQuery(TextFilterQuery(word, False, True, False))
 
 
+class SpeakerQueryDialog(QtWidgets.QDialog):
+    def __init__(self, corpus_model: CorpusModel, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QtWidgets.QVBoxLayout()
+
+        self.speaker_dropdown = CompleterLineEdit(self, corpus_model=corpus_model)
+        self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
+        self.speaker_dropdown.line_edit.returnPressed.connect(self.accept())
+        self.speaker_dropdown.update_completions(corpus_model.speakers)
+        layout.addWidget(self.speaker_dropdown)
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        self.setLayout(layout)
+        font = self.settings.font
+        self.speaker_dropdown.setFont(font)
+        self.setStyleSheet(self.settings.style_sheet)
+        self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+
+
 class SpeakerWidget(QtWidgets.QWidget):
     def __init__(self, *args):
         super(SpeakerWidget, self).__init__(*args)
@@ -2865,9 +3212,11 @@ class SpeakerWidget(QtWidgets.QWidget):
         speaker_layout = QtWidgets.QVBoxLayout()
         self.corpus_model: Optional[CorpusModel] = None
         top_toolbar = QtWidgets.QToolBar()
-        self.search_box = SearchBox(self)
-        top_toolbar.addWidget(self.search_box)
-        self.search_box.searchActivated.connect(self.search)
+
+        self.speaker_dropdown = CompleterLineEdit(self)
+        self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
+        self.speaker_dropdown.line_edit.returnPressed.connect(self.search)
+        top_toolbar.addWidget(self.speaker_dropdown)
         self.current_search_query = None
         self.current_search_text = ""
         speaker_layout.addWidget(top_toolbar)
@@ -2887,8 +3236,10 @@ class SpeakerWidget(QtWidgets.QWidget):
         self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.tool_bar_wrapper.addWidget(self.tool_bar)
         self.cluster_widget = SpeakerClustersWidget(self)
+        self.cluster_widget.search_requested.connect(self.search)
         speaker_layout.addWidget(self.cluster_widget)
         self.speakers = None
+        self.speaker_model: SpeakerModel = None
         self.speaker_edit = NewSpeakerField()
         self.result_count = 0
         self.tool_bar.addWidget(self.speaker_edit)
@@ -2903,8 +3254,29 @@ class SpeakerWidget(QtWidgets.QWidget):
     def refresh_cluster(self):
         self.table.cluster_utterances(self.table.selectionModel().currentIndex())
 
-    def search(self):
-        self.speaker_model.set_text_filter(self.search_box.query())
+    def search(self, speaker_filter=None):
+        # self.speaker_model.set_text_filter(self.search_box.query())
+        if speaker_filter is None:
+            speaker_id = self.speaker_dropdown.current_text()
+            if isinstance(speaker_id, str):
+                with self.speaker_model.corpus_model.corpus.session() as session:
+                    actual_speaker_id = (
+                        session.query(Speaker.id).filter(Speaker.name == speaker_id).first()
+                    )
+                    if actual_speaker_id is None:
+                        return
+                    self.speaker_dropdown.completions[speaker_id] = actual_speaker_id[0]
+                    speaker_id = actual_speaker_id[0]
+            if speaker_id is None:
+                return
+            self.speaker_model.set_speaker_filter(speaker_id)
+        else:
+            self.speaker_model.set_speaker_filter(speaker_filter)
+        if self.speaker_model.sort_index != 3:
+            self.table.horizontalHeader().setSortIndicator(3, QtCore.Qt.SortOrder.AscendingOrder)
+        else:
+            self.speaker_model.update_data()
+            self.speaker_model.update_result_count()
 
     def set_models(
         self,
@@ -2919,7 +3291,9 @@ class SpeakerWidget(QtWidgets.QWidget):
         self.speaker_model.resultCountChanged.connect(self.pagination_toolbar.update_result_count)
         self.pagination_toolbar.offsetRequested.connect(self.speaker_model.set_offset)
         self.pagination_toolbar.set_limit(self.speaker_model.limit)
-        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        self.speaker_model.corpus_model.speakersRefreshed.connect(
+            self.speaker_dropdown.update_completions
+        )
 
     def update_speaker_count(self):
         self.pagination_toolbar.update_result_count(
@@ -2930,8 +3304,8 @@ class SpeakerWidget(QtWidgets.QWidget):
         self.settings.sync()
         font = self.settings.font
         self.speaker_edit.setFont(font)
-        self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        self.speaker_dropdown.setFont(font)
+        self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(
             self.table.settings.value(self.table.settings.RESULTS_PER_PAGE)

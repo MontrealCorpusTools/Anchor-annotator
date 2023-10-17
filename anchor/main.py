@@ -6,10 +6,14 @@ import sys
 import traceback
 
 import sqlalchemy
+from _kalpy.ivector import Plda
+from kalpy.utils import read_kaldi_object
+from montreal_forced_aligner import config
 from montreal_forced_aligner.command_line.utils import check_databases
-from montreal_forced_aligner.config import GLOBAL_CONFIG, MfaConfiguration, get_temporary_directory
+from montreal_forced_aligner.config import MfaConfiguration, get_temporary_directory
 from montreal_forced_aligner.corpus import AcousticCorpus
 from montreal_forced_aligner.data import WorkflowType
+from montreal_forced_aligner.db import CorpusWorkflow
 from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_SPEECHBRAIN
 from montreal_forced_aligner.exceptions import DatabaseError
 from montreal_forced_aligner.g2p.generator import PyniniValidator
@@ -27,8 +31,8 @@ from anchor import workers
 from anchor.models import (
     CorpusModel,
     CorpusSelectionModel,
+    DiarizationModel,
     DictionaryTableModel,
-    MergeSpeakerModel,
     OovModel,
     SpeakerModel,
 )
@@ -51,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         QtCore.QCoreApplication.setOrganizationName("Montreal Corpus Tools")
         QtCore.QCoreApplication.setApplicationName("Anchor")
+        self.workers = []
 
         fonts = [
             "GentiumPlus",
@@ -83,6 +88,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.corpus = None
         self.debug = debug
         self.status_indicator = ProgressWidget()
         self.status_indicator.setFixedWidth(self.ui.statusbar.height())
@@ -117,6 +123,10 @@ class MainWindow(QtWidgets.QMainWindow):
             "Calculating OOVs": None,
             "Comparing speakers": None,
             "Counting utterance results": None,
+            "Counting speaker results": None,
+            "Counting diarization results": None,
+            "Diarizing utterances": None,
+            "Recalculating speaker ivectors": None,
             "Finding duplicates": None,
             "Querying utterances": None,
             "Querying speakers": None,
@@ -130,7 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         self.sequential_runners = {
             "Exporting files": [],
-            "Changing speakers": [],
+            # "Changing speakers": [],
         }
         self.quick_runners = {
             "Generating waveform",
@@ -147,76 +157,99 @@ class MainWindow(QtWidgets.QMainWindow):
         self.download_worker = workers.DownloadWorker(self)
         self.download_worker.signals.error.connect(self.handle_error)
         self.download_worker.signals.result.connect(self.finalize_download)
+        self.workers.append(self.download_worker)
 
         self.dictionary_worker = workers.ImportDictionaryWorker(self)
         self.dictionary_worker.signals.error.connect(self.handle_error)
         self.dictionary_worker.signals.result.connect(self.finalize_load_dictionary)
+        self.workers.append(self.dictionary_worker)
 
         self.oov_worker = workers.OovCountWorker(self)
         self.oov_worker.signals.error.connect(self.handle_error)
         self.oov_worker.signals.result.connect(self.finalize_oov_count)
+        self.workers.append(self.oov_worker)
 
         self.acoustic_model_worker = workers.ImportAcousticModelWorker(self)
         self.acoustic_model_worker.signals.error.connect(self.handle_error)
         self.acoustic_model_worker.signals.result.connect(self.finalize_load_acoustic_model)
+        self.workers.append(self.acoustic_model_worker)
 
         self.language_model_worker = workers.ImportLanguageModelWorker(self)
         self.language_model_worker.signals.error.connect(self.handle_error)
         self.language_model_worker.signals.result.connect(self.finalize_load_language_model)
+        self.workers.append(self.language_model_worker)
 
         self.g2p_model_worker = workers.ImportG2PModelWorker(self)
         self.g2p_model_worker.signals.error.connect(self.handle_error)
         self.g2p_model_worker.signals.result.connect(self.finalize_load_g2p_model)
+        self.workers.append(self.g2p_model_worker)
 
         self.ivector_extractor_worker = workers.ImportIvectorExtractorWorker(self)
         self.ivector_extractor_worker.signals.error.connect(self.handle_error)
         self.ivector_extractor_worker.signals.result.connect(self.finalize_load_ivector_extractor)
+        self.workers.append(self.ivector_extractor_worker)
 
         self.transcription_worker = workers.TranscriptionWorker(self)
         self.transcription_worker.signals.error.connect(self.handle_error)
         self.transcription_worker.signals.finished.connect(self.finalize_adding_intervals)
+        self.workers.append(self.transcription_worker)
 
         self.validation_worker = workers.ValidationWorker(self)
         self.validation_worker.signals.error.connect(self.handle_error)
         self.validation_worker.signals.finished.connect(self.finalize_adding_intervals)
+        self.workers.append(self.validation_worker)
 
         self.alignment_worker = workers.AlignmentWorker(self)
         self.alignment_worker.signals.error.connect(self.handle_error)
         self.alignment_worker.signals.finished.connect(self.finalize_adding_intervals)
+        self.workers.append(self.alignment_worker)
 
-        self.speaker_diarization_worker = workers.ComputeIvectorWorker(self)
-        self.speaker_diarization_worker.signals.error.connect(self.handle_error)
-        self.speaker_diarization_worker.signals.finished.connect(self.finalize_adding_ivectors)
+        self.compute_ivectors_worker = workers.ComputeIvectorWorker(self)
+        self.compute_ivectors_worker.signals.error.connect(self.handle_error)
+        self.compute_ivectors_worker.signals.finished.connect(self.finalize_adding_ivectors)
+        self.workers.append(self.compute_ivectors_worker)
+
+        self.compute_plda_worker = workers.ComputePldaWorker(self)
+        self.compute_plda_worker.signals.error.connect(self.handle_error)
+        self.compute_plda_worker.signals.result.connect(self.finalize_computing_plda)
+        self.workers.append(self.compute_plda_worker)
 
         self.cluster_utterances_worker = workers.ClusterUtterancesWorker(self)
         self.cluster_utterances_worker.signals.error.connect(self.handle_error)
         self.cluster_utterances_worker.signals.finished.connect(
             self.finalize_clustering_utterances
         )
+        self.workers.append(self.cluster_utterances_worker)
 
         self.classify_speakers_worker = workers.ClassifySpeakersWorker(self)
         self.classify_speakers_worker.signals.error.connect(self.handle_error)
         self.classify_speakers_worker.signals.finished.connect(self.finalize_clustering_utterances)
+        self.workers.append(self.classify_speakers_worker)
 
         self.alignment_utterance_worker = workers.AlignUtteranceWorker(self)
         self.alignment_utterance_worker.signals.error.connect(self.handle_error)
         self.alignment_utterance_worker.signals.result.connect(self.finalize_utterance_alignment)
+        self.workers.append(self.alignment_utterance_worker)
 
         self.segment_utterance_worker = workers.SegmentUtteranceWorker(self)
         self.segment_utterance_worker.signals.error.connect(self.handle_error)
         self.segment_utterance_worker.signals.result.connect(self.finalize_segmentation)
+        self.workers.append(self.segment_utterance_worker)
 
         self.alignment_evaluation_worker = workers.AlignmentEvaluationWorker(self)
         self.alignment_evaluation_worker.signals.error.connect(self.handle_error)
         self.alignment_evaluation_worker.signals.finished.connect(self.finalize_adding_intervals)
+        self.workers.append(self.alignment_evaluation_worker)
 
         self.corpus_worker = workers.ImportCorpusWorker(self)
         self.corpus_worker.signals.result.connect(self.finalize_load_corpus)
         self.corpus_worker.signals.error.connect(self.handle_error)
+        self.workers.append(self.corpus_worker)
 
         self.load_reference_worker = workers.LoadReferenceWorker(self)
         self.load_reference_worker.signals.error.connect(self.handle_error)
         self.load_reference_worker.signals.finished.connect(self.finalize_adding_intervals)
+        self.workers.append(self.load_reference_worker)
 
         self.undo_group = QtGui.QUndoGroup(self)
         self.corpus_undo_stack = QtGui.QUndoStack(self)
@@ -243,7 +276,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @property
     def db_string(self):
-        return f"postgresql+psycopg2://@/anchor?host={GLOBAL_CONFIG.database_socket}"
+        return f"postgresql+psycopg2://@/anchor?host={config.database_socket()}"
 
     @property
     def db_engine(self) -> sqlalchemy.engine.Engine:
@@ -261,7 +294,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 subprocess.check_call(
                     [
                         "createdb",
-                        f"--host={GLOBAL_CONFIG.database_socket}",
+                        f"--host={config.database_socket()}",
                         "anchor",
                     ],
                     stderr=subprocess.DEVNULL,
@@ -269,7 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             except Exception:
                 raise DatabaseError(
-                    f"There was an error connecting to the {GLOBAL_CONFIG.current_profile_name} MFA database server. "
+                    f"There was an error connecting to the {config.CURRENT_PROFILE_NAME} MFA database server. "
                     "Please ensure the server is initialized (mfa server init) or running (mfa server start)"
                 )
 
@@ -279,7 +312,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def sync_models(self):
         self.model_manager = ModelManager(token=self.settings.value(AnchorSettings.GITHUB_TOKEN))
-        self.model_manager.refresh_remote()
+        try:
+            self.model_manager.refresh_remote()
+        except Exception:
+            return
         with sqlalchemy.orm.Session(self.db_engine) as session:
             for model_type, db_class in anchor.db.MODEL_TYPES.items():
                 if model_type not in self.model_manager.local_models:
@@ -329,7 +365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Changing speakers":
             worker = workers.ChangeSpeakerWorker(self.corpus_model.session, *extra_args)
             worker.signals.result.connect(finished_function)
-        elif function == "Recalculate speaker ivector":
+        elif function == "Recalculating speaker ivectors":
             worker = workers.RecalculateSpeakerWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Loading speakers":
@@ -341,6 +377,9 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Loading dictionaries":
             worker = workers.LoadDictionariesWorker(self.corpus_model.session, *extra_args)
             worker.signals.result.connect(finished_function)
+        elif function == "Rebuilding lexicon FSTs":
+            worker = workers.LexiconFstBuildWorker(self.corpus_model, **extra_args[0])
+            worker.signals.result.connect(finished_function)
         elif function == "Calculating OOVs":
             self.calculate_oovs()
             return
@@ -351,17 +390,32 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Counting utterance results":
             worker = workers.QueryUtterancesWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
-        elif function == "Comparing speakers":
-            worker = workers.SpeakerComparisonWorker(self.corpus_model.session, **extra_args[0])
+        elif function == "Diarizing utterances":
+            worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == "Counting diarization results":
+            worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Merging speakers":
             self.set_application_state("loading")
             worker = workers.MergeSpeakersWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.finished.connect(finished_function)
+        elif function == "Reassigning utterances":
+            worker = workers.MismatchedUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            self.set_application_state("loading")
+            worker.signals.finished.connect(finished_function)
+        elif function == "Reassigning utterances for speaker":
+            worker = workers.BulkUpdateSpeakerUtterancesWorker(
+                self.corpus_model.session, **extra_args[0]
+            )
+            worker.signals.finished.connect(finished_function)
         elif function == "Querying utterances":
             worker = workers.QueryUtterancesWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Querying speakers":
+            worker = workers.QuerySpeakersWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == "Counting speaker results":
             worker = workers.QuerySpeakersWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Creating speaker tiers":
@@ -378,9 +432,6 @@ class MainWindow(QtWidgets.QMainWindow):
             worker.signals.result.connect(finished_function)
         elif function == "Counting OOV results":
             worker = workers.QueryOovWorker(self.corpus_model.session, **extra_args[0])
-            worker.signals.result.connect(finished_function)
-        elif function == "Getting closest speakers":
-            worker = workers.ClosestSpeakersWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Clustering speaker utterances":
             worker = workers.ClusterSpeakerUtterancesWorker(
@@ -401,9 +452,9 @@ class MainWindow(QtWidgets.QMainWindow):
             worker = workers.ExportLexiconWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Exporting files":
-            self.set_application_state("loading")
-            self.ui.loadingScreen.setCorpusName("Saving changes...")
             worker = workers.ExportFilesWorker(self.corpus_model.session, *extra_args)
+            self.set_application_state("loading", worker)
+            self.ui.loadingScreen.setCorpusName("Saving changes...")
             worker.signals.result.connect(finished_function)
         else:
             if extra_args is None:
@@ -442,12 +493,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.oov_model = OovModel(self)
         self.corpus_model = CorpusModel(self)
         self.speaker_model = SpeakerModel(self)
-        self.merge_speaker_model = MergeSpeakerModel(self)
+        self.diarization_model = DiarizationModel(self)
 
         self.corpus_model.databaseSynced.connect(self.handle_changes_synced)
         self.corpus_model.runFunction.connect(self.execute_runnable)
-        self.merge_speaker_model.runFunction.connect(self.execute_runnable)
-        self.merge_speaker_model.mergeAllFinished.connect(self.save_completed)
+        self.diarization_model.runFunction.connect(self.execute_runnable)
         self.corpus_model.lockCorpus.connect(self.anchor_lock_corpus)
         self.corpus_model.statusUpdate.connect(self.update_status_message)
         self.corpus_model.unlockCorpus.connect(self.anchor_unlock_corpus)
@@ -460,7 +510,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dictionary_model.set_corpus_model(self.corpus_model)
         self.corpus_model.set_dictionary_model(self.dictionary_model)
         self.speaker_model.set_corpus_model(self.corpus_model)
-        self.merge_speaker_model.set_corpus_model(self.corpus_model)
+        self.diarization_model.set_corpus_model(self.corpus_model)
         self.oov_model.set_corpus_model(self.corpus_model)
         self.selection_model = CorpusSelectionModel(self.corpus_model)
         self.ui.utteranceListWidget.set_models(
@@ -477,7 +527,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.acousticModelWidget.set_models(self.corpus_model)
         self.ui.languageModelWidget.set_models(self.corpus_model)
         self.ui.dictionaryWidget.set_models(self.dictionary_model)
-        self.ui.diarizationWidget.set_models(self.merge_speaker_model)
+        self.ui.diarizationWidget.set_models(self.diarization_model, self.selection_model)
         self.ui.oovWidget.set_models(self.oov_model)
         self.selection_model.selectionChanged.connect(self.change_utterance)
         self.selection_model.fileChanged.connect(self.change_file)
@@ -619,6 +669,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.deleteUtterancesAct.setEnabled(False)
         self.ui.splitUtterancesAct.setEnabled(False)
         self.ui.alignUtteranceAct.setEnabled(False)
+        self.ui.segmentUtteranceAct.setEnabled(False)
         if not selection:
             return
 
@@ -627,12 +678,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.mergeUtterancesAct.setEnabled(False)
             if self.corpus_model.acoustic_model is not None and self.corpus_model.has_dictionary:
                 self.ui.alignUtteranceAct.setEnabled(True)
+                self.ui.segmentUtteranceAct.setEnabled(True)
         else:
             self.ui.mergeUtterancesAct.setEnabled(True)
-        # self.change_speaker_act.widget.setCurrentSpeaker(current_utterance.speaker)
         self.ui.deleteUtterancesAct.setEnabled(True)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+        for worker in self.workers:
+            worker.stopped.set()
         self.ui.utteranceDetailWidget.plot_widget.clean_up_for_close()
         self.settings.setValue(
             AnchorSettings.UTTERANCES_VISIBLE, self.ui.utteranceDockWidget.isVisible()
@@ -668,6 +721,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.close_timer.start(1000)
 
     def _actual_close(self, a0):
+        for worker in self.workers:
+            if not worker.finished():
+                return
         if self.thread_pool.activeThreadCount() > 0:
             return
         self.settings.setValue(AnchorSettings.GEOMETRY, self.saveGeometry())
@@ -675,6 +731,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.settings.sync()
         if self.corpus_model.session is not None:
+            self.corpus_model.session = None
+            self.corpus_model.corpus.cleanup_connections()
             sqlalchemy.orm.close_all_sessions()
         a0.accept()
 
@@ -724,7 +782,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.searchAct.triggered.connect(self.open_search)
         self.ui.dictionaryWidget.table.searchRequested.connect(self.open_search)
         self.ui.oovWidget.table.searchRequested.connect(self.open_search)
-        self.ui.diarizationWidget.table.searchRequested.connect(self.open_search_speaker)
+        self.ui.diarizationWidget.table.utteranceSearchRequested.connect(self.open_search_file)
+        self.ui.diarizationWidget.table.speakerSearchRequested.connect(self.open_search_speaker)
         self.ui.speakerWidget.table.searchRequested.connect(self.open_search_speaker)
         self.ui.oovWidget.table.g2pRequested.connect(self.dictionary_model.add_word)
         self.dictionary_model.requestLookup.connect(self.open_dictionary)
@@ -757,7 +816,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.ui.alignCorpusAct.triggered.connect(self.begin_alignment)
         self.ui.diarizationWidget.refresh_ivectors_action.triggered.connect(
-            self.begin_speaker_diarization
+            self.begin_refresh_ivectors
+        )
+        self.ui.diarizationWidget.calculate_plda_action.triggered.connect(
+            self.begin_calculate_plda
+        )
+        self.ui.diarizationWidget.reset_ivectors_action.triggered.connect(
+            self.begin_reset_ivectors
         )
         self.ui.alignUtteranceAct.triggered.connect(self.begin_utterance_alignment)
         self.ui.segmentUtteranceAct.triggered.connect(self.begin_utterance_segmentation)
@@ -787,6 +852,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.menuWindow.addAction(self.ui.transcriptionDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.diarizationDockWidget.toggleViewAction())
 
+        self.merge_all_action = QtGui.QAction(self)
+        self.merge_all_action.setObjectName("merge_all_action")
+        self.merge_all_action.setText(
+            QtCore.QCoreApplication.translate("MainWindow", "Merge close speakers", None)
+        )
+        self.merge_all_action.triggered.connect(self.merge_all)
+
+        self.mismatched_utterances_action = QtGui.QAction(self)
+        self.mismatched_utterances_action.setObjectName("mismatched_utterances_action")
+        self.mismatched_utterances_action.setText(
+            QtCore.QCoreApplication.translate("MainWindow", "Reassign mismatched utterances", None)
+        )
+        self.mismatched_utterances_action.triggered.connect(self.reassign_mismatched_utterances)
+        self.ui.menuExperimental.addAction(self.merge_all_action)
+        self.ui.menuExperimental.addAction(self.mismatched_utterances_action)
         self.ui.getHelpAct.triggered.connect(self.open_help)
         self.ui.reportBugAct.triggered.connect(self.report_bug)
 
@@ -809,6 +889,71 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.closeIvectorExtractorAct.setEnabled(False)
         self.refresh_corpus_history()
         self.refresh_model_actions()
+
+    def merge_all(self):
+        if not self.corpus_model.corpus.has_any_ivectors():
+            return
+        kwargs = {
+            "threshold": 0.2,
+            "metric": "cosine",
+        }
+        if self.corpus_model.plda is not None:
+            kwargs["metric"] = "plda"
+            kwargs["plda"] = self.corpus_model.plda
+            kwargs["speaker_plda"] = self.corpus_model.speaker_plda
+            kwargs["threshold"] = 45
+        self.execute_runnable("Merging speakers", self.finish_merging, [kwargs])
+
+    def finish_recalculate(self, result):
+        if result is not None:
+            self.corpus_model.speaker_plda = result
+
+    def finish_merging(self, result=None):
+        if result is not None:
+            self.update_status_message(f"Merged {result} speakers.")
+            self.corpus_model.runFunction.emit(
+                "Recalculating speaker ivectors",
+                self.finish_recalculate,
+                [
+                    {
+                        "plda": self.corpus_model.plda,
+                        "speaker_plda": self.corpus_model.speaker_plda,
+                    }
+                ],
+            )
+
+        self.set_application_state("loaded")
+
+    def reassign_mismatched_utterances(self):
+        if not self.corpus_model.corpus.has_any_ivectors():
+            return
+        kwargs = {
+            "threshold": 0.3,
+        }
+        if False and self.corpus_model.plda is not None:
+            kwargs["metric"] = "plda"
+            kwargs["plda"] = self.corpus_model.plda
+            kwargs["speaker_plda"] = self.corpus_model.speaker_plda
+            kwargs["threshold"] = 50
+        self.execute_runnable(
+            "Reassigning utterances", self.finish_mismatched_utterances, [kwargs]
+        )
+
+    def finish_mismatched_utterances(self, result=None):
+        if result is not None:
+            self.update_status_message(f"Updated {result} utterances.")
+        self.execute_runnable(
+            "Recalculating speaker ivectors",
+            self.finish_recalculate,
+            [
+                {
+                    "plda": self.corpus_model.plda,
+                    "speaker_plda": self.corpus_model.speaker_plda,
+                }
+            ],
+        )
+
+        self.set_application_state("loaded")
 
     def update_play_act(self, state):
         if state == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
@@ -967,6 +1112,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             name="speechbrain", path="speechbrain", available_locally=True
                         )
                     )
+                    session.flush()
                     session.commit()
                 a = QtGui.QAction(text="speechbrain", parent=self)
                 a.setData(m.id)
@@ -1105,7 +1251,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.cancelCorpusLoadAct.setEnabled(False)
         self.ui.loadingScreen.text_label.setText("Cancelling...")
         self.corpus_worker.stop()
-        self.reload_corpus_worker.stop()
 
     def save_completed(self):
         self.set_application_state("loaded")
@@ -1117,16 +1262,43 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.set_application_state("unloaded")
         self.check_actions()
+        with self.corpus_model.corpus.session() as session:
+            workflows = session.query(CorpusWorkflow).order_by(CorpusWorkflow.time_stamp).all()
+            for w in workflows:
+                if w.workflow_type is WorkflowType.alignment:
+                    self.corpus_model.has_alignments = True
+                elif w.workflow_type is WorkflowType.reference:
+                    self.corpus_model.has_reference_alignments = True
+                elif w.workflow_type is WorkflowType.transcription:
+                    self.corpus_model.has_transcribed_alignments = True
+                elif w.workflow_type is WorkflowType.per_speaker_transcription:
+                    self.corpus_model.has_per_speaker_transcribed_alignments = True
 
     def finalize_load_corpus(self, corpus: AcousticCorpus):
         if corpus is None:
             self.set_application_state("unloaded")
         self.corpus = corpus
         self.corpus_model.setCorpus(corpus)
-        with sqlalchemy.orm.Session(self.db_engine) as session:
-            c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
-            if c.custom_mapping_path:
-                self.dictionary_model.set_custom_mapping(c.custom_mapping_path)
+        if corpus is not None:
+            plda_path = self.corpus_model.corpus.output_directory.joinpath(
+                "speaker_diarization"
+            ).joinpath("plda")
+            if plda_path.exists():
+                self.corpus_model.plda = read_kaldi_object(Plda, plda_path)
+                self.corpus_model.runFunction.emit(
+                    "Recalculating speaker ivectors",
+                    self.finish_recalculate,
+                    [
+                        {
+                            "plda": self.corpus_model.plda,
+                            "speaker_plda": self.corpus_model.speaker_plda,
+                        }
+                    ],
+                )
+            with sqlalchemy.orm.Session(self.db_engine) as session:
+                c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
+                if c.custom_mapping_path:
+                    self.dictionary_model.set_custom_mapping(c.custom_mapping_path)
 
     def finalize_reload_corpus(self):
         self.set_application_state("loaded")
@@ -1161,6 +1333,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def finalize_load_g2p_model(self, generator: PyniniValidator):
         self.dictionary_model.set_g2p_generator(generator)
+        self.corpus_model.g2p_model = generator.g2p_model
         self.check_actions()
         self.ui.g2pMenu.setEnabled(True)
 
@@ -1179,12 +1352,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_application_state("loading")
         self.ui.loadingScreen.setCorpusName("Performing alignment...")
 
-    def begin_speaker_diarization(self, reset=False):
+    def begin_refresh_ivectors(self):
         self.enableMfaActions(False)
-        self.speaker_diarization_worker.set_params(
+        self.compute_ivectors_worker.set_params(self.corpus_model, reset=False)
+        self.compute_ivectors_worker.start()
+        self.set_application_state("loading")
+        self.ui.loadingScreen.setCorpusName("Calculating ivectors...")
+
+    def begin_calculate_plda(self):
+        self.enableMfaActions(False)
+        self.compute_plda_worker.set_params(
             self.corpus_model.corpus, self.ivector_extractor, reset=False
         )
-        self.speaker_diarization_worker.start()
+        self.compute_plda_worker.start()
+        self.set_application_state("loading")
+        self.ui.loadingScreen.setCorpusName("Calculating PLDA...")
+
+    def begin_reset_ivectors(self):
+        self.enableMfaActions(False)
+        self.compute_ivectors_worker.set_params(self.corpus_model, reset=True)
+        self.compute_ivectors_worker.start()
         self.set_application_state("loading")
         self.ui.loadingScreen.setCorpusName("Calculating ivectors...")
 
@@ -1214,9 +1401,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def begin_utterance_segmentation(self):
         utterance = self.selection_model.currentUtterance()
-        self.segment_utterance_worker.set_params(
-            self.corpus_model.corpus, self.acoustic_model, utterance.id
-        )
+        self.segment_utterance_worker.set_params(self.corpus_model, utterance.id)
         self.segment_utterance_worker.start()
 
     def begin_alignment_evaluation(self):
@@ -1253,7 +1438,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.transcribeCorpusAct.setEnabled(enabled)
         self.ui.evaluateAlignmentsAct.setEnabled(enabled)
 
-    def finalize_adding_ivectors(self):
+    def finalize_adding_ivectors(self, speaker_space=None):
+        self.speaker_model.speaker_space = speaker_space
+        self.corpus_model.corpus.inspect_database()
+        selection = self.selection_model.selection()
+        self.selection_model.clearSelection()
+        self.selection_model.select(
+            selection,
+            QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
+            | QtCore.QItemSelectionModel.SelectionFlag.Rows,
+        )
+        self.corpus_model.update_data()
+        self.check_actions()
+        self.ui.diarizationWidget.refresh()
+        self.set_application_state("loaded")
+
+    def finalize_computing_plda(self, result=None):
+        if result is None:
+            self.corpus_model.plda = result
+        else:
+            self.corpus_model.plda = result[0]
+            self.corpus_model.speaker_plda = result[1]
         self.corpus_model.corpus.inspect_database()
         selection = self.selection_model.selection()
         self.selection_model.clearSelection()
@@ -1306,15 +1511,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def finalize_segmentation(self, data):
         original_utterance_id, split_data = data
         self.corpus_model.split_vad_utterance(original_utterance_id, split_data)
-        self.corpus_model.session.expire_all()
         self.corpus_model.update_data()
 
     def finalize_saving(self):
         self.check_actions()
 
-    def set_application_state(self, state):
+    def set_application_state(self, state, worker=None):
         self.selection_model.clearSelection()
         if state == "loading":
+            self.ui.loadingScreen.set_worker(worker)
             self.ui.utteranceDockWidget.setVisible(False)
             self.ui.dictionaryDockWidget.setVisible(False)
             self.ui.oovDockWidget.setVisible(False)
@@ -1346,6 +1551,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.loadLanguageModelAct.setEnabled(False)
             self.ui.loadIvectorExtractorAct.setEnabled(False)
         elif state == "loaded":
+            self.ui.loadingScreen.set_worker(None)
             self.ui.loadingScreen.setVisible(False)
             self.ui.titleScreen.setVisible(False)
 
@@ -1425,6 +1631,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.languageModelMenu.setEnabled(True)
             self.ui.ivectorExtractorMenu.setEnabled(True)
             self.ui.g2pMenu.setEnabled(True)
+            self.ui.loadingScreen.set_worker(None)
 
     def enable_zoom(self):
         if (
@@ -1508,7 +1715,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     else:
                         self.ui.utteranceDockWidget.toggleViewAction().trigger()
 
-    def open_search_file(self, search_term=None, show=False):
+    def open_search_file(self, search_term=None, utterance_id=None, show=False):
         if search_term is not None:
             self.ui.utteranceListWidget.file_dropdown.line_edit.setText(search_term)
             self.ui.utteranceListWidget.speaker_dropdown.line_edit.setText("")
@@ -1516,6 +1723,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.utteranceListWidget.table_widget.horizontalHeader().setSortIndicator(
                 self.corpus_model.begin_column, QtCore.Qt.SortOrder.AscendingOrder
             )
+            self.ui.utteranceListWidget.requested_utterance_id = utterance_id
             self.ui.utteranceListWidget.search()
             if show:
                 dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
@@ -1598,7 +1806,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.corpus_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.dictionary_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.speaker_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
-        self.merge_speaker_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.diarization_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.ui.utteranceListWidget.refresh_settings()
         self.ui.dictionaryWidget.refresh_settings()
         self.ui.speakerWidget.refresh_settings()
@@ -1835,6 +2043,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if c is None or c.g2p_model is None:
                 return
             self.g2p_model_worker.set_params(c.g2p_model.path)
+            print(c.g2p_model.path)
         self.g2p_model_worker.start()
         self.settings.setValue(
             AnchorSettings.DEFAULT_G2P_DIRECTORY, os.path.dirname(c.g2p_model.path)
@@ -1999,7 +2208,6 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui = Ui_PreferencesDialog()
         self.ui.setupUi(self)
         self.settings = AnchorSettings()
-        config = MfaConfiguration()
 
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
 
@@ -2070,14 +2278,19 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.audioDeviceEdit.clear()
         for o in QtMultimedia.QMediaDevices.audioOutputs():
             self.ui.audioDeviceEdit.addItem(o.description(), userData=o.id())
-        self.ui.numJobsEdit.setValue(config.profiles["anchor"].num_jobs)
+        self.ui.numJobsEdit.setValue(config.NUM_JOBS)
         try:
-            self.ui.useMpCheckBox.setChecked(config.profiles["anchor"].use_mp)
+            self.ui.useMpCheckBox.setChecked(bool(config.USE_MP))
         except TypeError:
             self.ui.useMpCheckBox.setChecked(True)
         self.setWindowTitle("Preferences")
 
     def accept(self) -> None:
+        config.NUM_JOBS = self.ui.numJobsEdit.value()
+        config.USE_MP = self.ui.useMpCheckBox.isChecked()
+        config.GLOBAL_CONFIG.current_profile.num_jobs = config.NUM_JOBS
+        config.GLOBAL_CONFIG.current_profile.use_mp = config.USE_MP
+        config.GLOBAL_CONFIG.save()
         self.settings.setValue(self.settings.PRIMARY_BASE_COLOR, self.ui.primaryBaseEdit.color)
         self.settings.setValue(self.settings.PRIMARY_LIGHT_COLOR, self.ui.primaryLightEdit.color)
         self.settings.setValue(self.settings.PRIMARY_DARK_COLOR, self.ui.primaryDarkEdit.color)
@@ -2154,12 +2367,6 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(self.settings.AUTOSAVE, self.ui.autosaveOnExitCheckBox.isChecked())
         self.settings.setValue(self.settings.AUDIO_DEVICE, self.ui.audioDeviceEdit.currentData())
         self.settings.sync()
-        config = MfaConfiguration()
-        config.current_profile_name = "anchor"
-        config.profiles["anchor"].use_mp = self.ui.useMpCheckBox.isChecked()
-        config.profiles["anchor"].num_jobs = int(self.ui.numJobsEdit.value())
-        config.profiles["anchor"].github_token = self.ui.githubTokenEdit.text()
-        config.save()
         super(OptionsDialog, self).accept()
 
 
