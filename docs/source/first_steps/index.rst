@@ -203,7 +203,12 @@ In the Alignment panel, there are options that can be filled in for beam, retry 
 .. figure:: ../_static/img/alignment_settings.png
    :align: center
 
-Once alignment completes, you can go the Utterances panel to inspect each utterance.  The utterance will have extra tiers below the text tier for the aligned word and phone intervals.  You can sort utterances based on their log-likelihood per frame.  Lower log-likelihood can be the result of errors in the utterance's transcription or the pronunciation available in the dictionary.  However, lower log-likelihood can also be the result of normal variation in how people speak, either at a speaker level, or if a speaker affects a different voice quality (i.e., during story-telling, emphasis, etc).
+Once alignment completes, you can go the Utterances panel to inspect each utterance.  The utterance will have extra tiers below the text tier for the aligned word and phone intervals.
+
+.. figure:: ../_static/img/utterance_alignment.png
+   :align: center
+
+You can sort utterances based on their log-likelihood per frame.  Lower log-likelihood can be the result of errors in the utterance's transcription or the pronunciation available in the dictionary.  However, lower log-likelihood can also be the result of normal variation in how people speak, either at a speaker level, or if a speaker affects a different voice quality (i.e., during story-telling, emphasis, etc).
 
 .. figure:: ../_static/img/utterance_bad_alignment.png
    :align: center
