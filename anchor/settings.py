@@ -917,7 +917,7 @@ class AnchorSettings(QtCore.QSettings):
         background_color = self.accent_base_color.name()
         text_color = self.primary_very_dark_color.name()
         return f"""
-        QToolTip {{
+        QPushButton QWidget, QToolButton QWidget, QToolTip {{
             background-color: {background_color};
             color: {text_color};
         }}
@@ -933,7 +933,7 @@ class AnchorSettings(QtCore.QSettings):
         selection_color = self.primary_light_color.name()
         return f"""
         QMenu {{
-                margin: 2px;
+                border: 1px solid {enabled_color};
                 background-color: {menu_background_color};
                 color: {menu_text_color};
                 menu-scrollable: 1;

@@ -264,9 +264,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_g2p()
         self.create_actions()
         self.refresh_settings()
-        self.refresh_shortcuts()
-        self.refresh_style_sheets()
-        self.refresh_fonts()
 
     def finalize_download(self):
         self.refresh_model_actions()
