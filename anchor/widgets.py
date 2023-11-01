@@ -5,6 +5,8 @@ import typing
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+from _kalpy.ivector import ivector_normalize_length
+from _kalpy.matrix import DoubleVector
 from montreal_forced_aligner.data import (  # noqa
     ClusterType,
     DistanceMetric,
@@ -328,6 +330,7 @@ class SpeakerDropDown(QtWidgets.QToolButton):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.current_speaker = ""
         self.menu = QtWidgets.QMenu(self)
+        self.menu.setStyleSheet(self.parent().settings.menu_style_sheet)
         self.speakers = []
         self.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
@@ -446,6 +449,7 @@ class UtteranceListTable(AnchorTableView):
 class CompleterLineEdit(QtWidgets.QWidget):
     def __init__(self, *args, corpus_model: CorpusModel = None):
         super().__init__(*args)
+        self.settings = AnchorSettings()
         self.corpus_model = corpus_model
         layout = QtWidgets.QHBoxLayout()
         self.line_edit = QtWidgets.QLineEdit(self)
@@ -465,6 +469,7 @@ class CompleterLineEdit(QtWidgets.QWidget):
         # self.clear_action.setVisible(False)
         layout.addWidget(self.button)
         self.setLayout(layout)
+        self.setStyleSheet(self.settings.style_sheet)
         self.completions = {}
 
     def validate(self) -> bool:
@@ -501,6 +506,7 @@ class CompleterLineEdit(QtWidgets.QWidget):
         completer.popup().setUniformItemSizes(True)
         completer.popup().setLayoutMode(QtWidgets.QListView.LayoutMode.Batched)
         completer.setModel(model)
+        completer.popup().setStyleSheet(self.settings.completer_style_sheet)
         self.line_edit.setCompleter(completer)
         # self.line_edit.textChanged.connect(completer.setCompletionPrefix)
 
@@ -1342,6 +1348,7 @@ class HighlightDelegate(QtWidgets.QStyledItemDelegate):
 class HeaderView(QtWidgets.QHeaderView):
     def __init__(self, *args):
         super(HeaderView, self).__init__(*args)
+        self.settings = AnchorSettings()
         self.setHighlightSections(False)
         self.setStretchLastSection(True)
         self.setSortIndicatorShown(True)
@@ -1350,9 +1357,10 @@ class HeaderView(QtWidgets.QHeaderView):
         self.customContextMenuRequested.connect(self.generate_context_menu)
 
     def sectionSizeFromContents(self, logicalIndex: int) -> QtCore.QSize:
-        settings = AnchorSettings()
         size = super().sectionSizeFromContents(logicalIndex)
-        size.setWidth(size.width() + settings.text_padding + 3 + settings.sort_indicator_padding)
+        size.setWidth(
+            size.width() + self.settings.text_padding + 3 + self.settings.sort_indicator_padding
+        )
         return size
 
     def showHideColumn(self):
@@ -1375,6 +1383,7 @@ class HeaderView(QtWidgets.QHeaderView):
                 a.setChecked(True)
             a.triggered.connect(self.showHideColumn)
             menu.addAction(a)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.exec_(self.mapToGlobal(location))
 
 
@@ -1532,6 +1541,8 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
 
         self.metric_dropdown = QtWidgets.QComboBox()
         for m in DistanceMetric:
+            if m is DistanceMetric.euclidean:
+                continue
             self.metric_dropdown.addItem(m.name)
 
         self.row_indices = {}
@@ -2114,6 +2125,7 @@ class OovTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -2174,6 +2186,7 @@ class DictionaryTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.addSeparator()
         menu.addAction(self.delete_words_action)
@@ -2258,13 +2271,14 @@ class SpeakerTableView(AnchorTableView):
         self.speaker_model: SpeakerModel = None
         self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(self.header)
-        self.button_delegate = ButtonDelegate(":magnifying-glass.svg", self)
+        self.view_delegate = ButtonDelegate(":magnifying-glass.svg", self)
+        self.delete_delegate = ButtonDelegate(":expand.svg", self)
         self.edit_delegate = EditableDelegate(self)
         self.speaker_delegate = SpeakerViewDelegate(self)
         self.setItemDelegateForColumn(1, self.speaker_delegate)
         self.setItemDelegateForColumn(0, self.edit_delegate)
-        self.setItemDelegateForColumn(4, self.button_delegate)
-        self.setItemDelegateForColumn(5, self.button_delegate)
+        self.setItemDelegateForColumn(4, self.view_delegate)
+        # self.setItemDelegateForColumn(5, self.delete_delegate)
         self.clicked.connect(self.cluster_utterances)
         self.doubleClicked.connect(self.search_speaker)
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -2272,6 +2286,8 @@ class SpeakerTableView(AnchorTableView):
         self.customContextMenuRequested.connect(self.generate_context_menu)
         self.add_speaker_action = QtGui.QAction("Compare speakers", self)
         self.add_speaker_action.triggered.connect(self.add_speakers)
+        self.break_up_speaker_action = QtGui.QAction("Break up speaker", self)
+        self.break_up_speaker_action.triggered.connect(self.break_up_speaker)
 
     def add_speakers(self):
         selected_rows = self.selectionModel().selectedRows(0)
@@ -2280,10 +2296,24 @@ class SpeakerTableView(AnchorTableView):
         speakers = [self.speaker_model.speakerAt(index.row()) for index in selected_rows]
         self.speaker_model.change_current_speaker(speakers)
 
+    def break_up_speaker(self):
+        index = self.selectionModel().currentIndex()
+        if not index or not index.isValid():
+            return
+        speaker_id = self.speaker_model.speakerAt(index.row())
+        speaker_name = self.speaker_model.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
+        dialog = ConfirmationDialog(
+            f"Break up {speaker_name}", f"Are you sure you want to break up {speaker_name}?", self
+        )
+        if dialog.exec_():
+            self.speaker_model.break_up_speaker(speaker_id)
+
     def generate_context_menu(self, location):
-        menu = QtWidgets.QMenu()
+        menu = QtWidgets.QMenu(self)
         menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_speaker_action)
+        menu.addSeparator()
+        menu.addAction(self.break_up_speaker_action)
         menu.exec_(self.mapToGlobal(location))
 
     def set_models(self, model: SpeakerModel):
@@ -2294,7 +2324,8 @@ class SpeakerTableView(AnchorTableView):
     def cluster_utterances(self, index: QtCore.QModelIndex):
         if not index.isValid() or index.column() < 4:
             return
-        self.speaker_model.change_current_speaker(self.speaker_model.speakerAt(index.row()))
+        if index.column() == 4:
+            self.speaker_model.change_current_speaker(self.speaker_model.speakerAt(index.row()))
 
     def search_speaker(self, index: QtCore.QModelIndex):
         if index.isValid() and index.column() == 1:
@@ -2575,49 +2606,26 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
             return
         indices = np.array(list(self.plot_widget.selected_indices))
         mean_ivector = np.mean(self.speaker_model.ivectors[indices, :], axis=0)
-        self.search_requested.emit(mean_ivector)
+        kaldi_ivector = DoubleVector()
+        kaldi_ivector.from_numpy(mean_ivector)
+        ivector_normalize_length(kaldi_ivector)
+        self.search_requested.emit(kaldi_ivector.numpy())
 
     def change_speaker(self):
         if len(self.speaker_model.current_speakers) > 1:
-            print(self.plot_widget.updated_indices)
             if not self.plot_widget.updated_indices:
                 return
-            previous_speakers = set(
-                [
-                    self.speaker_model.utt2spk[self.speaker_model.utterance_ids[x]]
-                    for x in self.plot_widget.updated_indices
-                ]
-            )
-            for s_id in self.plot_widget.brushes.keys():
-                print("NEW", s_id)
-                current_indices = [
-                    x
-                    for x in self.plot_widget.updated_indices
-                    if self.speaker_model.cluster_labels[x] == s_id
-                    and self.speaker_model.utt2spk[self.speaker_model.utterance_ids[x]] != s_id
-                ]
-                print(current_indices)
-                if not current_indices:
-                    continue
-                if s_id <= 0:
-                    utterance_ids = self.speaker_model.utterance_ids[current_indices].tolist()
-                    self.speaker_model.change_speaker(
-                        utterance_ids, self.speaker_model.current_speakers[0], s_id
-                    )
-                    continue
-
-                for old_id in previous_speakers:
-                    if s_id == old_id:
-                        continue
-                    utterance_ids = [
-                        x
-                        for x in self.speaker_model.utterance_ids[current_indices].tolist()
-                        if self.speaker_model.utt2spk[x] == old_id
+            data = []
+            for index in self.plot_widget.updated_indices:
+                u_id = int(self.speaker_model.utterance_ids[index])
+                data.append(
+                    [
+                        u_id,
+                        self.speaker_model.utt2spk[u_id],
+                        int(self.speaker_model.cluster_labels[index]),
                     ]
-
-                    if not utterance_ids:
-                        continue
-                    self.speaker_model.change_speaker(utterance_ids, old_id, s_id)
+                )
+            self.speaker_model.change_speakers(data, self.speaker_model.current_speakers[0])
             self.plot_widget.updated_indices = set()
             self.plot_widget.selected_indices = set()
         else:
@@ -2671,6 +2679,7 @@ class DiarizationTable(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.set_reference_utterance_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -2741,17 +2750,6 @@ class DiarizationTable(AnchorTableView):
                         .first()
                     )
                 except TypeError:
-                    print(speaker_id)
-                    print(
-                        session.query(
-                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
-                        )
-                        .join(Utterance.speaker)
-                        .filter(Utterance.speaker_id == speaker_id)
-                        .order_by(
-                            c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
-                        )
-                    )
                     self.selection_model.clearSelection()
                     return
         self.selection_model.set_current_file(
@@ -2818,6 +2816,8 @@ class DiarizationWidget(QtWidgets.QWidget):
         form_layout.addRow(QtWidgets.QLabel("Search based on speakers"), self.speaker_check)
         self.metric_dropdown = QtWidgets.QComboBox()
         for m in DistanceMetric:
+            if m is DistanceMetric.euclidean:
+                continue
             self.metric_dropdown.addItem(m.value)
         self.metric_dropdown.currentIndexChanged.connect(self.update_metric_language)
         self.threshold_label = QtWidgets.QLabel("Distance threshold")
@@ -3184,7 +3184,8 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.settings = AnchorSettings()
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QtWidgets.QVBoxLayout()
-
+        self.setWindowTitle("Find speaker")
+        self.setWindowIcon(QtGui.QIcon(":anchor-yellow.svg"))
         self.speaker_dropdown = CompleterLineEdit(self, corpus_model=corpus_model)
         self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
         self.speaker_dropdown.line_edit.returnPressed.connect(self.accept())
@@ -3202,6 +3203,29 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.speaker_dropdown.setFont(font)
         self.setStyleSheet(self.settings.style_sheet)
         self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+
+
+class ConfirmationDialog(QtWidgets.QDialog):
+    def __init__(self, title: str, description: str, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QtWidgets.QVBoxLayout()
+        self.setWindowTitle(title)
+        self.label = QtWidgets.QLabel(description)
+        self.setWindowIcon(QtGui.QIcon(":anchor-yellow.svg"))
+        layout.addWidget(self.label)
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Yes
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        self.setLayout(layout)
+        font = self.settings.font
+        self.label.setFont(font)
+        self.setStyleSheet(self.settings.style_sheet)
 
 
 class SpeakerWidget(QtWidgets.QWidget):
@@ -3256,6 +3280,7 @@ class SpeakerWidget(QtWidgets.QWidget):
 
     def search(self, speaker_filter=None):
         # self.speaker_model.set_text_filter(self.search_box.query())
+        self.cluster_widget.plot_widget.clear_plot()
         if speaker_filter is None:
             speaker_id = self.speaker_dropdown.current_text()
             if isinstance(speaker_id, str):
@@ -3315,6 +3340,7 @@ class SpeakerWidget(QtWidgets.QWidget):
 class ColorEdit(QtWidgets.QPushButton):  # pragma: no cover
     def __init__(self, parent=None):
         super(ColorEdit, self).__init__(parent=parent)
+        self.setText("")
         self.clicked.connect(self.open_dialog)
 
     def set_color(self, color: QtGui.QColor):

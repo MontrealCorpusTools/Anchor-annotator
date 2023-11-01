@@ -13,6 +13,8 @@
         <file alias="caret-up.svg">resources/base_tool_buttons/caret-up-solid.svg</file>
         <file alias="caret-left.svg">resources/base_tool_buttons/caret-left-solid.svg</file>
         <file alias="caret-right.svg">resources/base_tool_buttons/caret-right-solid.svg</file>
+        <file alias="chevron-down.svg">resources/base_tool_buttons/chevron-down-solid.svg</file>
+        <file alias="chevron-right.svg">resources/base_tool_buttons/chevron-right-solid.svg</file>
         <file alias="logo_text.svg">resources/logos/logo_text.svg</file>
         <file alias="splash_screen.svg">resources/splash_screen.svg</file>
         <file alias="spinning_blue.svg">resources/spinning_blue.svg</file>

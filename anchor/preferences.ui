@@ -17,8 +17,130 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>4</number>
+      <number>0</number>
      </property>
+     <widget class="QWidget" name="generalTab">
+      <attribute name="title">
+       <string>General</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_8">
+       <item>
+        <widget class="QScrollArea" name="scrollArea_3">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <widget class="QWidget" name="scrollAreaWidgetContents_3">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>682</width>
+            <height>353</height>
+           </rect>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayout_9">
+           <item>
+            <layout class="QFormLayout" name="formLayout">
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_24">
+               <property name="text">
+                <string>Audio device</string>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1">
+              <widget class="QComboBox" name="audioDeviceEdit"/>
+             </item>
+             <item row="5" column="1">
+              <widget class="QSpinBox" name="numJobsEdit"/>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_25">
+               <property name="text">
+                <string>Number of processors to use</string>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="1">
+              <widget class="QCheckBox" name="useMpCheckBox">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label_26">
+               <property name="text">
+                <string>Use multiprocessing?</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="0">
+              <widget class="QLabel" name="autosaveLabel">
+               <property name="text">
+                <string>Autosave on exit</string>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="1">
+              <widget class="QCheckBox" name="autosaveOnExitCheckBox"/>
+             </item>
+             <item row="1" column="0">
+              <widget class="QLabel" name="autoloadLastUsedCorpusLabel">
+               <property name="text">
+                <string>Autoload last used corpus</string>
+               </property>
+              </widget>
+             </item>
+             <item row="1" column="1">
+              <widget class="QCheckBox" name="autoloadLastUsedCorpusCheckBox"/>
+             </item>
+             <item row="6" column="1">
+              <widget class="QLineEdit" name="githubTokenEdit"/>
+             </item>
+             <item row="6" column="0">
+              <widget class="QLabel" name="label_32">
+               <property name="text">
+                <string>Github request token</string>
+               </property>
+              </widget>
+             </item>
+             <item row="7" column="1">
+              <widget class="QSpinBox" name="resultsPerPageEdit">
+               <property name="maximum">
+                <number>1000</number>
+               </property>
+              </widget>
+             </item>
+             <item row="7" column="0">
+              <widget class="QLabel" name="label_33">
+               <property name="text">
+                <string>Results per page</string>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="1">
+              <widget class="QCheckBox" name="cudaCheckBox">
+               <property name="text">
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="label_48">
+               <property name="text">
+                <string>Use CUDA</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+      </layout>
+     </widget>
      <widget class="QWidget" name="appearenceTab">
       <attribute name="title">
        <string>Appearance</string>
@@ -103,7 +225,7 @@
                 <item row="0" column="1">
                  <widget class="ColorEdit" name="primaryBaseEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -117,7 +239,7 @@
                 <item row="1" column="1">
                  <widget class="ColorEdit" name="primaryLightEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -131,7 +253,7 @@
                 <item row="2" column="1">
                  <widget class="ColorEdit" name="primaryDarkEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -145,7 +267,7 @@
                 <item row="3" column="1">
                  <widget class="ColorEdit" name="primaryVeryLightEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -159,7 +281,7 @@
                 <item row="4" column="1">
                  <widget class="ColorEdit" name="primaryVeryDarkEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -186,7 +308,7 @@
                 <item row="0" column="1">
                  <widget class="ColorEdit" name="accentBaseEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -200,7 +322,7 @@
                 <item row="1" column="1">
                  <widget class="ColorEdit" name="accentLightEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -214,7 +336,7 @@
                 <item row="2" column="1">
                  <widget class="ColorEdit" name="accentDarkEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -228,7 +350,7 @@
                 <item row="3" column="1">
                  <widget class="ColorEdit" name="accentVeryLightEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -242,7 +364,7 @@
                 <item row="4" column="1">
                  <widget class="ColorEdit" name="accentVeryDarkEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -269,7 +391,7 @@
                 <item row="0" column="1">
                  <widget class="ColorEdit" name="mainTextColorEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -283,7 +405,7 @@
                 <item row="1" column="1">
                  <widget class="ColorEdit" name="selectedTextColorEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -297,7 +419,7 @@
                 <item row="2" column="1">
                  <widget class="ColorEdit" name="errorColorEdit">
                   <property name="text">
-                   <string>PushButton</string>
+                   <string/>
                   </property>
                  </widget>
                 </item>
@@ -529,22 +651,44 @@
               </widget>
              </item>
              <item row="0" column="1">
-              <widget class="QSpinBox" name="spinBox_5"/>
+              <widget class="QSpinBox" name="dynamicRangeEdit">
+               <property name="maximum">
+                <number>10000</number>
+               </property>
+              </widget>
              </item>
              <item row="1" column="1">
-              <widget class="QSpinBox" name="spinBox_6"/>
+              <widget class="QSpinBox" name="fftSizeEdit">
+               <property name="maximum">
+                <number>1000000</number>
+               </property>
+              </widget>
              </item>
              <item row="2" column="1">
-              <widget class="QSpinBox" name="spinBox_7"/>
+              <widget class="QSpinBox" name="numTimeStepsEdit">
+               <property name="maximum">
+                <number>100000</number>
+               </property>
+               <property name="singleStep">
+                <number>10</number>
+               </property>
+              </widget>
              </item>
              <item row="3" column="1">
-              <widget class="QSpinBox" name="spinBox_8"/>
+              <widget class="QSpinBox" name="maxFrequencyEdit">
+               <property name="maximum">
+                <number>1000000</number>
+               </property>
+               <property name="singleStep">
+                <number>1000</number>
+               </property>
+              </widget>
              </item>
              <item row="4" column="1">
-              <widget class="QLineEdit" name="lineEdit_3"/>
+              <widget class="QLineEdit" name="windowSizeEdit"/>
              </item>
              <item row="5" column="1">
-              <widget class="QLineEdit" name="lineEdit_4"/>
+              <widget class="QLineEdit" name="preemphasisEdit"/>
              </item>
              <item row="1" column="0">
               <widget class="QLabel" name="label_43">
@@ -619,7 +763,7 @@
               </widget>
              </item>
              <item row="0" column="1">
-              <widget class="QCheckBox" name="checkBox">
+              <widget class="QCheckBox" name="showPitchCheck">
                <property name="text">
                 <string/>
                </property>
@@ -633,7 +777,14 @@
               </widget>
              </item>
              <item row="1" column="1">
-              <widget class="QSpinBox" name="spinBox"/>
+              <widget class="QSpinBox" name="minPitchEdit">
+               <property name="maximum">
+                <number>2000</number>
+               </property>
+               <property name="singleStep">
+                <number>10</number>
+               </property>
+              </widget>
              </item>
              <item row="2" column="0">
               <widget class="QLabel" name="label_37">
@@ -643,7 +794,14 @@
               </widget>
              </item>
              <item row="2" column="1">
-              <widget class="QSpinBox" name="spinBox_2"/>
+              <widget class="QSpinBox" name="maxPitchEdit">
+               <property name="maximum">
+                <number>5000</number>
+               </property>
+               <property name="singleStep">
+                <number>10</number>
+               </property>
+              </widget>
              </item>
              <item row="3" column="0">
               <widget class="QLabel" name="label_38">
@@ -653,7 +811,14 @@
               </widget>
              </item>
              <item row="3" column="1">
-              <widget class="QSpinBox" name="spinBox_3"/>
+              <widget class="QSpinBox" name="timeStepEdit">
+               <property name="maximum">
+                <number>100000</number>
+               </property>
+               <property name="singleStep">
+                <number>100</number>
+               </property>
+              </widget>
              </item>
              <item row="4" column="0">
               <widget class="QLabel" name="label_39">
@@ -663,13 +828,13 @@
               </widget>
              </item>
              <item row="4" column="1">
-              <widget class="QSpinBox" name="spinBox_4"/>
+              <widget class="QSpinBox" name="frameLengthEdit"/>
              </item>
              <item row="5" column="1">
-              <widget class="QLineEdit" name="lineEdit"/>
+              <widget class="QLineEdit" name="penaltyEdit"/>
              </item>
              <item row="6" column="1">
-              <widget class="QLineEdit" name="lineEdit_2"/>
+              <widget class="QLineEdit" name="pitchDeltaEdit"/>
              </item>
              <item row="5" column="0">
               <widget class="QLabel" name="label_40">
@@ -682,124 +847,6 @@
               <widget class="QLabel" name="label_41">
                <property name="text">
                 <string>Pitch delta factor</string>
-               </property>
-              </widget>
-             </item>
-            </layout>
-           </item>
-          </layout>
-         </widget>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="generalTab">
-      <attribute name="title">
-       <string>General</string>
-      </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_8">
-       <item>
-        <widget class="QScrollArea" name="scrollArea_3">
-         <property name="widgetResizable">
-          <bool>true</bool>
-         </property>
-         <widget class="QWidget" name="scrollAreaWidgetContents_3">
-          <property name="geometry">
-           <rect>
-            <x>0</x>
-            <y>0</y>
-            <width>682</width>
-            <height>353</height>
-           </rect>
-          </property>
-          <layout class="QVBoxLayout" name="verticalLayout_9">
-           <item>
-            <layout class="QFormLayout" name="formLayout">
-             <item row="2" column="0">
-              <widget class="QLabel" name="label_24">
-               <property name="text">
-                <string>Audio device</string>
-               </property>
-              </widget>
-             </item>
-             <item row="2" column="1">
-              <widget class="QComboBox" name="audioDeviceEdit"/>
-             </item>
-             <item row="5" column="1">
-              <widget class="QSpinBox" name="numJobsEdit"/>
-             </item>
-             <item row="5" column="0">
-              <widget class="QLabel" name="label_25">
-               <property name="text">
-                <string>Number of processors to use</string>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="1">
-              <widget class="QCheckBox" name="useMpCheckBox">
-               <property name="text">
-                <string/>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
-              <widget class="QLabel" name="label_26">
-               <property name="text">
-                <string>Use multiprocessing?</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="0">
-              <widget class="QLabel" name="autosaveLabel">
-               <property name="text">
-                <string>Autosave on exit</string>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="1">
-              <widget class="QCheckBox" name="autosaveOnExitCheckBox"/>
-             </item>
-             <item row="1" column="0">
-              <widget class="QLabel" name="autoloadLastUsedCorpusLabel">
-               <property name="text">
-                <string>Autoload last used corpus</string>
-               </property>
-              </widget>
-             </item>
-             <item row="1" column="1">
-              <widget class="QCheckBox" name="autoloadLastUsedCorpusCheckBox"/>
-             </item>
-             <item row="6" column="1">
-              <widget class="QLineEdit" name="githubTokenEdit"/>
-             </item>
-             <item row="6" column="0">
-              <widget class="QLabel" name="label_32">
-               <property name="text">
-                <string>Github request token</string>
-               </property>
-              </widget>
-             </item>
-             <item row="7" column="1">
-              <widget class="QSpinBox" name="resultsPerPageEdit"/>
-             </item>
-             <item row="7" column="0">
-              <widget class="QLabel" name="label_33">
-               <property name="text">
-                <string>Results per page</string>
-               </property>
-              </widget>
-             </item>
-             <item row="4" column="1">
-              <widget class="QCheckBox" name="cudaCheckBox">
-               <property name="text">
-                <string/>
-               </property>
-              </widget>
-             </item>
-             <item row="4" column="0">
-              <widget class="QLabel" name="label_48">
-               <property name="text">
-                <string>Use CUDA</string>
                </property>
               </widget>
              </item>

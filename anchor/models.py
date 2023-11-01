@@ -156,6 +156,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
     viewChanged = QtCore.Signal(object, object)
     selectionAudioChanged = QtCore.Signal()
     currentTimeChanged = QtCore.Signal(object)
+    currentUtteranceChanged = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super(CorpusSelectionModel, self).__init__(*args, **kwargs)
@@ -174,9 +175,14 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         # self.selectionChanged.connect(self.update_selection_audio)
         # self.selectionChanged.connect(self.update_selection_audio)
         # self.model().changeCommandFired.connect(self.expire_current)
+        self.selectionChanged.connect(self._update_selection)
         self.model().layoutChanged.connect(self.check_selection)
         self.model().unlockCorpus.connect(self.fileChanged.emit)
         self.model().selectionRequested.connect(self.update_select_rows)
+
+    def set_current_utterance(self, utterance_id):
+        self.current_utterance_id = utterance_id
+        self.currentUtteranceChanged.emit()
 
     def check_selection(self):
         if self.currentIndex().row() == -1 and self.model().rowCount() > 0:
@@ -286,16 +292,34 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         return file_utts
 
     def currentUtterance(self) -> Optional[Utterance]:
-        utts = self.selectedUtterances()
-        if not utts:
+        if self.current_utterance_id is not None:
             return
-        return utts[-1]
+        m = self.model()
+        utterance = (
+            m.session.query(Utterance)
+            .options(
+                joinedload(Utterance.file).joinedload(File.sound_file),
+                joinedload(Utterance.file).subqueryload(File.speakers),
+            )
+            .get(self.current_utterance_id)
+        )
+        return utterance
+
+    def _update_selection(self):
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+        m = self.model()
+        self.current_utterance_id = m._indices[index.row()]
+        self.currentUtteranceChanged.emit()
 
     def selectedUtterances(self):
         utts = []
         m = self.model()
         current_utterance = m.utteranceAt(self.currentIndex())
         for index in self.selectedRows(1):
+            if current_utterance is not None and m._indices[index.row()] == current_utterance.id:
+                continue
             utt = m.utteranceAt(index)
             if utt is None:
                 continue
@@ -421,6 +445,8 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if not isinstance(new_index, QtCore.QModelIndex):
             row = 0
         else:
+            if not new_index.isValid():
+                return
             row = new_index.row()
         utt = self.model().utteranceAt(row)
         if utt is None:
@@ -428,6 +454,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if utt.id == self.current_utterance_id:
             return
         self.current_utterance_id = utt.id
+        self.currentUtteranceChanged.emit()
         self.set_current_file(
             utt.file_id, utt.begin, utt.end, channel=utt.channel, force_update=True
         )
@@ -648,7 +675,7 @@ class DictionaryTableModel(TableModel):
         if not index.isValid():
             return QtCore.Qt.ItemFlag.ItemIsEnabled
         flags = super().flags(index)
-        if index.column() in [0, 2]:
+        if index.column() in [0, 3]:
             flags |= QtCore.Qt.ItemFlag.ItemIsEditable
         return flags
 
@@ -668,7 +695,7 @@ class DictionaryTableModel(TableModel):
                         self,
                     )
                 )
-            elif index.column() == 2:
+            elif index.column() == 3:
                 self.corpus_model.addCommand.emit(
                     undo.UpdatePronunciationCommand(
                         self.pron_indices[index.row()],
@@ -822,7 +849,7 @@ class SpeakerModel(TableModel):
 
     def __init__(self, parent=None):
         super().__init__(
-            ["Speaker", "Utterances", "Dictionary", "Ivector distance", "View", "Compare"],
+            ["Speaker", "Utterances", "Dictionary", "Ivector distance", "View"],
             parent=parent,
         )
         self.settings = AnchorSettings()
@@ -847,19 +874,6 @@ class SpeakerModel(TableModel):
         self.utt2spk = {}
 
     def indices_updated(self, utterance_ids, speaker_id):
-        print(
-            "UPDATING",
-            speaker_id,
-            utterance_ids,
-        )
-        if speaker_id not in self.current_speakers:
-            return
-        if False and len(self.current_speakers) == 1:
-            indices = np.where(np.isin(self.utterance_ids, utterance_ids))
-            self.cluster_labels = np.delete(self.cluster_labels, indices, axis=0)
-            self.utterance_ids = np.delete(self.utterance_ids, indices, axis=0)
-            self.mds = np.delete(self.mds, indices, axis=0)
-            self.ivectors = np.delete(self.ivectors, indices, axis=0)
         for u_id in utterance_ids:
             self.utt2spk[u_id] = speaker_id
         speakers = set(self.utt2spk.values())
@@ -869,6 +883,42 @@ class SpeakerModel(TableModel):
     def change_speaker(self, utterance_ids, old_speaker_id, new_speaker_id):
         self.corpus_model.addCommand.emit(
             undo.ChangeSpeakerCommand(utterance_ids, old_speaker_id, new_speaker_id, self)
+        )
+
+    def change_speakers(self, data, old_speaker_id):
+        self.corpus_model.addCommand.emit(
+            undo.ChangeSpeakerCommand(data, old_speaker_id=old_speaker_id, speaker_model=self)
+        )
+
+    def finish_recalculate(self, result=None):
+        if result is not None:
+            self.corpus_model.speaker_plda = result
+
+    def finish_breaking_up_speaker(self, utterance_ids):
+        self.utterance_ids = utterance_ids
+        self.corpus_model.runFunction.emit(
+            "Recalculating speaker ivectors",
+            self.finish_recalculate,
+            [
+                {
+                    "plda": self.corpus_model.plda,
+                    "speaker_plda": self.corpus_model.speaker_plda,
+                }
+            ],
+        )
+
+        self.update_data()
+        self.corpus_model.refreshTiers.emit()
+        self.corpus_model.changeCommandFired.emit()
+        self.corpus_model.statusUpdate.emit(
+            f"Created new speakers for {len(self.utterance_ids)} utterances"
+        )
+
+    def break_up_speaker(self, old_speaker_id):
+        self.corpus_model.runFunction.emit(
+            "Breaking up speaker",
+            self.finish_breaking_up_speaker,
+            [[], old_speaker_id],
         )
 
     def set_speaker_filter(self, speaker_filter: typing.Union[int, np.ndarray]):
@@ -941,7 +991,6 @@ class SpeakerModel(TableModel):
         self.newResults.emit()
 
     def finish_clustering(self, result, *args, **kwargs):
-        print("finishing clustering")
         if result is None:
             return
         speaker_ids, c_labels = result
@@ -952,7 +1001,6 @@ class SpeakerModel(TableModel):
         self.clustered.emit()
 
     def finish_mds(self, result, *args, **kwargs):
-        print("finishing mds")
         if result is None:
             return
         speaker_ids, mds = result
@@ -987,7 +1035,6 @@ class SpeakerModel(TableModel):
             and self.speaker_filter not in self.current_speakers
         ):
             self.current_speakers.append(self.speaker_filter)
-        print(speaker_id, self.current_speakers)
         for s_id in speaker_id:
             if s_id not in self.current_speakers:
                 self.current_speakers.append(s_id)
@@ -1038,9 +1085,12 @@ class SpeakerModel(TableModel):
             self.mdsFinished.emit()
 
     def cluster_speaker_utterances(self):
+        self.cluster_labels = None
+        self.num_clusters = None
         if self.corpus_model.corpus is None:
             return
         if not self.current_speakers:
+            self.mdsFinished.emit()
             return
         kwargs = {
             "speaker_ids": self.current_speakers,
@@ -1048,11 +1098,10 @@ class SpeakerModel(TableModel):
             "speaker_plda": self.corpus_model.speaker_plda,
         }
         kwargs.update(self.cluster_kwargs)
-        self.cluster_labels = None
-        self.num_clusters = None
         self.runFunction.emit("Clustering speaker utterances", self.finish_clustering, [kwargs])
 
     def mds_speaker_utterances(self):
+        self.mds = None
         if self.corpus_model.corpus is None:
             return
         if not self.current_speakers:
@@ -1065,7 +1114,6 @@ class SpeakerModel(TableModel):
             "speaker_space": self.speaker_space,
         }
         kwargs.update(self.manifold_kwargs)
-        self.mds = None
         self.mdsAboutToChange.emit()
         self.runFunction.emit("Generating speaker MDS", self.finish_mds, [kwargs])
 
@@ -1194,7 +1242,6 @@ class DiarizationModel(TableModel):
 
     def merge_speakers(self, row: int):
         speaker_id = self._speaker_indices[row]
-        print(self._suggested_indices[row], speaker_id)
         if self.inverted:
             utterance_id = self._utterance_ids[row]
             self.corpus_model.addCommand.emit(

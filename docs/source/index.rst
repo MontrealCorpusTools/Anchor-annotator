@@ -5,7 +5,7 @@ Anchor annotator documentation
 
 .. warning::
 
-   Anchor is in early early alpha, there are many rough edges and krakens abound.  Please ensure you are using version control with something like git for your files in case anything goes destructively wrong.  Please refer to :ref:`known_issues` if you encounter anything weird, but otherwise you can file a `GitHub issue <https://github.com/MontrealCorpusTools/Anchor-annotator/issues>`_ via the :fas:`bug` button in Anchor.
+   Anchor is in early early alpha, there are many rough edges and krakens abound.  Please ensure you are using version control with something like git for your files in case anything goes destructively wrong.  Please refer to :ref:`known_issues` if you encounter anything weird, but otherwise you can file a `GitHub issue <https://github.com/MontrealCorpusTools/Anchor-annotator/issues>`_ via the :fa:`bug;sd-text-secondary` button in Anchor.
 
 .. grid:: 2
 
