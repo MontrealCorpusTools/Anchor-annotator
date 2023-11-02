@@ -1066,6 +1066,7 @@ class SpeakerModel(TableModel):
                         self.corpus_model.corpus.output_directory, "speaker_diarization"
                     ),
                     "limit": self.manifold_kwargs.get("limit", 500),
+                    "distance_threshold": self.manifold_kwargs.get("distance_threshold", 0.0),
                 }
             ],
         )

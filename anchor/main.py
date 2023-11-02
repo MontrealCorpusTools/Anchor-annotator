@@ -1824,6 +1824,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.dictionaryDockWidget.setFont(base_font)
         self.ui.oovDockWidget.setFont(base_font)
         self.ui.diarizationDockWidget.setFont(base_font)
+        self.channel_select.setFont(base_font)
+        self.volume_slider.setFont(base_font)
 
     def download_language_model(self):
         self.download_worker.set_params(

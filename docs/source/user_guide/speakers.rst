@@ -60,6 +60,13 @@ You can visualize how a speaker's utterances relate to each other and other simi
 .. figure:: ../_static/img/speaker_cluster.png
    :align: center
 
+Utterance ivectors are clustered using `TSNE <https://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html>`_ as that has shown the best performance in creating distinct clusters for speakers of the clustering methods. The perplexity can be changed in the "Cluster settings" pop up, along with the distance metric.  Note that :code:`plda` in this case uses cosine distance with PLDA-transformed ivectors.
+
+In addition to the selected speakers for comparison, additional utterances are added to the clustering and are labeled as "Noise". The number of additional utterances is a max of the visualization limit, or the total utterances being visualized.  If a distance threshold is specified, then only those utterances with cosine distance less than the threshold are included.  In addition to the "Noise" utterances, the visualization limit affects how big of a random sample of utterances is included in the TSNE clustering (these are excluded from the the data points returned.  The random sample of utterances is intended impose a bit more a global scale on the clusters, but it does increase the run time of TSNE.
+
+.. figure:: ../_static/img/speaker_cluster_settings.png
+   :align: center
+
 Utterances are represented as dots that can be clicked to bring them up in the right-hand Utterance detail panel.
 
 .. figure:: ../_static/img/speaker_utterance.png
@@ -74,7 +81,7 @@ Multiple utterances can be selected by holding shift and dragging the mouse to c
 .. figure:: ../_static/img/speaker_cluster_select_multiple.png
    :align: center
 
-Once utterances are selected, you can change their assigned speaker by clicking the label of the desired speaker in the legend of the cluster plot.  The staged changes will be highlighted.
+Once utterances are selected, you can change their assigned speaker by clicking the label of the desired speaker in the legend of the cluster plot.  The staged changes will be highlighted.  If you change the utterance to "Noise", then a new speaker will be created for the "Noise" utterances.
 
 .. figure:: ../_static/img/speaker_cluster_legend.png
    :align: center

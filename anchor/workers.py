@@ -30,19 +30,13 @@ from _kalpy.matrix import DoubleVector, FloatVector
 from kalpy.feat.pitch import PitchComputer
 from montreal_forced_aligner import config
 from montreal_forced_aligner.alignment import PretrainedAligner
-from montreal_forced_aligner.config import (
-    IVECTOR_DIMENSION,
-    MEMORY,
-    PLDA_DIMENSION,
-    XVECTOR_DIMENSION,
-)
+from montreal_forced_aligner.config import IVECTOR_DIMENSION, XVECTOR_DIMENSION
 from montreal_forced_aligner.corpus.acoustic_corpus import (
     AcousticCorpus,
     AcousticCorpusWithPronunciations,
 )
 from montreal_forced_aligner.corpus.classes import FileData
 from montreal_forced_aligner.data import (
-    ClusterType,
     CtmInterval,
     DatasetType,
     DistanceMetric,
@@ -69,7 +63,7 @@ from montreal_forced_aligner.db import (
     WordInterval,
     bulk_update,
 )
-from montreal_forced_aligner.diarization.multiprocessing import cluster_matrix, visualize_clusters
+from montreal_forced_aligner.diarization.multiprocessing import visualize_clusters
 from montreal_forced_aligner.diarization.speaker_diarizer import SpeakerDiarizer
 from montreal_forced_aligner.dictionary.multispeaker import MultispeakerDictionary
 from montreal_forced_aligner.g2p.generator import PyniniValidator as Generator
@@ -2133,6 +2127,7 @@ def calculate_speaker_ivectors(
     stopped: typing.Optional[threading.Event] = None,
     speaker_ids: typing.List[int] = None,
     limit: int = 500,
+    distance_threshold: float = None,
     **kwargs,
 ):
     if progress_callback is not None:
@@ -2159,12 +2154,16 @@ def calculate_speaker_ivectors(
             session.query(Utterance.id, Utterance.speaker_id, c.utterance_ivector_column)
             .filter(
                 c.utterance_ivector_column != None,  # noqa
-                # c.utterance_ivector_column.cosine_distance(ivector) < 0.4
             )
             .filter(~Utterance.speaker_id.in_(speaker_ids))
-            .order_by(c.utterance_ivector_column.cosine_distance(ivector))
-            .limit(min(utterances.count(), 200))
         )
+        if distance_threshold:
+            additional_data = additional_data.filter(
+                c.utterance_ivector_column.cosine_distance(ivector) <= distance_threshold
+            )
+        additional_data = additional_data.order_by(
+            c.utterance_ivector_column.cosine_distance(ivector)
+        ).limit(min(utterances.count(), limit))
 
         ivectors = []
         utterance_ids = []
@@ -2182,25 +2181,13 @@ def calculate_speaker_ivectors(
 
 def cluster_speaker_utterances(
     Session,
-    progress_callback: typing.Optional[ProgressCallback] = None,
-    stopped: typing.Optional[threading.Event] = None,
     speaker_ids: typing.List[int] = None,
-    limit: int = 500,
-    plda: Plda = None,
     distance_threshold: float = None,
-    speaker_plda: SpeakerPlda = None,
-    cluster_type: str = "hdbscan",
-    metric: str = "cosine",
+    limit: int = 500,
     **kwargs,
 ):
     with Session() as session:
         c = session.query(Corpus).first()
-        if c.plda_calculated:
-            dim = PLDA_DIMENSION
-        elif c.xvectors_loaded:
-            dim = XVECTOR_DIMENSION
-        else:
-            dim = IVECTOR_DIMENSION
         speaker_name, ivector, utt_count = (
             session.query(Speaker.name, c.speaker_ivector_column, Speaker.num_utterances)
             .filter(Speaker.id == speaker_ids[0], c.utterance_ivector_column != None)  # noqa
@@ -2208,82 +2195,27 @@ def cluster_speaker_utterances(
         )
         if utt_count < 1:
             return None
-        if True or len(speaker_ids) > 1 or kwargs.get("num_clusters", 2) == 1:
-            query = session.query(Utterance.speaker_id).filter(
-                c.utterance_ivector_column != None  # noqa
-            )
-            query = query.filter(Utterance.speaker_id.in_(speaker_ids))
-            query = query.order_by(Utterance.id)
-            additional_data = (
-                session.query(Utterance.speaker_id)
-                .filter(
-                    c.utterance_ivector_column != None,  # noqa
-                    # c.utterance_ivector_column.cosine_distance(ivector) < 0.4
-                )
-                .filter(~Utterance.speaker_id.in_(speaker_ids))
-                .order_by(c.utterance_ivector_column.cosine_distance(ivector))
-                .limit(min(query.count(), 200))
-            )
-            cluster_ids = np.array([x for x, in query] + [x for x, in additional_data])
-            return speaker_ids, cluster_ids
-        else:
-            if isinstance(metric, str):
-                metric = DistanceMetric[metric]
-            if isinstance(cluster_type, str):
-                cluster_type = ClusterType[cluster_type]
-            if plda is None:
-                metric = DistanceMetric.cosine
-            if not distance_threshold:
-                distance_threshold = None
-            logger.debug(f"Clustering with {cluster_type}...")
-            query = session.query(c.utterance_ivector_column).filter(
-                c.utterance_ivector_column != None  # noqa
-            )
-            query = query.filter(Utterance.speaker_id == speaker_ids[0])
+        query = session.query(Utterance.speaker_id).filter(
+            c.utterance_ivector_column != None  # noqa
+        )
+        query = query.filter(Utterance.speaker_id.in_(speaker_ids))
         query = query.order_by(Utterance.id)
-        initial_count = query.count()
         additional_data = (
-            session.query(c.utterance_ivector_column)
+            session.query(Utterance.speaker_id)
             .filter(
                 c.utterance_ivector_column != None,  # noqa
-                # c.utterance_ivector_column.cosine_distance(ivector) < 0.4
             )
-            .filter(Utterance.speaker_id != speaker_ids[0])
-            .order_by(c.utterance_ivector_column.cosine_distance(ivector))
-            .limit(min(query.count(), 200))
+            .filter(~Utterance.speaker_id.in_(speaker_ids))
         )
-        to_fit = np.empty((initial_count + additional_data.count(), dim))
-        for i, (ivector,) in enumerate(query):
-            to_fit[i, :] = ivector
-        for i, (ivector,) in enumerate(additional_data):
-            to_fit[i + initial_count, :] = ivector
-        begin = time.time()
-        if cluster_type is ClusterType.agglomerative:
-            logger.info("Running Agglomerative Clustering...")
-            kwargs["memory"] = MEMORY
-            if "n_clusters" not in kwargs:
-                kwargs["distance_threshold"] = distance_threshold
-            if metric is DistanceMetric.plda:
-                kwargs["linkage"] = "average"
-        elif cluster_type is ClusterType.dbscan:
-            kwargs["distance_threshold"] = distance_threshold
-        elif cluster_type is ClusterType.hdbscan:
-            kwargs["distance_threshold"] = distance_threshold
-            kwargs["memory"] = MEMORY
-        elif cluster_type is ClusterType.optics:
-            kwargs["distance_threshold"] = distance_threshold
-            kwargs["memory"] = MEMORY
-        c = cluster_matrix(
-            to_fit,
-            cluster_type,
-            metric=metric,
-            strict=False,
-            no_visuals=True,
-            plda=plda,
-            **kwargs,
-        )
-        logger.debug(f"Clustering with {cluster_type} took {time.time() - begin} seconds")
-    return speaker_ids, c
+        if distance_threshold:
+            additional_data = additional_data.filter(
+                c.utterance_ivector_column.cosine_distance(ivector) <= distance_threshold
+            )
+        additional_data = additional_data.order_by(
+            c.utterance_ivector_column.cosine_distance(ivector)
+        ).limit(min(query.count(), limit))
+        cluster_ids = np.array([x for x, in query] + [x for x, in additional_data])
+    return speaker_ids, cluster_ids
 
 
 def mds_speaker_utterances(
@@ -2329,12 +2261,16 @@ def mds_speaker_utterances(
             session.query(c.utterance_ivector_column)
             .filter(
                 c.utterance_ivector_column != None,  # noqa
-                # c.utterance_ivector_column.cosine_distance(ivector) < 0.4
             )
             .filter(~Utterance.speaker_id.in_(speaker_ids))
-            .order_by(c.utterance_ivector_column.cosine_distance(ivector))
-            .limit(min(num_utterances, 200))
         )
+        if distance_threshold:
+            additional_data = additional_data.filter(
+                c.utterance_ivector_column.cosine_distance(ivector) <= distance_threshold
+            )
+        additional_data = additional_data.order_by(
+            c.utterance_ivector_column.cosine_distance(ivector)
+        ).limit(min(query.count(), limit))
         random_data = (
             session.query(c.utterance_ivector_column)
             .filter(
@@ -2342,10 +2278,12 @@ def mds_speaker_utterances(
             )
             .filter(~Utterance.speaker_id.in_(speaker_ids))
             .order_by(c.utterance_ivector_column.cosine_distance(ivector).desc())
-            .limit(500)
+            .limit(limit)
         )
         additional_data_count = additional_data.count()
-        ivectors = np.empty((num_utterances + additional_data_count + 500, dim), dtype="float32")
+        ivectors = np.empty(
+            (num_utterances + additional_data_count + random_data.count(), dim), dtype="float32"
+        )
         for i, (ivector,) in enumerate(query):
             ivectors[i, :] = ivector
         for i, (ivector,) in enumerate(additional_data):
@@ -2353,7 +2291,7 @@ def mds_speaker_utterances(
         for i, (ivector,) in enumerate(random_data):
             ivectors[i + num_utterances + additional_data_count, :] = ivector
         if metric_type is DistanceMetric.plda:
-            counts = np.ones((num_utterances + additional_data.count() + 500,), dtype="int32")
+            counts = np.ones((num_utterances + additional_data.count() + limit,), dtype="int32")
             ivectors = np.array(plda.transform_ivectors(ivectors, counts))
             metric_type = DistanceMetric.cosine
         if ivectors.shape[0] <= perplexity:
@@ -2364,7 +2302,7 @@ def mds_speaker_utterances(
             points = visualize_clusters(
                 ivectors, ManifoldAlgorithm.tsne, metric_type, perplexity, plda, quick=False
             )
-        points = points[:-500, :]
+        points = points[: -random_data.count(), :]
     return speaker_ids, points
 
 

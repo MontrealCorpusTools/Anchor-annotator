@@ -1535,10 +1535,6 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
         self.form_layout = QtWidgets.QFormLayout()
         self.form_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
 
-        self.cluster_algorithm_dropdown = QtWidgets.QComboBox()
-        for ct in ClusterType:
-            self.cluster_algorithm_dropdown.addItem(ct.name)
-
         self.metric_dropdown = QtWidgets.QComboBox()
         for m in DistanceMetric:
             if m is DistanceMetric.euclidean:
@@ -1546,16 +1542,11 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
             self.metric_dropdown.addItem(m.name)
 
         self.row_indices = {}
-        self.cluster_algorithm_dropdown.setCurrentIndex(
-            self.cluster_algorithm_dropdown.findText(
-                self.settings.value(self.settings.CLUSTER_TYPE)
-            )
-        )
 
         self.visualization_size_edit = QtWidgets.QSpinBox(self)
         self.visualization_size_edit.setMinimum(100)
-        self.visualization_size_edit.setMaximum(10000)
-        self.visualization_size_edit.setValue(5000)
+        self.visualization_size_edit.setMaximum(5000)
+        self.visualization_size_edit.setValue(500)
         self.form_layout.addRow("Visualization limit", self.visualization_size_edit)
         self.perplexity_edit = ThresholdWidget(self)
         self.form_layout.addRow("Perplexity", self.perplexity_edit)
@@ -1563,34 +1554,18 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
             self.metric_dropdown.findText(self.settings.value(self.settings.CLUSTERING_METRIC))
         )
         self.form_layout.addRow("Distance metric", self.metric_dropdown)
-        self.form_layout.addRow("Cluster algorithm", self.cluster_algorithm_dropdown)
-        self.n_clusters_edit = QtWidgets.QSpinBox(self)
-        self.n_clusters_edit.setMinimum(0)
-        self.n_clusters_edit.setMaximum(600)
-        self.row_indices["n_clusters"] = self.form_layout.rowCount()
-        self.form_layout.addRow("Number of clusters", self.n_clusters_edit)
         self.distance_threshold_edit = ThresholdWidget(self)
         self.row_indices["distance_threshold"] = self.form_layout.rowCount()
         self.form_layout.addRow("Distance threshold", self.distance_threshold_edit)
-
-        self.min_cluster_size_edit = QtWidgets.QSpinBox(self)
-        self.min_cluster_size_edit.setMinimum(3)
-        self.min_cluster_size_edit.setMaximum(600)
-        self.row_indices["min_cluster_size"] = self.form_layout.rowCount()
-        self.form_layout.addRow("Minimum cluster size", self.min_cluster_size_edit)
 
         self.recluster_button = QtWidgets.QPushButton("Recluster")
         self.recluster_button.setEnabled(False)
         self.form_layout.addWidget(self.recluster_button)
 
-        self.n_clusters_edit.setValue(self.settings.value(self.settings.CLUSTERING_N_CLUSTERS))
+        self.perplexity_edit.setValue(self.settings.value(self.settings.CLUSTERING_PERPLEXITY))
         self.distance_threshold_edit.setValue(
             self.settings.value(self.settings.CLUSTERING_DISTANCE_THRESHOLD)
         )
-        self.min_cluster_size_edit.setValue(
-            self.settings.value(self.settings.CLUSTERING_MIN_CLUSTER_SIZE)
-        )
-        self.perplexity_edit.setValue(30.0)
         self.scroll_area.setLayout(self.form_layout)
         layout.addWidget(self.scroll_area)
         self.scroll_area.setFixedWidth(
@@ -1599,62 +1574,24 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
         self.scroll_area.setFixedHeight(300)
         self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setLayout(layout)
-        self.update_current_cluster_algorithm()
-        self.cluster_algorithm_dropdown.currentIndexChanged.connect(
-            self.update_current_cluster_algorithm
-        )
         self.metric_dropdown.currentIndexChanged.connect(self.update_current_metric)
 
     def update_current_metric(self):
         metric = self.metric_dropdown.currentText()
         self.settings.setValue(self.settings.CLUSTERING_METRIC, metric)
 
-    def update_current_cluster_algorithm(self):
-        current_algorithm = self.cluster_algorithm_dropdown.currentText()
-
-        if current_algorithm in ["kmeans", "spectral", "agglomerative"]:
-            self.form_layout.setRowVisible(self.row_indices["n_clusters"], True)
-        else:
-            self.form_layout.setRowVisible(self.row_indices["n_clusters"], False)
-
-        if current_algorithm in ["optics", "hdbscan", "dbscan", "agglomerative"]:
-            self.form_layout.setRowVisible(self.row_indices["distance_threshold"], True)
-        else:
-            self.form_layout.setRowVisible(self.row_indices["distance_threshold"], False)
-
-        if current_algorithm in ["optics", "hdbscan", "dbscan"]:
-            self.form_layout.setRowVisible(self.row_indices["min_cluster_size"], True)
-        else:
-            self.form_layout.setRowVisible(self.row_indices["min_cluster_size"], False)
-        self.settings.setValue(self.settings.CLUSTER_TYPE, current_algorithm)
-        self.settings.sync()
-
     @property
     def cluster_kwargs(self):
         self.settings.sync()
-        current_algorithm = ClusterType[self.settings.value(self.settings.CLUSTER_TYPE)]
         metric = DistanceMetric[self.settings.value(self.settings.CLUSTERING_METRIC)]
         kwargs = {
-            "cluster_type": current_algorithm,
             "metric_type": metric,
             "limit": int(self.visualization_size_edit.value()),
         }
-        if current_algorithm in [
-            ClusterType.kmeans,
-            ClusterType.spectral,
-            ClusterType.agglomerative,
-        ]:
-            val = self.n_clusters_edit.value()
-            self.settings.setValue(self.settings.CLUSTERING_N_CLUSTERS, val)
-            kwargs["n_clusters"] = val
 
         val = self.distance_threshold_edit.value()
         self.settings.setValue(self.settings.CLUSTERING_DISTANCE_THRESHOLD, val)
         kwargs["distance_threshold"] = val
-
-        val = self.min_cluster_size_edit.value()
-        self.settings.setValue(self.settings.CLUSTERING_MIN_CLUSTER_SIZE, val)
-        kwargs["min_cluster_size"] = val
 
         return kwargs
 
@@ -1665,6 +1602,11 @@ class SpeakerClusterSettingsMenu(QtWidgets.QMenu):
             "limit": int(self.visualization_size_edit.value()),
             "perplexity": float(self.perplexity_edit.value()),
         }
+
+        val = self.distance_threshold_edit.value()
+        self.settings.setValue(self.settings.CLUSTERING_DISTANCE_THRESHOLD, val)
+        kwargs["distance_threshold"] = val
+
         return kwargs
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
@@ -3201,6 +3143,7 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.setLayout(layout)
         font = self.settings.font
         self.speaker_dropdown.setFont(font)
+        self.button_box.setFont(font)
         self.setStyleSheet(self.settings.style_sheet)
         self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
 
@@ -3224,7 +3167,9 @@ class ConfirmationDialog(QtWidgets.QDialog):
         layout.addWidget(self.button_box)
         self.setLayout(layout)
         font = self.settings.font
+        self.setFont(font)
         self.label.setFont(font)
+        self.button_box.setFont(font)
         self.setStyleSheet(self.settings.style_sheet)
 
 

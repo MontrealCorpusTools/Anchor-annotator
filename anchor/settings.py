@@ -85,14 +85,9 @@ class AnchorSettings(QtCore.QSettings):
     SPEC_PREEMPH = "anchor/spectrogram/preemphasis"
     SPEC_MAX_FREQ = "anchor/spectrogram/max_frequency"
 
-    CLUSTER_TYPE = "anchor/clustering/cluster_type"
-
-    CLUSTERING_N_CLUSTERS = "anchor/clustering/n_clusters"
-    CLUSTERING_MIN_CLUSTER_SIZE = "anchor/clustering/min_cluster_size"
+    CLUSTERING_PERPLEXITY = "anchor/clustering/perplexity"
     CLUSTERING_DISTANCE_THRESHOLD = "anchor/clustering/distance_threshold"
     CLUSTERING_METRIC = "anchor/clustering/metric"
-
-    MANIFOLD_N_NEIGHBORS = "anchor/clustering/manifold/n_neighbors"
 
     PITCH_MIN_F0 = "anchor/pitch/min_f0"
     PITCH_MAX_F0 = "anchor/pitch/max_f0"
@@ -179,13 +174,10 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.SPEC_MAX_FREQ: 5000,
             AnchorSettings.SPEC_WINDOW_SIZE: 0.005,
             AnchorSettings.SPEC_PREEMPH: 0.97,
-            AnchorSettings.CLUSTER_TYPE: "agglomerative",
             AnchorSettings.CUDA: True,
-            AnchorSettings.CLUSTERING_N_CLUSTERS: 0,
-            AnchorSettings.CLUSTERING_MIN_CLUSTER_SIZE: 60,
+            AnchorSettings.CLUSTERING_PERPLEXITY: 30.0,
             AnchorSettings.CLUSTERING_DISTANCE_THRESHOLD: 0.0,
             AnchorSettings.CLUSTERING_METRIC: "cosine",
-            AnchorSettings.MANIFOLD_N_NEIGHBORS: 10,
             AnchorSettings.PITCH_MIN_F0: 50,
             AnchorSettings.PITCH_MAX_F0: 600,
             AnchorSettings.PITCH_FRAME_SHIFT: 10,
@@ -917,7 +909,7 @@ class AnchorSettings(QtCore.QSettings):
         background_color = self.accent_base_color.name()
         text_color = self.primary_very_dark_color.name()
         return f"""
-        QPushButton QWidget, QToolButton QWidget, QToolTip {{
+        QToolTip {{
             background-color: {background_color};
             color: {text_color};
         }}
