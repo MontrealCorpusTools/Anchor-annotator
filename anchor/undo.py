@@ -537,13 +537,17 @@ class ReplaceAllCommand(CorpusCommand):
 class ChangeSpeakerCommand(SpeakerCommand):
     def __init__(
         self,
-        utterance_ids: typing.List[int],
-        old_speaker_id: int,
-        new_speaker_id: int,
-        speaker_model: typing.Union[SpeakerModel, DiarizationModel],
+        utterance_ids: typing.Union[typing.List[int], typing.List[typing.List[int]]],
+        old_speaker_id: int = None,
+        new_speaker_id: int = None,
+        speaker_model: typing.Union[SpeakerModel, DiarizationModel] = None,
     ):
         super().__init__(speaker_model)
-        self.utterance_ids = utterance_ids
+        self.data: typing.List[typing.List[int]] = []
+        if new_speaker_id is None:
+            self.data = utterance_ids
+        else:
+            self.utterance_ids = utterance_ids
         self.old_speaker_id = old_speaker_id
         self.new_speaker_id = new_speaker_id
         self.auto_refresh = False
@@ -556,10 +560,9 @@ class ChangeSpeakerCommand(SpeakerCommand):
     def update_data(self):
         pass
 
-    def finish_changing_speaker(self, results):
-        new_speaker_id, utterance_ids = results
-        self.utterance_ids = utterance_ids
-        self.new_speaker_id = new_speaker_id
+    def finish_changing_speaker(self, data: typing.List[typing.List[int]]):
+        self.data = data
+        self.utterance_ids = [x[0] for x in self.data]
         self.speaker_model.corpus_model.runFunction.emit(
             "Recalculating speaker ivectors",
             self.finish_recalculate,
@@ -584,18 +587,22 @@ class ChangeSpeakerCommand(SpeakerCommand):
             self.speaker_model.indices_updated(self.utterance_ids, self.new_speaker_id)
 
     def _redo(self, session) -> None:
-        print("RUNNING REDO")
         self.speaker_model.corpus_model.runFunction.emit(
             "Changing speakers",
             self.finish_changing_speaker,
-            [self.utterance_ids, self.new_speaker_id, self.old_speaker_id],
+            [
+                self.data if self.data else self.utterance_ids,
+                self.new_speaker_id,
+                self.old_speaker_id,
+            ],
         )
 
     def _undo(self, session) -> None:
+        undo_data = [[x[0], x[2], x[1]] for x in self.data]
         self.speaker_model.corpus_model.runFunction.emit(
             "Changing speakers",
             self.finish_changing_speaker,
-            [self.utterance_ids, self.old_speaker_id, self.new_speaker_id],
+            [undo_data, self.old_speaker_id, self.new_speaker_id],
         )
 
 

@@ -85,14 +85,9 @@ class AnchorSettings(QtCore.QSettings):
     SPEC_PREEMPH = "anchor/spectrogram/preemphasis"
     SPEC_MAX_FREQ = "anchor/spectrogram/max_frequency"
 
-    CLUSTER_TYPE = "anchor/clustering/cluster_type"
-
-    CLUSTERING_N_CLUSTERS = "anchor/clustering/n_clusters"
-    CLUSTERING_MIN_CLUSTER_SIZE = "anchor/clustering/min_cluster_size"
+    CLUSTERING_PERPLEXITY = "anchor/clustering/perplexity"
     CLUSTERING_DISTANCE_THRESHOLD = "anchor/clustering/distance_threshold"
     CLUSTERING_METRIC = "anchor/clustering/metric"
-
-    MANIFOLD_N_NEIGHBORS = "anchor/clustering/manifold/n_neighbors"
 
     PITCH_MIN_F0 = "anchor/pitch/min_f0"
     PITCH_MAX_F0 = "anchor/pitch/max_f0"
@@ -101,8 +96,21 @@ class AnchorSettings(QtCore.QSettings):
     PITCH_DELTA_PITCH = "anchor/pitch/delta_pitch"
     PITCH_PENALTY_FACTOR = "anchor/pitch/penalty_factor"
 
+    TIER_NORMALIZED_VISIBLE = "anchor/tier/normalized_visible"
+    TIER_TRANSCRIPTION_VISIBLE = "anchor/tier/transcription_visible"
+    TIER_ALIGNED_WORDS_VISIBLE = "anchor/tier/aligned_words_visible"
+    TIER_ALIGNED_PHONES_VISIBLE = "anchor/tier/aligned_phones_visible"
+    TIER_REFERENCE_PHONES_VISIBLE = "anchor/tier/reference_phones_visible"
+    TIER_TRANSCRIBED_WORDS_VISIBLE = "anchor/tier/transcribed_words_visible"
+    TIER_TRANSCRIBED_PHONES_VISIBLE = "anchor/tier/transcribed_phones_visible"
+
     def __init__(self, *args):
-        super(AnchorSettings, self).__init__()
+        super(AnchorSettings, self).__init__(
+            QtCore.QSettings.Format.NativeFormat,
+            QtCore.QSettings.Scope.UserScope,
+            "Montreal Corpus Tools",
+            "Anchor",
+        )
         self.mfa_theme = {
             AnchorSettings.MAIN_TEXT_COLOR: "#EDDDD4",
             AnchorSettings.SELECTED_TEXT_COLOR: "#EDDDD4",
@@ -138,7 +146,7 @@ class AnchorSettings(QtCore.QSettings):
         self.default_values = {
             AnchorSettings.CORPORA: [],
             AnchorSettings.CURRENT_CORPUS: "",
-            AnchorSettings.DEFAULT_DIRECTORY: get_temporary_directory(),
+            AnchorSettings.DEFAULT_DIRECTORY: str(get_temporary_directory()),
             AnchorSettings.AUTOSAVE: False,
             AnchorSettings.AUTOLOAD: False,
             AnchorSettings.VOLUME: 100,
@@ -166,13 +174,10 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.SPEC_MAX_FREQ: 5000,
             AnchorSettings.SPEC_WINDOW_SIZE: 0.005,
             AnchorSettings.SPEC_PREEMPH: 0.97,
-            AnchorSettings.CLUSTER_TYPE: "agglomerative",
             AnchorSettings.CUDA: True,
-            AnchorSettings.CLUSTERING_N_CLUSTERS: 0,
-            AnchorSettings.CLUSTERING_MIN_CLUSTER_SIZE: 60,
+            AnchorSettings.CLUSTERING_PERPLEXITY: 30.0,
             AnchorSettings.CLUSTERING_DISTANCE_THRESHOLD: 0.0,
             AnchorSettings.CLUSTERING_METRIC: "cosine",
-            AnchorSettings.MANIFOLD_N_NEIGHBORS: 10,
             AnchorSettings.PITCH_MIN_F0: 50,
             AnchorSettings.PITCH_MAX_F0: 600,
             AnchorSettings.PITCH_FRAME_SHIFT: 10,
@@ -189,6 +194,13 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TRANSCRIPTION_VISIBLE: False,
             AnchorSettings.ALIGNMENT_VISIBLE: False,
             AnchorSettings.DIARIZATION_VISIBLE: False,
+            AnchorSettings.TIER_NORMALIZED_VISIBLE: False,
+            AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE: True,
+            AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE: True,
+            AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE: True,
+            AnchorSettings.TIER_TRANSCRIPTION_VISIBLE: True,
+            AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE: True,
+            AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE: True,
         }
         self.default_values.update(self.mfa_theme)
         self.border_radius = 5
@@ -202,6 +214,27 @@ class AnchorSettings(QtCore.QSettings):
         self.scroll_bar_height = 25
         self.icon_size = 25
         self.scroll_bar_border_radius = int(self.scroll_bar_height / 2) - 2
+        self.tier_visibility_mapping = {
+            "Normalized text": AnchorSettings.TIER_NORMALIZED_VISIBLE,
+            "Words": AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE,
+            "Phones": AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE,
+            "Reference": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
+            "Transcription": AnchorSettings.TIER_TRANSCRIPTION_VISIBLE,
+            "Transcribed words": AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE,
+            "Transcribed phones": AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE,
+        }
+
+    @property
+    def visible_tiers(self):
+        return {
+            "Normalized text": self.value(AnchorSettings.TIER_NORMALIZED_VISIBLE),
+            "Words": self.value(AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE),
+            "Phones": self.value(AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE),
+            "Reference": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
+            "Transcription": self.value(AnchorSettings.TIER_TRANSCRIPTION_VISIBLE),
+            "Transcribed words": self.value(AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE),
+            "Transcribed phones": self.value(AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE),
+        }
 
     def value(self, arg__1: str, defaultValue: Optional[Any] = ..., t: object = ...) -> Any:
         if arg__1 == AnchorSettings.FONT:
@@ -231,6 +264,8 @@ class AnchorSettings(QtCore.QSettings):
                 self.default_values.get(arg__1, ""),
                 type=type(self.default_values.get(arg__1, "")),
             )
+            if isinstance(value, float):
+                value = round(value, 6)
 
         return value
 
@@ -890,6 +925,42 @@ class AnchorSettings(QtCore.QSettings):
         selection_color = self.primary_light_color.name()
         return f"""
         QMenu {{
+                border: 1px solid {enabled_color};
+                background-color: {menu_background_color};
+                color: {menu_text_color};
+                menu-scrollable: 1;
+        }}
+        QMenu::item {{
+                padding: 2px 25px 2px 20px;
+                border: {self.border_width / 2}px solid transparent;
+                background-color: {menu_background_color};
+                color: {menu_text_color};
+        }}
+        QMenu::item:disabled {{
+                border: none;
+                background-color: {disabled_background_color};
+                color: {disabled_text_color};
+        }}
+        QMenu::item:!disabled:selected {{
+            border-color: {enabled_color};
+            background-color: {selection_color};
+        }}"""
+
+    @property
+    def completer_style_sheet(self):
+        menu_background_color = self.accent_base_color.name()
+        menu_text_color = self.primary_very_dark_color.name()
+        disabled_text_color = self.primary_dark_color.name()
+        disabled_background_color = self.accent_very_dark_color.name()
+        enabled_color = self.primary_very_dark_color.name()
+        selection_color = self.primary_light_color.name()
+        scroll_bar_background_color = self.primary_dark_color.name()
+        scroll_bar_handle_color = self.accent_light_color.name()
+        scroll_bar_border_color = self.primary_dark_color.name()
+        scroll_bar_height = int(self.scroll_bar_height / 2)
+        scroll_bar_border_radius = int(scroll_bar_height / 2) - 2
+        return f"""
+        QListView {{
                 margin: 2px;
                 background-color: {menu_background_color};
                 color: {menu_text_color};
@@ -909,6 +980,64 @@ class AnchorSettings(QtCore.QSettings):
         QMenu::item:!disabled:selected {{
             border-color: {enabled_color};
             background-color: {selection_color};
+        }}
+        QScrollBar {{
+            color: {scroll_bar_handle_color};
+            background: {scroll_bar_background_color};
+            border: {self.border_width}px solid {scroll_bar_border_color};
+        }}
+        QScrollBar:vertical {{
+            width: {scroll_bar_height}px;
+            border: 2px solid {scroll_bar_border_color};
+            border-radius: {scroll_bar_border_radius + 2}px;
+            margin-top: {scroll_bar_height}px;
+            margin-bottom: {scroll_bar_height}px;
+        }}
+
+        QScrollBar:up-arrow:vertical {{
+            image: url(:caret-up.svg);
+            height: {scroll_bar_height}px;
+            width: {scroll_bar_height}px;
+        }}
+        QScrollBar:up-arrow:vertical:pressed {{
+            image: url(:checked/caret-up.svg);
+        }}
+
+        QScrollBar:down-arrow:vertical {{
+            image: url(:caret-down.svg);
+            height: {scroll_bar_height}px;
+            width: {scroll_bar_height}px;
+        }}
+        QScrollBar:down-arrow:vertical:pressed {{
+            image: url(:checked/caret-down.svg);
+        }}
+
+        QScrollBar::handle:vertical {{
+            background: {scroll_bar_handle_color};
+            min-height: {scroll_bar_height}px;
+            border: 2px solid {scroll_bar_border_color};
+            border-radius: {scroll_bar_border_radius}px;
+        }}
+        QScrollBar::add-page, QScrollBar::sub-page {{
+            background: none;
+            height: {scroll_bar_height}px;
+            width: {scroll_bar_height}px;
+            padding: 0px;
+            margin: 0px;
+        }}
+
+        QScrollBar::add-line:vertical {{
+            background: none;
+            subcontrol-position: bottom;
+            subcontrol-origin: margin;
+            height: {scroll_bar_height}px;
+        }}
+
+        QScrollBar::sub-line:vertical {{
+            background: none;
+            subcontrol-position: top;
+            subcontrol-origin: margin;
+            height: {scroll_bar_height}px;
         }}"""
 
     @property

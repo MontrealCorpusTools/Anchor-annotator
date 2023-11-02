@@ -53,8 +53,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self, debug):
         super().__init__()
-        QtCore.QCoreApplication.setOrganizationName("Montreal Corpus Tools")
-        QtCore.QCoreApplication.setApplicationName("Anchor")
         self.workers = []
 
         fonts = [
@@ -97,7 +95,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_models()
         if self.settings.contains(AnchorSettings.GEOMETRY):
             self.restoreGeometry(self.settings.value(AnchorSettings.GEOMETRY))
-            self.restoreState(self.settings.value(AnchorSettings.WINDOW_STATE))
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.dictionaryDockWidget)
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.oovDockWidget)
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.alignmentDockWidget)
@@ -267,9 +264,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_g2p()
         self.create_actions()
         self.refresh_settings()
-        self.refresh_shortcuts()
-        self.refresh_style_sheets()
-        self.refresh_fonts()
 
     def finalize_download(self):
         self.refresh_model_actions()
@@ -364,6 +358,9 @@ class MainWindow(QtWidgets.QMainWindow):
             worker.signals.result.connect(finished_function)
         elif function == "Changing speakers":
             worker = workers.ChangeSpeakerWorker(self.corpus_model.session, *extra_args)
+            worker.signals.result.connect(finished_function)
+        elif function == "Breaking up speaker":
+            worker = workers.BreakUpSpeakerWorker(self.corpus_model.session, *extra_args)
             worker.signals.result.connect(finished_function)
         elif function == "Recalculating speaker ivectors":
             worker = workers.RecalculateSpeakerWorker(self.corpus_model.session, **extra_args[0])
@@ -529,7 +526,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.dictionaryWidget.set_models(self.dictionary_model)
         self.ui.diarizationWidget.set_models(self.diarization_model, self.selection_model)
         self.ui.oovWidget.set_models(self.oov_model)
-        self.selection_model.selectionChanged.connect(self.change_utterance)
+        self.selection_model.currentUtteranceChanged.connect(self.change_utterance)
         self.selection_model.fileChanged.connect(self.change_file)
         self.selection_model.fileAboutToChange.connect(self.check_media_stop)
         self.media_player.set_corpus_models(self.corpus_model, self.selection_model)
@@ -670,17 +667,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.splitUtterancesAct.setEnabled(False)
         self.ui.alignUtteranceAct.setEnabled(False)
         self.ui.segmentUtteranceAct.setEnabled(False)
-        if not selection:
+        if not selection and self.selection_model.current_utterance_id is None:
             return
 
         self.ui.splitUtterancesAct.setEnabled(True)
-        if len(selection) == 1:
-            self.ui.mergeUtterancesAct.setEnabled(False)
+        if len(selection) == 1 or self.selection_model.current_utterance_id is not None:
             if self.corpus_model.acoustic_model is not None and self.corpus_model.has_dictionary:
                 self.ui.alignUtteranceAct.setEnabled(True)
                 self.ui.segmentUtteranceAct.setEnabled(True)
-        else:
+        if len(selection) > 1:
             self.ui.mergeUtterancesAct.setEnabled(True)
+        else:
+            self.ui.mergeUtterancesAct.setEnabled(False)
         self.ui.deleteUtterancesAct.setEnabled(True)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
@@ -714,6 +712,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.setValue(
             AnchorSettings.DIARIZATION_VISIBLE, self.ui.diarizationDockWidget.isVisible()
         )
+        self.settings.setValue(AnchorSettings.GEOMETRY, self.saveGeometry())
+        self.settings.setValue(AnchorSettings.WINDOW_STATE, self.saveState())
+
+        self.settings.sync()
         self.set_application_state("loading")
         self.ui.loadingScreen.setExiting()
         self.close_timer = QtCore.QTimer()
@@ -726,10 +728,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         if self.thread_pool.activeThreadCount() > 0:
             return
-        self.settings.setValue(AnchorSettings.GEOMETRY, self.saveGeometry())
-        self.settings.setValue(AnchorSettings.WINDOW_STATE, self.saveState())
-
-        self.settings.sync()
         if self.corpus_model.session is not None:
             self.corpus_model.session = None
             self.corpus_model.corpus.cleanup_connections()
@@ -928,7 +926,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.corpus_model.corpus.has_any_ivectors():
             return
         kwargs = {
-            "threshold": 0.3,
+            "threshold": 0.28,
         }
         if False and self.corpus_model.plda is not None:
             kwargs["metric"] = "plda"
@@ -1369,6 +1367,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.loadingScreen.setCorpusName("Calculating PLDA...")
 
     def begin_reset_ivectors(self):
+        self.corpus_model.session.commit()
         self.enableMfaActions(False)
         self.compute_ivectors_worker.set_params(self.corpus_model, reset=True)
         self.compute_ivectors_worker.start()
@@ -1390,18 +1389,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.loadingScreen.setCorpusName("Clustering speakers...")
 
     def begin_utterance_alignment(self):
+        if self.selection_model.current_utterance_id is None:
+            return
         self.enableMfaActions(False)
-        utterance = self.selection_model.currentUtterance()
         self.alignment_utterance_worker.set_params(
-            self.corpus_model.corpus, self.acoustic_model, utterance.id
+            self.corpus_model, self.selection_model.current_utterance_id
         )
         self.alignment_utterance_worker.start()
         self.set_application_state("loading")
         self.ui.loadingScreen.setCorpusName("Performing alignment...")
 
     def begin_utterance_segmentation(self):
-        utterance = self.selection_model.currentUtterance()
-        self.segment_utterance_worker.set_params(self.corpus_model, utterance.id)
+        if self.selection_model.current_utterance_id is None:
+            return
+        self.segment_utterance_worker.set_params(
+            self.corpus_model, self.selection_model.current_utterance_id
+        )
         self.segment_utterance_worker.start()
 
     def begin_alignment_evaluation(self):
@@ -1821,6 +1824,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.dictionaryDockWidget.setFont(base_font)
         self.ui.oovDockWidget.setFont(base_font)
         self.ui.diarizationDockWidget.setFont(base_font)
+        self.channel_select.setFont(base_font)
+        self.volume_slider.setFont(base_font)
 
     def download_language_model(self):
         self.download_worker.set_params(
@@ -1924,6 +1929,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 .first()
             )
             c.custom_mapping_path = path
+            session.commit()
         self.settings.setValue(AnchorSettings.DEFAULT_DIRECTORY, os.path.dirname(path))
         self.settings.sync()
         self.dictionary_model.set_custom_mapping(path)
@@ -2043,7 +2049,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if c is None or c.g2p_model is None:
                 return
             self.g2p_model_worker.set_params(c.g2p_model.path)
-            print(c.g2p_model.path)
         self.g2p_model_worker.start()
         self.settings.setValue(
             AnchorSettings.DEFAULT_G2P_DIRECTORY, os.path.dirname(c.g2p_model.path)
@@ -2271,9 +2276,27 @@ class OptionsDialog(QtWidgets.QDialog):
 
         self.ui.autosaveOnExitCheckBox.setChecked(self.settings.value(self.settings.AUTOSAVE))
         self.ui.cudaCheckBox.setChecked(self.settings.value(self.settings.CUDA))
+        if config.GITHUB_TOKEN is not None:
+            self.ui.githubTokenEdit.setText(config.GITHUB_TOKEN)
+
         self.ui.autoloadLastUsedCorpusCheckBox.setChecked(
             self.settings.value(self.settings.AUTOLOAD)
         )
+        self.ui.resultsPerPageEdit.setValue(self.settings.value(self.settings.RESULTS_PER_PAGE))
+
+        self.ui.dynamicRangeEdit.setValue(self.settings.value(self.settings.SPEC_DYNAMIC_RANGE))
+        self.ui.fftSizeEdit.setValue(self.settings.value(self.settings.SPEC_N_FFT))
+        self.ui.numTimeStepsEdit.setValue(self.settings.value(self.settings.SPEC_N_TIME_STEPS))
+        self.ui.windowSizeEdit.setText(str(self.settings.value(self.settings.SPEC_WINDOW_SIZE)))
+        self.ui.preemphasisEdit.setText(str(self.settings.value(self.settings.SPEC_PREEMPH)))
+        self.ui.maxFrequencyEdit.setValue(self.settings.value(self.settings.SPEC_MAX_FREQ))
+
+        self.ui.minPitchEdit.setValue(self.settings.value(self.settings.PITCH_MIN_F0))
+        self.ui.maxPitchEdit.setValue(self.settings.value(self.settings.PITCH_MAX_F0))
+        self.ui.timeStepEdit.setValue(self.settings.value(self.settings.PITCH_FRAME_SHIFT))
+        self.ui.frameLengthEdit.setValue(self.settings.value(self.settings.PITCH_FRAME_LENGTH))
+        self.ui.penaltyEdit.setText(str(self.settings.value(self.settings.PITCH_PENALTY_FACTOR)))
+        self.ui.pitchDeltaEdit.setText(str(self.settings.value(self.settings.PITCH_DELTA_PITCH)))
 
         self.ui.audioDeviceEdit.clear()
         for o in QtMultimedia.QMediaDevices.audioOutputs():
@@ -2284,13 +2307,44 @@ class OptionsDialog(QtWidgets.QDialog):
         except TypeError:
             self.ui.useMpCheckBox.setChecked(True)
         self.setWindowTitle("Preferences")
+        self.setFont(self.settings.font)
+        self.setStyleSheet(self.settings.style_sheet)
 
     def accept(self) -> None:
         config.NUM_JOBS = self.ui.numJobsEdit.value()
         config.USE_MP = self.ui.useMpCheckBox.isChecked()
+        config.GITHUB_TOKEN = self.ui.githubTokenEdit.text()
         config.GLOBAL_CONFIG.current_profile.num_jobs = config.NUM_JOBS
         config.GLOBAL_CONFIG.current_profile.use_mp = config.USE_MP
+        config.GLOBAL_CONFIG.current_profile.github_token = config.GITHUB_TOKEN
         config.GLOBAL_CONFIG.save()
+
+        self.settings.setValue(
+            self.settings.SPEC_DYNAMIC_RANGE, int(self.ui.dynamicRangeEdit.value())
+        )
+        self.settings.setValue(self.settings.SPEC_N_FFT, int(self.ui.fftSizeEdit.value()))
+        self.settings.setValue(
+            self.settings.SPEC_N_TIME_STEPS, int(self.ui.numTimeStepsEdit.value())
+        )
+        self.settings.setValue(
+            self.settings.SPEC_WINDOW_SIZE, float(self.ui.windowSizeEdit.text())
+        )
+        self.settings.setValue(self.settings.SPEC_PREEMPH, float(self.ui.preemphasisEdit.text()))
+        self.settings.setValue(self.settings.SPEC_MAX_FREQ, int(self.ui.maxFrequencyEdit.value()))
+
+        self.settings.setValue(self.settings.PITCH_MIN_F0, int(self.ui.minPitchEdit.value()))
+        self.settings.setValue(self.settings.PITCH_MAX_F0, int(self.ui.maxPitchEdit.value()))
+        self.settings.setValue(self.settings.PITCH_FRAME_SHIFT, int(self.ui.timeStepEdit.value()))
+        self.settings.setValue(
+            self.settings.PITCH_FRAME_LENGTH, int(self.ui.frameLengthEdit.value())
+        )
+        self.settings.setValue(
+            self.settings.PITCH_PENALTY_FACTOR, float(self.ui.penaltyEdit.text())
+        )
+        self.settings.setValue(
+            self.settings.PITCH_DELTA_PITCH, float(self.ui.pitchDeltaEdit.text())
+        )
+
         self.settings.setValue(self.settings.PRIMARY_BASE_COLOR, self.ui.primaryBaseEdit.color)
         self.settings.setValue(self.settings.PRIMARY_LIGHT_COLOR, self.ui.primaryLightEdit.color)
         self.settings.setValue(self.settings.PRIMARY_DARK_COLOR, self.ui.primaryDarkEdit.color)
@@ -2366,6 +2420,7 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(self.settings.CUDA, self.ui.cudaCheckBox.isChecked())
         self.settings.setValue(self.settings.AUTOSAVE, self.ui.autosaveOnExitCheckBox.isChecked())
         self.settings.setValue(self.settings.AUDIO_DEVICE, self.ui.audioDeviceEdit.currentData())
+        self.settings.setValue(self.settings.RESULTS_PER_PAGE, self.ui.resultsPerPageEdit.value())
         self.settings.sync()
         super(OptionsDialog, self).accept()
 

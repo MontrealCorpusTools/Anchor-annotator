@@ -6,6 +6,11 @@
 Known issues
 ************
 
+
+.. important::
+
+   As Anchor is in alpha, it is also possible to get into unrecoverable states due to database corruption and not all edge cases are handled by Anchor yet.  I recommend installing `pgAdmin <https://www.pgadmin.org/>`_ so that you delete/drop databases as necessary for corpora.  Once a corpus database is dropped, then restarting Anchor will trigger loading it from scratch (if the "Autoload last used corpus" option is enabled in :ref:`general_options`)
+
 Launching Anchor
 ================
 

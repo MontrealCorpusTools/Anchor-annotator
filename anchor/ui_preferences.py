@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'preferences.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.4.1
+## Created by: Qt User Interface Compiler version 6.5.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -73,6 +73,108 @@ class Ui_PreferencesDialog(object):
         self.verticalLayout.setObjectName("verticalLayout")
         self.tabWidget = QTabWidget(PreferencesDialog)
         self.tabWidget.setObjectName("tabWidget")
+        self.generalTab = QWidget()
+        self.generalTab.setObjectName("generalTab")
+        self.verticalLayout_8 = QVBoxLayout(self.generalTab)
+        self.verticalLayout_8.setObjectName("verticalLayout_8")
+        self.scrollArea_3 = QScrollArea(self.generalTab)
+        self.scrollArea_3.setObjectName("scrollArea_3")
+        self.scrollArea_3.setWidgetResizable(True)
+        self.scrollAreaWidgetContents_3 = QWidget()
+        self.scrollAreaWidgetContents_3.setObjectName("scrollAreaWidgetContents_3")
+        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 682, 353))
+        self.verticalLayout_9 = QVBoxLayout(self.scrollAreaWidgetContents_3)
+        self.verticalLayout_9.setObjectName("verticalLayout_9")
+        self.formLayout = QFormLayout()
+        self.formLayout.setObjectName("formLayout")
+        self.label_24 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_24.setObjectName("label_24")
+
+        self.formLayout.setWidget(2, QFormLayout.LabelRole, self.label_24)
+
+        self.audioDeviceEdit = QComboBox(self.scrollAreaWidgetContents_3)
+        self.audioDeviceEdit.setObjectName("audioDeviceEdit")
+
+        self.formLayout.setWidget(2, QFormLayout.FieldRole, self.audioDeviceEdit)
+
+        self.numJobsEdit = QSpinBox(self.scrollAreaWidgetContents_3)
+        self.numJobsEdit.setObjectName("numJobsEdit")
+
+        self.formLayout.setWidget(5, QFormLayout.FieldRole, self.numJobsEdit)
+
+        self.label_25 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_25.setObjectName("label_25")
+
+        self.formLayout.setWidget(5, QFormLayout.LabelRole, self.label_25)
+
+        self.useMpCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.useMpCheckBox.setObjectName("useMpCheckBox")
+
+        self.formLayout.setWidget(3, QFormLayout.FieldRole, self.useMpCheckBox)
+
+        self.label_26 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_26.setObjectName("label_26")
+
+        self.formLayout.setWidget(3, QFormLayout.LabelRole, self.label_26)
+
+        self.autosaveLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.autosaveLabel.setObjectName("autosaveLabel")
+
+        self.formLayout.setWidget(0, QFormLayout.LabelRole, self.autosaveLabel)
+
+        self.autosaveOnExitCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.autosaveOnExitCheckBox.setObjectName("autosaveOnExitCheckBox")
+
+        self.formLayout.setWidget(0, QFormLayout.FieldRole, self.autosaveOnExitCheckBox)
+
+        self.autoloadLastUsedCorpusLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.autoloadLastUsedCorpusLabel.setObjectName("autoloadLastUsedCorpusLabel")
+
+        self.formLayout.setWidget(1, QFormLayout.LabelRole, self.autoloadLastUsedCorpusLabel)
+
+        self.autoloadLastUsedCorpusCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.autoloadLastUsedCorpusCheckBox.setObjectName("autoloadLastUsedCorpusCheckBox")
+
+        self.formLayout.setWidget(1, QFormLayout.FieldRole, self.autoloadLastUsedCorpusCheckBox)
+
+        self.githubTokenEdit = QLineEdit(self.scrollAreaWidgetContents_3)
+        self.githubTokenEdit.setObjectName("githubTokenEdit")
+
+        self.formLayout.setWidget(6, QFormLayout.FieldRole, self.githubTokenEdit)
+
+        self.label_32 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_32.setObjectName("label_32")
+
+        self.formLayout.setWidget(6, QFormLayout.LabelRole, self.label_32)
+
+        self.resultsPerPageEdit = QSpinBox(self.scrollAreaWidgetContents_3)
+        self.resultsPerPageEdit.setObjectName("resultsPerPageEdit")
+        self.resultsPerPageEdit.setMaximum(1000)
+
+        self.formLayout.setWidget(7, QFormLayout.FieldRole, self.resultsPerPageEdit)
+
+        self.label_33 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_33.setObjectName("label_33")
+
+        self.formLayout.setWidget(7, QFormLayout.LabelRole, self.label_33)
+
+        self.cudaCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.cudaCheckBox.setObjectName("cudaCheckBox")
+
+        self.formLayout.setWidget(4, QFormLayout.FieldRole, self.cudaCheckBox)
+
+        self.label_48 = QLabel(self.scrollAreaWidgetContents_3)
+        self.label_48.setObjectName("label_48")
+
+        self.formLayout.setWidget(4, QFormLayout.LabelRole, self.label_48)
+
+        self.verticalLayout_9.addLayout(self.formLayout)
+
+        self.scrollArea_3.setWidget(self.scrollAreaWidgetContents_3)
+
+        self.verticalLayout_8.addWidget(self.scrollArea_3)
+
+        self.tabWidget.addTab(self.generalTab, "")
         self.appearenceTab = QWidget()
         self.appearenceTab.setObjectName("appearenceTab")
         self.verticalLayout_3 = QVBoxLayout(self.appearenceTab)
@@ -462,35 +564,41 @@ class Ui_PreferencesDialog(object):
 
         self.formLayout_6.setWidget(0, QFormLayout.LabelRole, self.label_42)
 
-        self.spinBox_5 = QSpinBox(self.scrollAreaWidgetContents_4)
-        self.spinBox_5.setObjectName("spinBox_5")
+        self.dynamicRangeEdit = QSpinBox(self.scrollAreaWidgetContents_4)
+        self.dynamicRangeEdit.setObjectName("dynamicRangeEdit")
+        self.dynamicRangeEdit.setMaximum(10000)
 
-        self.formLayout_6.setWidget(0, QFormLayout.FieldRole, self.spinBox_5)
+        self.formLayout_6.setWidget(0, QFormLayout.FieldRole, self.dynamicRangeEdit)
 
-        self.spinBox_6 = QSpinBox(self.scrollAreaWidgetContents_4)
-        self.spinBox_6.setObjectName("spinBox_6")
+        self.fftSizeEdit = QSpinBox(self.scrollAreaWidgetContents_4)
+        self.fftSizeEdit.setObjectName("fftSizeEdit")
+        self.fftSizeEdit.setMaximum(1000000)
 
-        self.formLayout_6.setWidget(1, QFormLayout.FieldRole, self.spinBox_6)
+        self.formLayout_6.setWidget(1, QFormLayout.FieldRole, self.fftSizeEdit)
 
-        self.spinBox_7 = QSpinBox(self.scrollAreaWidgetContents_4)
-        self.spinBox_7.setObjectName("spinBox_7")
+        self.numTimeStepsEdit = QSpinBox(self.scrollAreaWidgetContents_4)
+        self.numTimeStepsEdit.setObjectName("numTimeStepsEdit")
+        self.numTimeStepsEdit.setMaximum(100000)
+        self.numTimeStepsEdit.setSingleStep(10)
 
-        self.formLayout_6.setWidget(2, QFormLayout.FieldRole, self.spinBox_7)
+        self.formLayout_6.setWidget(2, QFormLayout.FieldRole, self.numTimeStepsEdit)
 
-        self.spinBox_8 = QSpinBox(self.scrollAreaWidgetContents_4)
-        self.spinBox_8.setObjectName("spinBox_8")
+        self.maxFrequencyEdit = QSpinBox(self.scrollAreaWidgetContents_4)
+        self.maxFrequencyEdit.setObjectName("maxFrequencyEdit")
+        self.maxFrequencyEdit.setMaximum(1000000)
+        self.maxFrequencyEdit.setSingleStep(1000)
 
-        self.formLayout_6.setWidget(3, QFormLayout.FieldRole, self.spinBox_8)
+        self.formLayout_6.setWidget(3, QFormLayout.FieldRole, self.maxFrequencyEdit)
 
-        self.lineEdit_3 = QLineEdit(self.scrollAreaWidgetContents_4)
-        self.lineEdit_3.setObjectName("lineEdit_3")
+        self.windowSizeEdit = QLineEdit(self.scrollAreaWidgetContents_4)
+        self.windowSizeEdit.setObjectName("windowSizeEdit")
 
-        self.formLayout_6.setWidget(4, QFormLayout.FieldRole, self.lineEdit_3)
+        self.formLayout_6.setWidget(4, QFormLayout.FieldRole, self.windowSizeEdit)
 
-        self.lineEdit_4 = QLineEdit(self.scrollAreaWidgetContents_4)
-        self.lineEdit_4.setObjectName("lineEdit_4")
+        self.preemphasisEdit = QLineEdit(self.scrollAreaWidgetContents_4)
+        self.preemphasisEdit.setObjectName("preemphasisEdit")
 
-        self.formLayout_6.setWidget(5, QFormLayout.FieldRole, self.lineEdit_4)
+        self.formLayout_6.setWidget(5, QFormLayout.FieldRole, self.preemphasisEdit)
 
         self.label_43 = QLabel(self.scrollAreaWidgetContents_4)
         self.label_43.setObjectName("label_43")
@@ -543,60 +651,66 @@ class Ui_PreferencesDialog(object):
 
         self.formLayout_7.setWidget(0, QFormLayout.LabelRole, self.label_34)
 
-        self.checkBox = QCheckBox(self.scrollAreaWidgetContents_5)
-        self.checkBox.setObjectName("checkBox")
+        self.showPitchCheck = QCheckBox(self.scrollAreaWidgetContents_5)
+        self.showPitchCheck.setObjectName("showPitchCheck")
 
-        self.formLayout_7.setWidget(0, QFormLayout.FieldRole, self.checkBox)
+        self.formLayout_7.setWidget(0, QFormLayout.FieldRole, self.showPitchCheck)
 
         self.label_36 = QLabel(self.scrollAreaWidgetContents_5)
         self.label_36.setObjectName("label_36")
 
         self.formLayout_7.setWidget(1, QFormLayout.LabelRole, self.label_36)
 
-        self.spinBox = QSpinBox(self.scrollAreaWidgetContents_5)
-        self.spinBox.setObjectName("spinBox")
+        self.minPitchEdit = QSpinBox(self.scrollAreaWidgetContents_5)
+        self.minPitchEdit.setObjectName("minPitchEdit")
+        self.minPitchEdit.setMaximum(2000)
+        self.minPitchEdit.setSingleStep(10)
 
-        self.formLayout_7.setWidget(1, QFormLayout.FieldRole, self.spinBox)
+        self.formLayout_7.setWidget(1, QFormLayout.FieldRole, self.minPitchEdit)
 
         self.label_37 = QLabel(self.scrollAreaWidgetContents_5)
         self.label_37.setObjectName("label_37")
 
         self.formLayout_7.setWidget(2, QFormLayout.LabelRole, self.label_37)
 
-        self.spinBox_2 = QSpinBox(self.scrollAreaWidgetContents_5)
-        self.spinBox_2.setObjectName("spinBox_2")
+        self.maxPitchEdit = QSpinBox(self.scrollAreaWidgetContents_5)
+        self.maxPitchEdit.setObjectName("maxPitchEdit")
+        self.maxPitchEdit.setMaximum(5000)
+        self.maxPitchEdit.setSingleStep(10)
 
-        self.formLayout_7.setWidget(2, QFormLayout.FieldRole, self.spinBox_2)
+        self.formLayout_7.setWidget(2, QFormLayout.FieldRole, self.maxPitchEdit)
 
         self.label_38 = QLabel(self.scrollAreaWidgetContents_5)
         self.label_38.setObjectName("label_38")
 
         self.formLayout_7.setWidget(3, QFormLayout.LabelRole, self.label_38)
 
-        self.spinBox_3 = QSpinBox(self.scrollAreaWidgetContents_5)
-        self.spinBox_3.setObjectName("spinBox_3")
+        self.timeStepEdit = QSpinBox(self.scrollAreaWidgetContents_5)
+        self.timeStepEdit.setObjectName("timeStepEdit")
+        self.timeStepEdit.setMaximum(100000)
+        self.timeStepEdit.setSingleStep(100)
 
-        self.formLayout_7.setWidget(3, QFormLayout.FieldRole, self.spinBox_3)
+        self.formLayout_7.setWidget(3, QFormLayout.FieldRole, self.timeStepEdit)
 
         self.label_39 = QLabel(self.scrollAreaWidgetContents_5)
         self.label_39.setObjectName("label_39")
 
         self.formLayout_7.setWidget(4, QFormLayout.LabelRole, self.label_39)
 
-        self.spinBox_4 = QSpinBox(self.scrollAreaWidgetContents_5)
-        self.spinBox_4.setObjectName("spinBox_4")
+        self.frameLengthEdit = QSpinBox(self.scrollAreaWidgetContents_5)
+        self.frameLengthEdit.setObjectName("frameLengthEdit")
 
-        self.formLayout_7.setWidget(4, QFormLayout.FieldRole, self.spinBox_4)
+        self.formLayout_7.setWidget(4, QFormLayout.FieldRole, self.frameLengthEdit)
 
-        self.lineEdit = QLineEdit(self.scrollAreaWidgetContents_5)
-        self.lineEdit.setObjectName("lineEdit")
+        self.penaltyEdit = QLineEdit(self.scrollAreaWidgetContents_5)
+        self.penaltyEdit.setObjectName("penaltyEdit")
 
-        self.formLayout_7.setWidget(5, QFormLayout.FieldRole, self.lineEdit)
+        self.formLayout_7.setWidget(5, QFormLayout.FieldRole, self.penaltyEdit)
 
-        self.lineEdit_2 = QLineEdit(self.scrollAreaWidgetContents_5)
-        self.lineEdit_2.setObjectName("lineEdit_2")
+        self.pitchDeltaEdit = QLineEdit(self.scrollAreaWidgetContents_5)
+        self.pitchDeltaEdit.setObjectName("pitchDeltaEdit")
 
-        self.formLayout_7.setWidget(6, QFormLayout.FieldRole, self.lineEdit_2)
+        self.formLayout_7.setWidget(6, QFormLayout.FieldRole, self.pitchDeltaEdit)
 
         self.label_40 = QLabel(self.scrollAreaWidgetContents_5)
         self.label_40.setObjectName("label_40")
@@ -615,107 +729,6 @@ class Ui_PreferencesDialog(object):
         self.verticalLayout_12.addWidget(self.scrollArea_5)
 
         self.tabWidget.addTab(self.pitchTab, "")
-        self.generalTab = QWidget()
-        self.generalTab.setObjectName("generalTab")
-        self.verticalLayout_8 = QVBoxLayout(self.generalTab)
-        self.verticalLayout_8.setObjectName("verticalLayout_8")
-        self.scrollArea_3 = QScrollArea(self.generalTab)
-        self.scrollArea_3.setObjectName("scrollArea_3")
-        self.scrollArea_3.setWidgetResizable(True)
-        self.scrollAreaWidgetContents_3 = QWidget()
-        self.scrollAreaWidgetContents_3.setObjectName("scrollAreaWidgetContents_3")
-        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 682, 353))
-        self.verticalLayout_9 = QVBoxLayout(self.scrollAreaWidgetContents_3)
-        self.verticalLayout_9.setObjectName("verticalLayout_9")
-        self.formLayout = QFormLayout()
-        self.formLayout.setObjectName("formLayout")
-        self.label_24 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_24.setObjectName("label_24")
-
-        self.formLayout.setWidget(2, QFormLayout.LabelRole, self.label_24)
-
-        self.audioDeviceEdit = QComboBox(self.scrollAreaWidgetContents_3)
-        self.audioDeviceEdit.setObjectName("audioDeviceEdit")
-
-        self.formLayout.setWidget(2, QFormLayout.FieldRole, self.audioDeviceEdit)
-
-        self.numJobsEdit = QSpinBox(self.scrollAreaWidgetContents_3)
-        self.numJobsEdit.setObjectName("numJobsEdit")
-
-        self.formLayout.setWidget(5, QFormLayout.FieldRole, self.numJobsEdit)
-
-        self.label_25 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_25.setObjectName("label_25")
-
-        self.formLayout.setWidget(5, QFormLayout.LabelRole, self.label_25)
-
-        self.useMpCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.useMpCheckBox.setObjectName("useMpCheckBox")
-
-        self.formLayout.setWidget(3, QFormLayout.FieldRole, self.useMpCheckBox)
-
-        self.label_26 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_26.setObjectName("label_26")
-
-        self.formLayout.setWidget(3, QFormLayout.LabelRole, self.label_26)
-
-        self.autosaveLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.autosaveLabel.setObjectName("autosaveLabel")
-
-        self.formLayout.setWidget(0, QFormLayout.LabelRole, self.autosaveLabel)
-
-        self.autosaveOnExitCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.autosaveOnExitCheckBox.setObjectName("autosaveOnExitCheckBox")
-
-        self.formLayout.setWidget(0, QFormLayout.FieldRole, self.autosaveOnExitCheckBox)
-
-        self.autoloadLastUsedCorpusLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.autoloadLastUsedCorpusLabel.setObjectName("autoloadLastUsedCorpusLabel")
-
-        self.formLayout.setWidget(1, QFormLayout.LabelRole, self.autoloadLastUsedCorpusLabel)
-
-        self.autoloadLastUsedCorpusCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.autoloadLastUsedCorpusCheckBox.setObjectName("autoloadLastUsedCorpusCheckBox")
-
-        self.formLayout.setWidget(1, QFormLayout.FieldRole, self.autoloadLastUsedCorpusCheckBox)
-
-        self.githubTokenEdit = QLineEdit(self.scrollAreaWidgetContents_3)
-        self.githubTokenEdit.setObjectName("githubTokenEdit")
-
-        self.formLayout.setWidget(6, QFormLayout.FieldRole, self.githubTokenEdit)
-
-        self.label_32 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_32.setObjectName("label_32")
-
-        self.formLayout.setWidget(6, QFormLayout.LabelRole, self.label_32)
-
-        self.resultsPerPageEdit = QSpinBox(self.scrollAreaWidgetContents_3)
-        self.resultsPerPageEdit.setObjectName("resultsPerPageEdit")
-
-        self.formLayout.setWidget(7, QFormLayout.FieldRole, self.resultsPerPageEdit)
-
-        self.label_33 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_33.setObjectName("label_33")
-
-        self.formLayout.setWidget(7, QFormLayout.LabelRole, self.label_33)
-
-        self.cudaCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.cudaCheckBox.setObjectName("cudaCheckBox")
-
-        self.formLayout.setWidget(4, QFormLayout.FieldRole, self.cudaCheckBox)
-
-        self.label_48 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_48.setObjectName("label_48")
-
-        self.formLayout.setWidget(4, QFormLayout.LabelRole, self.label_48)
-
-        self.verticalLayout_9.addLayout(self.formLayout)
-
-        self.scrollArea_3.setWidget(self.scrollAreaWidgetContents_3)
-
-        self.verticalLayout_8.addWidget(self.scrollArea_3)
-
-        self.tabWidget.addTab(self.generalTab, "")
 
         self.verticalLayout.addWidget(self.tabWidget)
 
@@ -730,7 +743,7 @@ class Ui_PreferencesDialog(object):
         self.buttonBox.accepted.connect(PreferencesDialog.accept)
         self.buttonBox.rejected.connect(PreferencesDialog.reject)
 
-        self.tabWidget.setCurrentIndex(4)
+        self.tabWidget.setCurrentIndex(0)
 
         QMetaObject.connectSlotsByName(PreferencesDialog)
 
@@ -739,6 +752,34 @@ class Ui_PreferencesDialog(object):
     def retranslateUi(self, PreferencesDialog):
         PreferencesDialog.setWindowTitle(
             QCoreApplication.translate("PreferencesDialog", "Dialog", None)
+        )
+        self.label_24.setText(
+            QCoreApplication.translate("PreferencesDialog", "Audio device", None)
+        )
+        self.label_25.setText(
+            QCoreApplication.translate("PreferencesDialog", "Number of processors to use", None)
+        )
+        self.useMpCheckBox.setText("")
+        self.label_26.setText(
+            QCoreApplication.translate("PreferencesDialog", "Use multiprocessing?", None)
+        )
+        self.autosaveLabel.setText(
+            QCoreApplication.translate("PreferencesDialog", "Autosave on exit", None)
+        )
+        self.autoloadLastUsedCorpusLabel.setText(
+            QCoreApplication.translate("PreferencesDialog", "Autoload last used corpus", None)
+        )
+        self.label_32.setText(
+            QCoreApplication.translate("PreferencesDialog", "Github request token", None)
+        )
+        self.label_33.setText(
+            QCoreApplication.translate("PreferencesDialog", "Results per page", None)
+        )
+        self.cudaCheckBox.setText("")
+        self.label_48.setText(QCoreApplication.translate("PreferencesDialog", "Use CUDA", None))
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.generalTab),
+            QCoreApplication.translate("PreferencesDialog", "General", None),
         )
         self.label_11.setText(QCoreApplication.translate("PreferencesDialog", "Theme", None))
         self.presetThemeEdit.setItemText(
@@ -757,65 +798,39 @@ class Ui_PreferencesDialog(object):
             QCoreApplication.translate("PreferencesDialog", "Primary hues", None)
         )
         self.label_15.setText(QCoreApplication.translate("PreferencesDialog", "Base hue", None))
-        self.primaryBaseEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.primaryBaseEdit.setText("")
         self.label_16.setText(QCoreApplication.translate("PreferencesDialog", "Light", None))
-        self.primaryLightEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.primaryLightEdit.setText("")
         self.label_19.setText(QCoreApplication.translate("PreferencesDialog", "Dark", None))
-        self.primaryDarkEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.primaryDarkEdit.setText("")
         self.label_28.setText(QCoreApplication.translate("PreferencesDialog", "Very light", None))
-        self.primaryVeryLightEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.primaryVeryLightEdit.setText("")
         self.label_27.setText(QCoreApplication.translate("PreferencesDialog", "Very dark", None))
-        self.primaryVeryDarkEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.primaryVeryDarkEdit.setText("")
         self.accentHueBox.setTitle(
             QCoreApplication.translate("PreferencesDialog", "Accent hues", None)
         )
         self.label_20.setText(QCoreApplication.translate("PreferencesDialog", "Base hue", None))
-        self.accentBaseEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.accentBaseEdit.setText("")
         self.label_30.setText(QCoreApplication.translate("PreferencesDialog", "Light", None))
-        self.accentLightEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.accentLightEdit.setText("")
         self.label_21.setText(QCoreApplication.translate("PreferencesDialog", "Dark", None))
-        self.accentDarkEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.accentDarkEdit.setText("")
         self.label_35.setText(QCoreApplication.translate("PreferencesDialog", "Very light", None))
-        self.accentVeryLightEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.accentVeryLightEdit.setText("")
         self.label_29.setText(QCoreApplication.translate("PreferencesDialog", "Very dark", None))
-        self.accentVeryDarkEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.accentVeryDarkEdit.setText("")
         self.otherBox.setTitle(QCoreApplication.translate("PreferencesDialog", "Other", None))
         self.label_14.setText(
             QCoreApplication.translate("PreferencesDialog", "Main text hue", None)
         )
-        self.mainTextColorEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.mainTextColorEdit.setText("")
         self.label_17.setText(
             QCoreApplication.translate("PreferencesDialog", "Selected text hue", None)
         )
-        self.selectedTextColorEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.selectedTextColorEdit.setText("")
         self.label_18.setText(QCoreApplication.translate("PreferencesDialog", "Error hue", None))
-        self.errorColorEdit.setText(
-            QCoreApplication.translate("PreferencesDialog", "PushButton", None)
-        )
+        self.errorColorEdit.setText("")
         self.label_13.setText(
             QCoreApplication.translate("PreferencesDialog", "Plot text width", None)
         )
@@ -875,7 +890,7 @@ class Ui_PreferencesDialog(object):
             QCoreApplication.translate("PreferencesDialog", "Spectrogram", None),
         )
         self.label_34.setText(QCoreApplication.translate("PreferencesDialog", "Show pitch", None))
-        self.checkBox.setText("")
+        self.showPitchCheck.setText("")
         self.label_36.setText(
             QCoreApplication.translate("PreferencesDialog", "Minimum pitch (Hz)", None)
         )
@@ -897,34 +912,6 @@ class Ui_PreferencesDialog(object):
         self.tabWidget.setTabText(
             self.tabWidget.indexOf(self.pitchTab),
             QCoreApplication.translate("PreferencesDialog", "Pitch", None),
-        )
-        self.label_24.setText(
-            QCoreApplication.translate("PreferencesDialog", "Audio device", None)
-        )
-        self.label_25.setText(
-            QCoreApplication.translate("PreferencesDialog", "Number of processors to use", None)
-        )
-        self.useMpCheckBox.setText("")
-        self.label_26.setText(
-            QCoreApplication.translate("PreferencesDialog", "Use multiprocessing?", None)
-        )
-        self.autosaveLabel.setText(
-            QCoreApplication.translate("PreferencesDialog", "Autosave on exit", None)
-        )
-        self.autoloadLastUsedCorpusLabel.setText(
-            QCoreApplication.translate("PreferencesDialog", "Autoload last used corpus", None)
-        )
-        self.label_32.setText(
-            QCoreApplication.translate("PreferencesDialog", "Github request token", None)
-        )
-        self.label_33.setText(
-            QCoreApplication.translate("PreferencesDialog", "Results per page", None)
-        )
-        self.cudaCheckBox.setText("")
-        self.label_48.setText(QCoreApplication.translate("PreferencesDialog", "Use CUDA", None))
-        self.tabWidget.setTabText(
-            self.tabWidget.indexOf(self.generalTab),
-            QCoreApplication.translate("PreferencesDialog", "General", None),
         )
 
     # retranslateUi
