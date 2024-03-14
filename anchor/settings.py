@@ -76,6 +76,9 @@ class AnchorSettings(QtCore.QSettings):
     LOCKED = "anchor/locked"
     CUDA = "anchor/cuda"
     GITHUB_TOKEN = "anchor/github_token"
+    TIME_DIRECTION = "anchor/time_direction"
+    RTL = "Right-to-left"
+    LTR = "Left-to-right"
 
     RESULTS_PER_PAGE = "anchor/results_per_page"
     SPEC_DYNAMIC_RANGE = "anchor/spectrogram/dynamic_range"
@@ -175,6 +178,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.SPEC_WINDOW_SIZE: 0.005,
             AnchorSettings.SPEC_PREEMPH: 0.97,
             AnchorSettings.CUDA: True,
+            AnchorSettings.TIME_DIRECTION: AnchorSettings.LTR,
             AnchorSettings.CLUSTERING_PERPLEXITY: 30.0,
             AnchorSettings.CLUSTERING_DISTANCE_THRESHOLD: 0.0,
             AnchorSettings.CLUSTERING_METRIC: "cosine",
@@ -223,6 +227,10 @@ class AnchorSettings(QtCore.QSettings):
             "Transcribed words": AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE,
             "Transcribed phones": AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE,
         }
+
+    @property
+    def right_to_left(self) -> bool:
+        return self.value(AnchorSettings.TIME_DIRECTION) == AnchorSettings.RTL
 
     @property
     def visible_tiers(self):
@@ -590,7 +598,7 @@ class AnchorSettings(QtCore.QSettings):
             background-color: {menu_background_color};
         }}
         QMenuBar::item:selected {{
-            color: {hover_text_color};
+            color: {menu_text_color};
             background-color: {hover_background_color};
         }}
         QMenuBar::item:disabled {{

@@ -160,6 +160,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
 
     def __init__(self, *args, **kwargs):
         super(CorpusSelectionModel, self).__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
         self.min_time = 0
         self.max_time = 10
         self.selected_min_time = None
@@ -179,6 +180,18 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.model().layoutChanged.connect(self.check_selection)
         self.model().unlockCorpus.connect(self.fileChanged.emit)
         self.model().selectionRequested.connect(self.update_select_rows)
+
+    @property
+    def plot_min(self):
+        if self.settings.right_to_left:
+            return -self.max_time
+        return self.min_time
+
+    @property
+    def plot_max(self):
+        if self.settings.right_to_left:
+            return -self.min_time
+        return self.max_time
 
     def set_current_utterance(self, utterance_id):
         self.current_utterance_id = utterance_id
@@ -292,7 +305,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         return file_utts
 
     def currentUtterance(self) -> Optional[Utterance]:
-        if self.current_utterance_id is not None:
+        if self.current_utterance_id is None:
             return
         m = self.model()
         utterance = (
@@ -314,9 +327,11 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.currentUtteranceChanged.emit()
 
     def selectedUtterances(self):
-        utts = []
+        current_utterance = self.currentUtterance()
+        if current_utterance is None:
+            return []
+        utts = [current_utterance]
         m = self.model()
-        current_utterance = m.utteranceAt(self.currentIndex())
         for index in self.selectedRows(1):
             if current_utterance is not None and m._indices[index.row()] == current_utterance.id:
                 continue
@@ -342,7 +357,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         return text
 
     def zoom(self, factor, mid_point=None):
-        if factor == 0:
+        if factor == 0 or self.min_time is None:
             return
         cur_duration = self.max_time - self.min_time
         if mid_point is None:
@@ -356,6 +371,8 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.set_view_times(new_begin, new_end)
 
     def pan(self, factor):
+        if self.min_time is None:
+            return
         if factor < 1:
             factor = 1 - factor
             right = True
@@ -1043,6 +1060,8 @@ class SpeakerModel(TableModel):
         self.mds_speaker_utterances()
 
     def finish_load_ivectors(self, result, *args, **kwargs):
+        if result is None:
+            return
         speaker_ids, utterance_ids, utt2spk, ivectors = result
         if speaker_ids != self.current_speakers:
             return

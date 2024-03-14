@@ -557,6 +557,14 @@ class PaginationWidget(QtWidgets.QToolBar):
 
     def __init__(self, *args):
         super(PaginationWidget, self).__init__(*args)
+        w = QtWidgets.QWidget(self)
+        w.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
+        w2 = QtWidgets.QWidget(self)
+        w2.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        )
         self.current_page = 0
         self.limit = 1
         self.num_pages = 1
@@ -567,10 +575,12 @@ class PaginationWidget(QtWidgets.QToolBar):
         self.previous_page_action = QtGui.QAction(
             icon=QtGui.QIcon(":caret-left.svg"), text="Previous page"
         )
+        self.addWidget(w)
         self.page_label = QtWidgets.QLabel("Page 1 of 1")
         self.addAction(self.previous_page_action)
         self.addWidget(self.page_label)
         self.addAction(self.next_page_action)
+        self.addWidget(w2)
         self.next_page_action.triggered.connect(self.next_page)
         self.previous_page_action.triggered.connect(self.previous_page)
 
@@ -2194,7 +2204,7 @@ class DictionaryTableView(AnchorTableView):
             )
             self.dictionary_model.change_word_type(word_id, WordType[current_word_type])
 
-        elif index.column() == 1:
+        elif index.column() == 2:
             word_index = self.dictionary_model.index(index.row(), 0)
             word = self.dictionary_model.data(word_index, QtCore.Qt.ItemDataRole.DisplayRole)
             query = TextFilterQuery(word, False, True, False)
@@ -2245,7 +2255,9 @@ class SpeakerTableView(AnchorTableView):
         speaker_id = self.speaker_model.speakerAt(index.row())
         speaker_name = self.speaker_model.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
         dialog = ConfirmationDialog(
-            f"Break up {speaker_name}", f"Are you sure you want to break up {speaker_name}?", self
+            "Break up speaker confirmation",
+            f"Are you sure you want to break up {speaker_name}?",
+            self,
         )
         if dialog.exec_():
             self.speaker_model.break_up_speaker(speaker_id)
@@ -2680,9 +2692,13 @@ class DiarizationTable(AnchorTableView):
             with self.diarization_model.corpus_model.corpus.session() as session:
                 c = session.query(Corpus).first()
                 try:
-                    file_id, begin, end, channel = (
+                    utterance_id, file_id, begin, end, channel = (
                         session.query(
-                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
+                            Utterance.id,
+                            Utterance.file_id,
+                            Utterance.begin,
+                            Utterance.end,
+                            Utterance.channel,
                         )
                         .join(Utterance.speaker)
                         .filter(Utterance.speaker_id == speaker_id)
@@ -2694,6 +2710,7 @@ class DiarizationTable(AnchorTableView):
                 except TypeError:
                     self.selection_model.clearSelection()
                     return
+        self.selection_model.set_current_utterance(utterance_id)
         self.selection_model.set_current_file(
             file_id,
             begin,
