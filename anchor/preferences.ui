@@ -41,40 +41,6 @@
           <layout class="QVBoxLayout" name="verticalLayout_9">
            <item>
             <layout class="QFormLayout" name="formLayout">
-             <item row="2" column="0">
-              <widget class="QLabel" name="label_24">
-               <property name="text">
-                <string>Audio device</string>
-               </property>
-              </widget>
-             </item>
-             <item row="2" column="1">
-              <widget class="QComboBox" name="audioDeviceEdit"/>
-             </item>
-             <item row="5" column="1">
-              <widget class="QSpinBox" name="numJobsEdit"/>
-             </item>
-             <item row="5" column="0">
-              <widget class="QLabel" name="label_25">
-               <property name="text">
-                <string>Number of processors to use</string>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="1">
-              <widget class="QCheckBox" name="useMpCheckBox">
-               <property name="text">
-                <string/>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
-              <widget class="QLabel" name="label_26">
-               <property name="text">
-                <string>Use multiprocessing?</string>
-               </property>
-              </widget>
-             </item>
              <item row="0" column="0">
               <widget class="QLabel" name="autosaveLabel">
                <property name="text">
@@ -95,27 +61,34 @@
              <item row="1" column="1">
               <widget class="QCheckBox" name="autoloadLastUsedCorpusCheckBox"/>
              </item>
-             <item row="6" column="1">
-              <widget class="QLineEdit" name="githubTokenEdit"/>
-             </item>
-             <item row="6" column="0">
-              <widget class="QLabel" name="label_32">
+             <item row="2" column="0">
+              <widget class="QLabel" name="audioDeviceLabel">
                <property name="text">
-                <string>Github request token</string>
+                <string>Audio device</string>
                </property>
               </widget>
              </item>
-             <item row="7" column="1">
-              <widget class="QSpinBox" name="resultsPerPageEdit">
-               <property name="maximum">
-                <number>1000</number>
+             <item row="2" column="1">
+              <widget class="QComboBox" name="audioDeviceEdit"/>
+             </item>
+             <item row="3" column="0">
+              <widget class="QLabel" name="useMpLabel">
+               <property name="text">
+                <string>Use multiprocessing?</string>
                </property>
               </widget>
              </item>
-             <item row="7" column="0">
-              <widget class="QLabel" name="label_33">
+             <item row="3" column="1">
+              <widget class="QCheckBox" name="useMpCheckBox">
                <property name="text">
-                <string>Results per page</string>
+                <string/>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="0">
+              <widget class="QLabel" name="useCudaLabel">
+               <property name="text">
+                <string>Use CUDA</string>
                </property>
               </widget>
              </item>
@@ -126,11 +99,59 @@
                </property>
               </widget>
              </item>
-             <item row="4" column="0">
-              <widget class="QLabel" name="label_48">
+             <item row="5" column="0">
+              <widget class="QLabel" name="numJobsLabel">
                <property name="text">
-                <string>Use CUDA</string>
+                <string>Number of processors to use</string>
                </property>
+              </widget>
+             </item>
+             <item row="5" column="1">
+              <widget class="QSpinBox" name="numJobsEdit"/>
+             </item>
+             <item row="6" column="0">
+              <widget class="QLabel" name="githubTokenLabel">
+               <property name="text">
+                <string>Github request token</string>
+               </property>
+              </widget>
+             </item>
+             <item row="6" column="1">
+              <widget class="QLineEdit" name="githubTokenEdit"/>
+             </item>
+             <item row="7" column="0">
+              <widget class="QLabel" name="resultsPerPageLabel">
+               <property name="text">
+                <string>Results per page</string>
+               </property>
+              </widget>
+             </item>
+             <item row="7" column="1">
+              <widget class="QSpinBox" name="resultsPerPageEdit">
+               <property name="maximum">
+                <number>1000</number>
+               </property>
+              </widget>
+             </item>
+             <item row="8" column="0">
+              <widget class="QLabel" name="timeDirectionLabel">
+               <property name="text">
+                <string>Time direction</string>
+               </property>
+              </widget>
+             </item>
+             <item row="8" column="1">
+              <widget class="QComboBox" name="timeDirectionComboBox">
+               <item>
+                <property name="text">
+                 <string>Left-to-right</string>
+                </property>
+               </item>
+               <item>
+                <property name="text">
+                 <string>Right-to-left</string>
+                </property>
+               </item>
               </widget>
              </item>
             </layout>

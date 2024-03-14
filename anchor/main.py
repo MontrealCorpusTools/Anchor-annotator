@@ -739,11 +739,14 @@ class MainWindow(QtWidgets.QMainWindow):
         w.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
-        self.ui.toolBar.insertWidget(self.ui.toolBar.actions()[0], w)
-        self.ui.toolBar.setSizePolicy(
+        w2 = QtWidgets.QWidget(self)
+        w2.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
         )
-        self.ui.toolBar.addWidget(w)
+        self.ui.toolBar.insertWidget(self.ui.toolBar.actions()[0], w)
+        # self.ui.toolBar.setSizePolicy(
+        #    QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding
+        # )
         self.ui.toolBar.setAttribute(QtCore.Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
         self.ui.lockEditAct.setEnabled(True)
         self.ui.lockEditAct.setChecked(bool(self.settings.value(AnchorSettings.LOCKED, False)))
@@ -803,6 +806,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.channel_select.addItem("Channel 0")
         self.ui.toolBar.addWidget(self.volume_slider)
         self.ui.toolBar.addWidget(self.channel_select)
+        self.ui.toolBar.addWidget(w2)
         self.channel_select.currentIndexChanged.connect(self.selection_model.set_current_channel)
         self.ui.changeVolumeAct.triggered.connect(self.media_player.set_volume)
         self.ui.addSpeakerAct.triggered.connect(self.add_new_speaker)
@@ -926,7 +930,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.corpus_model.corpus.has_any_ivectors():
             return
         kwargs = {
-            "threshold": 0.28,
+            "threshold": 0.25,
         }
         if False and self.corpus_model.plda is not None:
             kwargs["metric"] = "plda"
@@ -1515,6 +1519,7 @@ class MainWindow(QtWidgets.QMainWindow):
         original_utterance_id, split_data = data
         self.corpus_model.split_vad_utterance(original_utterance_id, split_data)
         self.corpus_model.update_data()
+        self.ensure_utterance_panel_visible()
 
     def finalize_saving(self):
         self.check_actions()
@@ -1694,6 +1699,20 @@ class MainWindow(QtWidgets.QMainWindow):
             if search_term is not None:
                 self.ui.utteranceListWidget.search_box.setQuery(search_term)
 
+    def ensure_utterance_panel_visible(self):
+        dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
+
+        for j in range(len(dock_tab_bars)):
+            dock_tab_bar = dock_tab_bars[j]
+            if not dock_tab_bar.count():
+                continue
+            for i in range(dock_tab_bar.count()):
+                if dock_tab_bar.tabText(i) == "Utterances":
+                    dock_tab_bar.setCurrentIndex(i)
+                    break
+            else:
+                self.ui.utteranceDockWidget.toggleViewAction().trigger()
+
     def open_search_speaker(self, search_term=None, show=False):
         if search_term is not None:
             self.ui.utteranceListWidget.speaker_dropdown.line_edit.setText(search_term)
@@ -1705,18 +1724,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
             self.ui.utteranceListWidget.search()
             if show:
-                dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
-
-                for j in range(len(dock_tab_bars)):
-                    dock_tab_bar = dock_tab_bars[j]
-                    if not dock_tab_bar.count():
-                        continue
-                    for i in range(dock_tab_bar.count()):
-                        if dock_tab_bar.tabText(i) == "Utterances":
-                            dock_tab_bar.setCurrentIndex(i)
-                            break
-                    else:
-                        self.ui.utteranceDockWidget.toggleViewAction().trigger()
+                self.ensure_utterance_panel_visible()
 
     def open_search_file(self, search_term=None, utterance_id=None, show=False):
         if search_term is not None:
@@ -1729,18 +1737,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.utteranceListWidget.requested_utterance_id = utterance_id
             self.ui.utteranceListWidget.search()
             if show:
-                dock_tab_bars = self.findChildren(QtWidgets.QTabBar, "")
-
-                for j in range(len(dock_tab_bars)):
-                    dock_tab_bar = dock_tab_bars[j]
-                    if not dock_tab_bar.count():
-                        continue
-                    for i in range(dock_tab_bar.count()):
-                        if dock_tab_bar.tabText(i) == "Utterances":
-                            dock_tab_bar.setCurrentIndex(i)
-                            break
-                    else:
-                        self.ui.utteranceDockWidget.toggleViewAction().trigger()
+                self.ensure_utterance_panel_visible()
 
     def refresh_shortcuts(self):
         self.ui.playAct.setShortcut(self.settings.value(AnchorSettings.PLAY_KEYBIND))
@@ -2283,6 +2280,11 @@ class OptionsDialog(QtWidgets.QDialog):
             self.settings.value(self.settings.AUTOLOAD)
         )
         self.ui.resultsPerPageEdit.setValue(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.ui.timeDirectionComboBox.setCurrentIndex(
+            self.ui.timeDirectionComboBox.findText(
+                self.settings.value(self.settings.TIME_DIRECTION)
+            )
+        )
 
         self.ui.dynamicRangeEdit.setValue(self.settings.value(self.settings.SPEC_DYNAMIC_RANGE))
         self.ui.fftSizeEdit.setValue(self.settings.value(self.settings.SPEC_N_FFT))
@@ -2421,6 +2423,9 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(self.settings.AUTOSAVE, self.ui.autosaveOnExitCheckBox.isChecked())
         self.settings.setValue(self.settings.AUDIO_DEVICE, self.ui.audioDeviceEdit.currentData())
         self.settings.setValue(self.settings.RESULTS_PER_PAGE, self.ui.resultsPerPageEdit.value())
+        self.settings.setValue(
+            self.settings.TIME_DIRECTION, self.ui.timeDirectionComboBox.currentText()
+        )
         self.settings.sync()
         super(OptionsDialog, self).accept()
 

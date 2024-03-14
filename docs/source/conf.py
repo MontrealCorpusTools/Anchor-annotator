@@ -79,6 +79,7 @@ html_css_files = [
 
 html_logo = "_static/anchor-yellow.svg"
 html_favicon = "_static/favicon.ico"
+default_role = "code"
 
 html_theme_options = {
     "external_links": [

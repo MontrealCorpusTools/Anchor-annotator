@@ -139,3 +139,5 @@ dmypy.json
 *.user
 
 anchor/_version.py
+
+*.pclprof

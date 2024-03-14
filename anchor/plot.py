@@ -237,6 +237,7 @@ class UtteranceClusterView(pg.PlotWidget):
     def clear_plot(self):
         self.legend_item.clear()
         self.scatter_item.clear()
+        self.getPlotItem().update()
 
     def update_point(self, sender, spots, ev: pg.GraphicsScene.mouseEvents.MouseClickEvent):
         spot = spots[0]
@@ -356,12 +357,20 @@ class UtteranceClusterView(pg.PlotWidget):
         self.scatter_item.setPen(pens)
 
 
+class TimeAxis(pg.AxisItem):
+    def tickStrings(self, values, scale, spacing):
+        strings = super().tickStrings(values, scale, spacing)
+        strings = [x.replace("-", "") for x in strings]
+        return strings
+
+
 class AudioPlotItem(pg.PlotItem):
     def __init__(self, top_point, bottom_point):
-        super().__init__()
+        super().__init__(axisItems={"bottom": TimeAxis("bottom")})
         self.settings = AnchorSettings()
         self.setDefaultPadding(0)
         self.setClipToView(True)
+
         self.getAxis("bottom").setPen(self.settings.value(self.settings.ACCENT_LIGHT_COLOR))
         self.getAxis("bottom").setTextPen(self.settings.value(self.settings.ACCENT_LIGHT_COLOR))
         self.getAxis("bottom").setTickFont(self.settings.small_font)
@@ -531,7 +540,7 @@ class UtteranceView(QtWidgets.QWidget):
             tier.refresh()
             tier_item = SpeakerTierItem(self.bottom_point, self.separator_point)
             tier_item.setRange(
-                xRange=[self.selection_model.min_time, self.selection_model.max_time]
+                xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
             )
             tier_item.addItem(tier)
             self.speaker_tier_items[key] = tier_item
@@ -571,19 +580,25 @@ class UtteranceView(QtWidgets.QWidget):
 
     def finalize_loading_spectrogram(self, results):
         stft, channel, begin, end, min_db, max_db = results
-        if begin != self.selection_model.min_time or end != self.selection_model.max_time:
+        if self.settings.right_to_left:
+            stft = np.flip(stft, 1)
+            begin, end = -end, -begin
+        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
             return
         self.audio_plot.spectrogram.setData(stft, channel, begin, end, min_db, max_db)
 
     def finalize_loading_pitch_track(self, results):
         pitch_track, voicing_track, channel, begin, end, min_f0, max_f0 = results
-        if begin != self.selection_model.min_time or end != self.selection_model.max_time:
+        if self.settings.right_to_left:
+            pitch_track = np.flip(pitch_track, 0)
+            begin, end = -end, -begin
+        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
             return
         if pitch_track is None:
             return
         x = np.linspace(
-            start=self.selection_model.min_time,
-            stop=self.selection_model.max_time,
+            start=self.selection_model.plot_min,
+            stop=self.selection_model.plot_max,
             num=pitch_track.shape[0],
         )
         self.audio_plot.pitch_track.hide()
@@ -593,10 +608,13 @@ class UtteranceView(QtWidgets.QWidget):
 
     def finalize_loading_auto_wave_form(self, results):
         y, begin, end, channel = results
-        if begin != self.selection_model.min_time or end != self.selection_model.max_time:
+        if self.settings.right_to_left:
+            y = np.flip(y, 0)
+            begin, end = -end, -begin
+        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
             return
         x = np.linspace(
-            start=self.selection_model.min_time, stop=self.selection_model.max_time, num=y.shape[0]
+            start=self.selection_model.plot_min, stop=self.selection_model.plot_max, num=y.shape[0]
         )
         # self.audio_plot.wave_form.hide()
         self.audio_plot.wave_form.setData(x=x, y=y)
@@ -691,7 +709,7 @@ class UtteranceView(QtWidgets.QWidget):
                 scroll_to = i
                 tier_height = self.speaker_tier_items[key].height()
             self.speaker_tier_items[key].setRange(
-                xRange=[self.selection_model.min_time, self.selection_model.max_time]
+                xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
             )
         if scroll_to is not None:
             self.tier_scroll_area.scrollContentsBy(0, scroll_to * tier_height)
@@ -750,7 +768,7 @@ class UtteranceView(QtWidgets.QWidget):
         )
         self.auto_waveform_worker.start()
         self.audio_plot_item.setRange(
-            xRange=[self.selection_model.min_time, self.selection_model.max_time]
+            xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
         )
         self.audio_plot.update_plot()
 
@@ -989,6 +1007,8 @@ class UtterancePGTextItem(pg.TextItem):
     ):
         self.anchor = pg.Point(anchor)
         self.rotateAxis = None
+        if selection_model.settings.right_to_left:
+            begin, end = -end, -begin
         self.begin = begin
         self.end = end
         self.selection_model = selection_model
@@ -1016,8 +1036,8 @@ class UtterancePGTextItem(pg.TextItem):
         self.top_point = top_point
         self.bottom_point = bottom_point
         self.per_tier_range = per_tier_range
-        self.view_min = self.selection_model.min_time
-        self.view_max = self.selection_model.max_time
+        self.view_min = self.selection_model.plot_min
+        self.view_max = self.selection_model.plot_max
         self.selection_model.viewChanged.connect(self.update_times)
 
     def update_times(self, begin, end):
@@ -1538,6 +1558,8 @@ class MfaRegion(pg.LinearRegionItem):
 
         self.item_min = self.item.begin
         self.item_max = self.item.end
+        if selection_model.settings.right_to_left:
+            self.item_min, self.item_max = -self.item_max, -self.item_min
         self.corpus_model = corpus_model
         self.dictionary_model = dictionary_model
         self.selection_model = selection_model
@@ -1598,16 +1620,16 @@ class MfaRegion(pg.LinearRegionItem):
                 QtCore.QPointF(self.item_min, 0),
                 angle=90,
                 initial=True,
-                view_min=self.selection_model.min_time,
-                view_max=self.selection_model.max_time,
+                view_min=self.selection_model.plot_min,
+                view_max=self.selection_model.plot_max,
                 **lineKwds,
             ),
             UtteranceLine(
                 QtCore.QPointF(self.item_max, 0),
                 angle=90,
                 initial=False,
-                view_min=self.selection_model.min_time,
-                view_max=self.selection_model.max_time,
+                view_min=self.selection_model.plot_min,
+                view_max=self.selection_model.plot_max,
                 **lineKwds,
             ),
         ]
@@ -1745,8 +1767,8 @@ class AlignmentRegion(MfaRegion):
         # br.setBottom(self.top_point-self.per_tier_range)
         br.setBottom(self.bottom_point + 0.01)
         try:
-            visible_begin = max(rng[0], self.selection_model.min_time)
-            visible_end = min(rng[1], self.selection_model.max_time)
+            visible_begin = max(rng[0], self.selection_model.plot_min)
+            visible_end = min(rng[1], self.selection_model.plot_max)
         except TypeError:
             return br
         visible_duration = visible_end - visible_begin
@@ -2088,11 +2110,11 @@ class UtteranceRegion(MfaRegion):
         self.select_self(deselect=deselect, reset=reset, focus=False)
         ev.accept()
 
-    def update_view_times(self, view_min, view_max):
-        self.lines[0].view_min = view_min
-        self.lines[0].view_max = view_max
-        self.lines[1].view_min = view_min
-        self.lines[1].view_max = view_max
+    def update_view_times(self):
+        self.lines[0].view_min = self.selection_model.plot_min
+        self.lines[0].view_max = self.selection_model.plot_max
+        self.lines[1].view_min = self.selection_model.plot_min
+        self.lines[1].view_max = self.selection_model.plot_max
         self.update()
 
     def boundingRect(self):
@@ -2313,7 +2335,7 @@ class SelectionArea(pg.LinearRegionItem):
         if (
             begin is None
             or end is None
-            or (begin == self.selection_model.min_time and end == self.selection_model.max_time)
+            or (begin == self.selection_model.plot_min and end == self.selection_model.plot_max)
         ):
             self.setVisible(False)
         else:
@@ -2397,11 +2419,11 @@ class AudioPlots(pg.GraphicsObject):
         if ev.button() != QtCore.Qt.MouseButton.LeftButton:
             ev.ignore()
             return
-        if self.selection_model.min_time is None:
+        if self.selection_model.plot_min is None:
             ev.ignore()
             return
-        min_time = max(min(ev.buttonDownPos().x(), ev.pos().x()), self.selection_model.min_time)
-        max_time = min(max(ev.buttonDownPos().x(), ev.pos().x()), self.selection_model.max_time)
+        min_time = max(min(ev.buttonDownPos().x(), ev.pos().x()), self.selection_model.plot_min)
+        max_time = min(max(ev.buttonDownPos().x(), ev.pos().x()), self.selection_model.plot_max)
         if ev.isStart():
             self.selection_area.setVisible(True)
         if ev.isFinish():
@@ -2459,10 +2481,10 @@ class AudioPlots(pg.GraphicsObject):
             or not os.path.exists(self.selection_model.current_file.sound_file.sound_file_path)
         ):
             return
-        self.rect.setLeft(self.selection_model.min_time)
-        self.rect.setRight(self.selection_model.max_time)
+        self.rect.setLeft(self.selection_model.plot_min)
+        self.rect.setRight(self.selection_model.plot_max)
         self._generate_picture()
-        self.update_play_line(self.selection_model.min_time)
+        self.update_play_line(self.selection_model.plot_min)
         self.selection_area.update_region()
         self.update()
 
@@ -2542,16 +2564,16 @@ class SpeakerTier(pg.GraphicsObject):
         self.top_point = self.textgrid_top_point - (speaker_tier_range * self.speaker_index)
         self.bottom_point = self.top_point - speaker_tier_range
         self.rect = QtCore.QRectF(
-            left=self.selection_model.min_time,
+            left=self.selection_model.plot_min,
             top=self.top_point,
-            width=self.selection_model.max_time - self.selection_model.min_time,
+            width=self.selection_model.plot_max - self.selection_model.plot_min,
             height=speaker_tier_range,
         )
         self.rect.setHeight(speaker_tier_range)
         self._generate_picture()
 
     def _generate_picture(self):
-        self.speaker_label.setPos(self.selection_model.min_time, self.top_point)
+        self.speaker_label.setPos(self.selection_model.plot_min, self.top_point)
         self.picture = QtGui.QPicture()
         painter = QtGui.QPainter(self.picture)
         painter.setPen(self.border)
@@ -2610,10 +2632,10 @@ class SpeakerTier(pg.GraphicsObject):
         self.other_intervals = []
 
     def refresh(self, *args):
-        if self.selection_model.min_time is None:
+        if self.selection_model.plot_min is None:
             return
-        self.rect.setLeft(self.selection_model.min_time)
-        self.rect.setRight(self.selection_model.max_time)
+        self.rect.setLeft(self.selection_model.plot_min)
+        self.rect.setRight(self.selection_model.plot_max)
         self._generate_picture()
         self.has_visible_utterances = False
         for u in self.utterances:
@@ -2682,12 +2704,20 @@ class SpeakerTier(pg.GraphicsObject):
         reg = self.sender()
         with QtCore.QSignalBlocker(reg):
             beg, end = reg.getRegion()
-            if beg < 0:
-                reg.setRegion([0, end])
-                return
-            if end > self.selection_model.current_file.duration:
-                reg.setRegion([beg, self.selection_model.current_file.duration])
-                return
+            if self.settings.right_to_left:
+                if end > 0:
+                    reg.setRegion([beg, 0])
+                    return
+                if -end > self.selection_model.current_file.duration:
+                    reg.setRegion([beg, self.selection_model.current_file.duration])
+                    return
+            else:
+                if beg < 0:
+                    reg.setRegion([0, end])
+                    return
+                if end > self.selection_model.current_file.duration:
+                    reg.setRegion([beg, self.selection_model.current_file.duration])
+                    return
             for r in self.visible_utterances.values():
                 if r == reg:
                     continue
@@ -2699,11 +2729,11 @@ class SpeakerTier(pg.GraphicsObject):
                     reg.setRegion([beg, other_begin])
                     break
             reg.text.begin, reg.text.end = reg.getRegion()
-            reg.text.update_times(self.selection_model.min_time, self.selection_model.max_time)
+            reg.text.update_times(self.selection_model.plot_min, self.selection_model.plot_max)
             if reg.normalized_text is not None:
                 reg.normalized_text.text.begin, reg.normalized_text.text.end = reg.getRegion()
                 reg.normalized_text.text.update_times(
-                    self.selection_model.min_time, self.selection_model.max_time
+                    self.selection_model.plot_min, self.selection_model.plot_max
                 )
         reg.select_self()
         reg.update()

@@ -372,7 +372,7 @@ class ClosestSpeakerThread(threading.Thread):
                             )
                             .filter(
                                 c.speaker_ivector_column.cosine_distance(u_ivector)
-                                < min(distance - 0.09, self.threshold),
+                                < min(distance - 0.05, self.threshold),
                                 # self.threshold,
                                 Speaker.id != s_id,
                             )
@@ -2000,25 +2000,24 @@ def file_utterances_function(
     stopped: typing.Optional[threading.Event] = None,
     **kwargs,
 ):
-    with Session() as session:
-        utterances = (
-            session.query(Utterance)
-            .options(
-                selectinload(Utterance.phone_intervals).options(
-                    joinedload(PhoneInterval.phone, innerjoin=True),
-                    joinedload(PhoneInterval.workflow, innerjoin=True),
-                ),
-                selectinload(Utterance.word_intervals).options(
-                    joinedload(WordInterval.word, innerjoin=True),
-                    joinedload(WordInterval.workflow, innerjoin=True),
-                ),
-                joinedload(Utterance.speaker, innerjoin=True),
-            )
-            .filter(Utterance.file_id == file_id)
-            .order_by(Utterance.begin)
-            .all()
+    utterances = (
+        Session.query(Utterance)
+        .options(
+            selectinload(Utterance.phone_intervals).options(
+                joinedload(PhoneInterval.phone, innerjoin=True),
+                joinedload(PhoneInterval.workflow, innerjoin=True),
+            ),
+            selectinload(Utterance.word_intervals).options(
+                joinedload(WordInterval.word, innerjoin=True),
+                joinedload(WordInterval.workflow, innerjoin=True),
+            ),
+            joinedload(Utterance.speaker, innerjoin=True),
         )
-        return utterances, file_id
+        .filter(Utterance.file_id == file_id)
+        .order_by(Utterance.begin)
+        .all()
+    )
+    return utterances, file_id
 
 
 def query_dictionary_function(
