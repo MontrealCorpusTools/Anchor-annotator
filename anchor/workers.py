@@ -19,7 +19,8 @@ import dataclassy
 import librosa
 import numpy as np
 import psycopg2.errors
-import resampy
+import scipy
+import scipy.signal
 import soundfile
 import sqlalchemy
 import tqdm
@@ -28,6 +29,7 @@ from _kalpy.feat import compute_pitch
 from _kalpy.ivector import Plda, ivector_normalize_length
 from _kalpy.matrix import DoubleVector, FloatVector
 from kalpy.feat.pitch import PitchComputer
+from line_profiler_pycharm import profile
 from montreal_forced_aligner import config
 from montreal_forced_aligner.alignment import PretrainedAligner
 from montreal_forced_aligner.config import IVECTOR_DIMENSION, XVECTOR_DIMENSION
@@ -3081,6 +3083,7 @@ class SpeakerTierWorker(FunctionWorker):  # pragma: no cover
         super().__init__("Generating speaker tier", *args)
         self.query_alignment = False
         self.session = None
+        self.file_id = None
 
     def set_params(self, file_id):
         with self.lock:
@@ -3090,21 +3093,31 @@ class SpeakerTierWorker(FunctionWorker):  # pragma: no cover
         if self.session is None:
             return
         self.stopped.clear()
-        with self.lock:
-            utterances = self.session.query(Utterance).options(
-                joinedload(Utterance.speaker, innerjoin=True),
+        with self.lock, self.session() as session:
+            show_phones = (
+                self.settings.value(self.settings.TIER_ALIGNED_PHONES_VISIBLE)
+                or self.settings.value(self.settings.TIER_TRANSCRIBED_PHONES_VISIBLE)
+                or self.settings.value(self.settings.TIER_REFERENCE_PHONES_VISIBLE)
             )
+            show_words = self.settings.value(
+                self.settings.TIER_ALIGNED_WORDS_VISIBLE
+            ) or self.settings.value(self.settings.TIER_TRANSCRIBED_WORDS_VISIBLE)
+            utterances = session.query(Utterance)
             if self.query_alignment:
-                utterances = utterances.options(
-                    selectinload(Utterance.phone_intervals).options(
-                        joinedload(PhoneInterval.phone, innerjoin=True),
-                        joinedload(PhoneInterval.workflow, innerjoin=True),
-                    ),
-                    selectinload(Utterance.word_intervals).options(
-                        joinedload(WordInterval.word, innerjoin=True),
-                        joinedload(WordInterval.workflow, innerjoin=True),
-                    ),
-                )
+                if show_phones:
+                    utterances = utterances.options(
+                        selectinload(Utterance.phone_intervals).options(
+                            joinedload(PhoneInterval.phone, innerjoin=True),
+                            joinedload(PhoneInterval.workflow, innerjoin=True),
+                        )
+                    )
+                if show_words:
+                    utterances = utterances.options(
+                        selectinload(Utterance.word_intervals).options(
+                            joinedload(WordInterval.word, innerjoin=True),
+                            joinedload(WordInterval.workflow, innerjoin=True),
+                        ),
+                    )
             utterances = utterances.filter(Utterance.file_id == self.file_id).order_by(
                 Utterance.begin
             )
@@ -3138,6 +3151,7 @@ class SpectrogramWorker(FunctionWorker):  # pragma: no cover
             self.end = end
             self.channel = channel
 
+    @profile
     def run(self):
         self.stopped.clear()
         dynamic_range = self.settings.value(self.settings.SPEC_DYNAMIC_RANGE)
@@ -3146,12 +3160,18 @@ class SpectrogramWorker(FunctionWorker):  # pragma: no cover
         window_size = self.settings.value(self.settings.SPEC_WINDOW_SIZE)
         pre_emph_coeff = self.settings.value(self.settings.SPEC_PREEMPH)
         max_freq = self.settings.value(self.settings.SPEC_MAX_FREQ)
+        if self.y.shape[0] == 0:
+            return
+        duration = self.y.shape[0] / self.sample_rate
+        if duration > 30:
+            return
         with self.lock:
-            if self.y.shape[0] == 0:
-                return
             max_sr = 2 * max_freq
             if self.sample_rate > max_sr:
-                self.y = resampy.resample(self.y, self.sample_rate, max_sr)
+                self.y = scipy.signal.resample(
+                    self.y, int(self.y.shape[0] * max_sr / self.sample_rate)
+                )
+                # self.y = resampy.resample(self.y, self.sample_rate, max_sr, filter='kaiser_fast')
                 self.sample_rate = max_sr
             self.y = librosa.effects.preemphasis(self.y, coef=pre_emph_coeff)
             if self.stopped.is_set():
@@ -3225,12 +3245,18 @@ class PitchWorker(FunctionWorker):  # pragma: no cover
                 max_f0=self.max_f0,
                 penalty_factor=self.penalty_factor,
                 delta_pitch=self.delta_pitch,
+                add_pov_feature=True,
+                add_normalized_log_pitch=False,
+                add_delta_pitch=False,
+                add_raw_log_pitch=True,
             )
 
     def run(self):
         self.stopped.clear()
         with self.lock:
             if self.y.shape[0] == 0:
+                return
+            if self.end - self.begin < 0.1:
                 return
             pitch_track = compute_pitch(
                 self.y, self.pitch_computer.extraction_opts, self.pitch_computer.process_opts

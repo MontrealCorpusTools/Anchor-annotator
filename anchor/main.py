@@ -33,6 +33,8 @@ from anchor.models import (
     CorpusSelectionModel,
     DiarizationModel,
     DictionaryTableModel,
+    FileSelectionModel,
+    FileUtterancesModel,
     OovModel,
     SpeakerModel,
 )
@@ -489,8 +491,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dictionary_model = DictionaryTableModel(self)
         self.oov_model = OovModel(self)
         self.corpus_model = CorpusModel(self)
+        self.file_utterances_model = FileUtterancesModel(self)
         self.speaker_model = SpeakerModel(self)
         self.diarization_model = DiarizationModel(self)
+
+        self.file_utterances_model.set_corpus_model(self.corpus_model)
 
         self.corpus_model.databaseSynced.connect(self.handle_changes_synced)
         self.corpus_model.runFunction.connect(self.execute_runnable)
@@ -510,11 +515,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.diarization_model.set_corpus_model(self.corpus_model)
         self.oov_model.set_corpus_model(self.corpus_model)
         self.selection_model = CorpusSelectionModel(self.corpus_model)
+        self.file_selection_model = FileSelectionModel(self.file_utterances_model)
         self.ui.utteranceListWidget.set_models(
             self.corpus_model, self.selection_model, self.speaker_model
         )
         self.ui.utteranceDetailWidget.set_models(
-            self.corpus_model, self.selection_model, self.dictionary_model
+            self.corpus_model,
+            self.file_utterances_model,
+            self.file_selection_model,
+            self.dictionary_model,
         )
         self.ui.speakerWidget.set_models(
             self.corpus_model, self.selection_model, self.speaker_model
@@ -526,16 +535,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.dictionaryWidget.set_models(self.dictionary_model)
         self.ui.diarizationWidget.set_models(self.diarization_model, self.selection_model)
         self.ui.oovWidget.set_models(self.oov_model)
-        self.selection_model.currentUtteranceChanged.connect(self.change_utterance)
-        self.selection_model.fileChanged.connect(self.change_file)
+        self.file_selection_model.currentUtteranceChanged.connect(self.change_utterance)
+        self.selection_model.fileViewRequested.connect(self.file_selection_model.set_current_file)
+        self.file_selection_model.fileChanged.connect(self.change_file)
         self.selection_model.fileAboutToChange.connect(self.check_media_stop)
-        self.media_player.set_corpus_models(self.corpus_model, self.selection_model)
+        self.media_player.set_models(self.file_selection_model)
         self.corpus_model.addCommand.connect(self.update_corpus_stack)
+        self.file_utterances_model.addCommand.connect(self.update_corpus_stack)
+        self.file_selection_model.selectionChanged.connect(self.sync_selected_utterances)
 
         self.g2p_model = None
         self.acoustic_model = None
         self.language_model = None
         self.ivector_extractor = None
+
+    def sync_selected_utterances(self):
+        self.selection_model.update_selected_utterances(
+            self.file_selection_model.selected_utterances()
+        )
 
     def check_media_stop(self):
         if self.ui.playAct.isChecked():
@@ -562,16 +579,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dictionary_undo_stack.push(command)
 
     def delete_utterances(self):
-        utts = self.selection_model.selectedUtterances()
-        self.corpus_model.delete_utterances(utts)
+        utts = self.file_selection_model.selected_utterances()
+        self.file_utterances_model.delete_utterances(utts)
 
     def split_utterances(self):
-        utts = self.selection_model.selectedUtterances()
-        self.corpus_model.split_utterances(utts)
+        utts = self.file_selection_model.selected_utterances()
+        if len(utts) != 1:
+            return
+        self.file_utterances_model.split_utterances(utts[0])
 
     def merge_utterances(self):
-        utts = self.selection_model.selectedUtterances()
-        self.corpus_model.merge_utterances(utts)
+        utts = self.file_selection_model.selected_utterances()
+        self.file_utterances_model.merge_utterances(utts)
 
     def check_actions(self):
         self.ui.lockEditAct.setEnabled(True)
@@ -635,7 +654,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def change_file(self):
         self.ui.playAct.setChecked(False)
-        if self.selection_model.current_file is None:
+        if self.file_utterances_model.file is None:
             self.ui.playAct.setEnabled(False)
             self.ui.panLeftAct.setEnabled(False)
             self.ui.panRightAct.setEnabled(False)
@@ -655,14 +674,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.channel_select.addItem("Channel 0", userData=0)
                 self.channel_select.setEnabled(False)
                 if (
-                    self.selection_model.current_file is not None
-                    and self.selection_model.current_file.num_channels > 1
+                    self.file_utterances_model.file is not None
+                    and self.file_utterances_model.file.num_channels > 1
                 ):
                     self.channel_select.addItem("Channel 1", userData=1)
                     self.channel_select.setEnabled(True)
 
     def change_utterance(self):
-        selection = self.selection_model.selectedUtterances()
+        selection = self.file_selection_model.selected_utterances()
         self.ui.deleteUtterancesAct.setEnabled(False)
         self.ui.splitUtterancesAct.setEnabled(False)
         self.ui.alignUtteranceAct.setEnabled(False)
@@ -670,8 +689,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selection and self.selection_model.current_utterance_id is None:
             return
 
-        self.ui.splitUtterancesAct.setEnabled(True)
         if len(selection) == 1 or self.selection_model.current_utterance_id is not None:
+            self.ui.splitUtterancesAct.setEnabled(True)
             if self.corpus_model.acoustic_model is not None and self.corpus_model.has_dictionary:
                 self.ui.alignUtteranceAct.setEnabled(True)
                 self.ui.segmentUtteranceAct.setEnabled(True)
@@ -684,7 +703,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         for worker in self.workers:
             worker.stopped.set()
-        self.ui.utteranceDetailWidget.plot_widget.clean_up_for_close()
+        self.file_selection_model.clean_up_for_close()
+        self.file_utterances_model.clean_up_for_close()
         self.settings.setValue(
             AnchorSettings.UTTERANCES_VISIBLE, self.ui.utteranceDockWidget.isVisible()
         )
@@ -773,9 +793,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.cluster_utterances_action.triggered.connect(self.begin_cluster_utterances)
         self.ui.classify_speakers_action.triggered.connect(self.begin_classify_speakers)
         self.selection_model.selectionAudioChanged.connect(self.enable_zoom)
-        self.ui.zoomInAct.triggered.connect(self.selection_model.zoom_in)
-        self.ui.zoomToSelectionAct.triggered.connect(self.selection_model.zoom_to_selection)
-        self.ui.zoomOutAct.triggered.connect(self.selection_model.zoom_out)
+        self.ui.zoomInAct.triggered.connect(self.file_selection_model.zoom_in)
+        self.ui.zoomToSelectionAct.triggered.connect(self.file_selection_model.zoom_to_selection)
+        self.ui.zoomOutAct.triggered.connect(self.file_selection_model.zoom_out)
         self.ui.panLeftAct.triggered.connect(self.ui.utteranceDetailWidget.pan_left)
         self.ui.panRightAct.triggered.connect(self.ui.utteranceDetailWidget.pan_right)
         self.ui.mergeUtterancesAct.triggered.connect(self.merge_utterances)
@@ -807,7 +827,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.toolBar.addWidget(self.volume_slider)
         self.ui.toolBar.addWidget(self.channel_select)
         self.ui.toolBar.addWidget(w2)
-        self.channel_select.currentIndexChanged.connect(self.selection_model.set_current_channel)
+        self.channel_select.currentIndexChanged.connect(
+            self.file_selection_model.set_current_channel
+        )
         self.ui.changeVolumeAct.triggered.connect(self.media_player.set_volume)
         self.ui.addSpeakerAct.triggered.connect(self.add_new_speaker)
         self.ui.speakerWidget.tool_bar.addAction(self.ui.addSpeakerAct)
@@ -1209,6 +1231,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def close_corpus(self):
         self.set_application_state("unloaded")
         self.selection_model.clearSelection()
+        self.file_selection_model.clearSelection()
         if self.corpus_model.corpus is not None:
             self.corpus_model.session.close()
         self.corpus_model.setCorpus(None)
@@ -1517,8 +1540,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def finalize_segmentation(self, data):
         original_utterance_id, split_data = data
-        self.corpus_model.split_vad_utterance(original_utterance_id, split_data)
-        self.corpus_model.update_data()
+        self.file_utterances_model.split_vad_utterance(original_utterance_id, split_data)
         self.ensure_utterance_panel_visible()
 
     def finalize_saving(self):

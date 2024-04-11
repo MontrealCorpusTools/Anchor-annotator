@@ -20,11 +20,12 @@ Installation
 
        +++
 
-       .. button-link:: https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html
-          :color: primary
+       .. button-ref:: installation
           :expand:
+          :color: primary
+          :ref-type: doc
 
-          Install Conda
+          To the installation guide
 
 
     .. grid-item-card:: Running anchor
@@ -34,6 +35,14 @@ Installation
 
           conda activate anchor
           mfa anchor
+
+       +++
+
+       .. button-ref:: user_guide
+          :expand:
+          :color: primary
+
+          User guide
 
 
     .. grid-item-card:: First steps

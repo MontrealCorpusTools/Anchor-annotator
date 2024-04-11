@@ -6,7 +6,7 @@ import typing
 import pynini.lib
 import sqlalchemy
 from montreal_forced_aligner.data import WordType
-from montreal_forced_aligner.db import File, Pronunciation, Speaker, Utterance, Word, bulk_update
+from montreal_forced_aligner.db import File, Pronunciation, Speaker, Utterance, Word
 from PySide6 import QtCore, QtGui
 from sqlalchemy.orm import make_transient
 
@@ -15,6 +15,7 @@ if typing.TYPE_CHECKING:
         CorpusModel,
         DiarizationModel,
         DictionaryTableModel,
+        FileUtterancesModel,
         SpeakerModel,
         TextFilterQuery,
     )
@@ -38,9 +39,8 @@ class CorpusCommand(QtGui.QUndoCommand):
 
     def redo(self) -> None:
         with self.corpus_model.edit_lock:
-            with self.corpus_model.session() as session:
-                self._redo(session)
-                session.commit()
+            self._redo(self.corpus_model.session)
+            self.corpus_model.session.commit()
             # while True:
             #    try:
             #        with self.corpus_model.session.begin_nested():
@@ -53,9 +53,8 @@ class CorpusCommand(QtGui.QUndoCommand):
 
     def undo(self) -> None:
         with self.corpus_model.edit_lock:
-            with self.corpus_model.session() as session:
-                self._undo(session)
-                session.commit()
+            self._undo(self.corpus_model.session)
+            self.corpus_model.session.commit()
             # while True:
             #    try:
             #        with self.corpus_model.session.begin_nested():
@@ -64,6 +63,12 @@ class CorpusCommand(QtGui.QUndoCommand):
             #    except psycopg2.errors.DeadlockDetected:
             #        pass
         self.update_data()
+
+
+class FileCommand(CorpusCommand):
+    def __init__(self, file_model: FileUtterancesModel):
+        super().__init__(file_model.corpus_model)
+        self.file_model = file_model
 
 
 class DictionaryCommand(QtGui.QUndoCommand):
@@ -127,9 +132,9 @@ class SpeakerCommand(QtGui.QUndoCommand):
         self.update_data()
 
 
-class DeleteUtteranceCommand(CorpusCommand):
-    def __init__(self, deleted_utterances: list[Utterance], corpus_model: CorpusModel):
-        super().__init__(corpus_model)
+class DeleteUtteranceCommand(FileCommand):
+    def __init__(self, deleted_utterances: list[Utterance], file_model: FileUtterancesModel):
+        super().__init__(file_model)
         self.deleted_utterances = deleted_utterances
         self.resets_tier = True
         self.channels = [
@@ -145,11 +150,26 @@ class DeleteUtteranceCommand(CorpusCommand):
 
     def _undo(self, session) -> None:
         for i, utt in enumerate(self.deleted_utterances):
+            try:
+                del utt.duration
+            except AttributeError:
+                pass
+            try:
+                del utt.kaldi_id
+            except AttributeError:
+                pass
             make_transient(utt)
             for x in utt.phone_intervals:
-                x.duration = None
+                try:
+                    del x.duration
+                except AttributeError:
+                    pass
                 make_transient(x)
             for x in utt.word_intervals:
+                try:
+                    del x.duration
+                except AttributeError:
+                    pass
                 make_transient(x)
             if utt.channel is None:
                 utt.channel = self.channels[i]
@@ -158,95 +178,112 @@ class DeleteUtteranceCommand(CorpusCommand):
     def redo(self) -> None:
         super().redo()
         self.corpus_model.delete_table_utterances(self.deleted_utterances)
+        self.file_model.delete_table_utterances(self.deleted_utterances)
         self.corpus_model.changeCommandFired.emit()
 
     def undo(self) -> None:
         super().undo()
         self.corpus_model.add_table_utterances(self.deleted_utterances)
+        self.file_model.add_table_utterances(self.deleted_utterances)
         self.corpus_model.changeCommandFired.emit()
 
 
-class SplitUtteranceCommand(CorpusCommand):
+class SplitUtteranceCommand(FileCommand):
     def __init__(
         self,
-        split_utterances: list[list[Utterance, ...]],
-        corpus_model: CorpusModel,
+        merged_utterance: Utterance,
+        split_utterances: list[Utterance],
+        file_model: FileUtterancesModel,
         update_table: bool = True,
     ):
-        super().__init__(corpus_model)
+        super().__init__(file_model)
+        self.merged_utterance = merged_utterance
         self.split_utterances = split_utterances
         self.resets_tier = True
         self.update_table = update_table
-        self.channels = [
-            x[0].channel if x[0].channel is not None else 0 for x in self.split_utterances
-        ]
+        self.channels = [x.channel if x.channel is not None else 0 for x in self.split_utterances]
         self.setText(
             QtCore.QCoreApplication.translate("SplitUtteranceCommand", "Split utterances")
         )
 
     def _redo(self, session) -> None:
-        for i, splits in enumerate(self.split_utterances):
-            old_utt = splits[0]
-            split_utts = splits[1:]
-            session.delete(old_utt)
-            for u in split_utts:
-                if u.id is not None:
-                    make_transient(u)
-                for x in u.phone_intervals:
-                    x.duration = None
-                    make_transient(x)
-                for x in u.word_intervals:
-                    make_transient(x)
-                if u.channel is None:
-                    u.channel = self.channels[i]
-                u.duration = None
-                u.kaldi_id = None
-                session.add(u)
+        session.delete(self.merged_utterance)
+        for u in self.split_utterances:
+            if u.id is not None:
+                make_transient(u)
+            for x in u.phone_intervals:
+                try:
+                    del x.duration
+                except AttributeError:
+                    pass
+                make_transient(x)
+            for x in u.word_intervals:
+                try:
+                    del x.duration
+                except AttributeError:
+                    pass
+                make_transient(x)
+            if u.channel is None:
+                u.channel = self.merged_utterance.channel
+            try:
+                del u.duration
+            except AttributeError:
+                pass
+            try:
+                del u.kaldi_id
+            except AttributeError:
+                pass
+            session.add(u)
 
     def _undo(self, session) -> None:
-        for i, splits in enumerate(self.split_utterances):
-            old_utt = splits[0]
-            split_utts = splits[1:]
-            if old_utt.channel is None:
-                old_utt.channel = self.channels[i]
-            old_utt.duration = None
-            old_utt.kaldi_id = None
-            make_transient(old_utt)
-            for x in old_utt.phone_intervals:
-                x.duration = None
-                make_transient(x)
-            for x in old_utt.word_intervals:
-                make_transient(x)
-            session.add(old_utt)
-            for u in split_utts:
-                session.delete(u)
+        if self.merged_utterance.channel is None:
+            self.merged_utterance.channel = self.split_utterances[0].channel
+        try:
+            del self.merged_utterance.duration
+        except AttributeError:
+            pass
+        try:
+            del self.merged_utterance.kaldi_id
+        except AttributeError:
+            pass
+        make_transient(self.merged_utterance)
+        for x in self.merged_utterance.phone_intervals:
+            try:
+                del x.duration
+            except AttributeError:
+                pass
+            make_transient(x)
+        for x in self.merged_utterance.word_intervals:
+            try:
+                del x.duration
+            except AttributeError:
+                pass
+            make_transient(x)
+        session.add(self.merged_utterance)
+        for u in self.split_utterances:
+            session.delete(u)
 
     def redo(self) -> None:
         super().redo()
-        for splits in self.split_utterances:
-            old_utt = splits[0]
-            split_utts = splits[1:]
-            if self.update_table:
-                self.corpus_model.split_table_utterances(old_utt, split_utts)
+        self.corpus_model.split_table_utterances(self.merged_utterance, self.split_utterances)
+        self.file_model.split_table_utterances(self.merged_utterance, self.split_utterances)
         self.corpus_model.changeCommandFired.emit()
 
     def undo(self) -> None:
         super().undo()
-        for splits in self.split_utterances:
-            old_utt = splits[0]
-            split_utts = splits[1:]
-            self.corpus_model.merge_table_utterances(old_utt, split_utts)
+        self.corpus_model.merge_table_utterances(self.merged_utterance, self.split_utterances)
+        self.file_model.merge_table_utterances(self.merged_utterance, self.split_utterances)
         self.corpus_model.changeCommandFired.emit()
 
 
-class MergeUtteranceCommand(CorpusCommand):
+class MergeUtteranceCommand(FileCommand):
     def __init__(
         self,
         unmerged_utterances: list[Utterance],
         merged_utterance: Utterance,
-        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
     ):
-        super().__init__(corpus_model)
+        super().__init__(file_model)
         self.unmerged_utterances = unmerged_utterances
         self.merged_utterance = merged_utterance
         self.resets_tier = True
@@ -264,7 +301,6 @@ class MergeUtteranceCommand(CorpusCommand):
         if self.merged_utterance.channel is None:
             self.merged_utterance.channel = self.channel
         self.merged_utterance.kaldi_id = None
-        self.merged_utterance.duration = None
         session.add(self.merged_utterance)
 
     def _undo(self, session) -> None:
@@ -280,17 +316,18 @@ class MergeUtteranceCommand(CorpusCommand):
             old_utt.duration = None
             old_utt.kaldi_id = None
             session.add(old_utt)
-        # session.refresh(self.merged_utterance)
         session.delete(self.merged_utterance)
 
     def redo(self) -> None:
         super().redo()
         self.corpus_model.merge_table_utterances(self.merged_utterance, self.unmerged_utterances)
+        self.file_model.merge_table_utterances(self.merged_utterance, self.unmerged_utterances)
         self.corpus_model.changeCommandFired.emit()
 
     def undo(self) -> None:
         super().undo()
         self.corpus_model.split_table_utterances(self.merged_utterance, self.unmerged_utterances)
+        self.file_model.split_table_utterances(self.merged_utterance, self.unmerged_utterances)
         self.corpus_model.changeCommandFired.emit()
 
 
@@ -350,11 +387,10 @@ class MergeSpeakersCommand(CorpusCommand):
         ).update({Speaker.modified: True})
 
 
-class CreateUtteranceCommand(CorpusCommand):
-    def __init__(self, new_utterance: Utterance, corpus_model: CorpusModel):
-        super().__init__(corpus_model)
+class CreateUtteranceCommand(FileCommand):
+    def __init__(self, new_utterance: Utterance, file_model: FileUtterancesModel):
+        super().__init__(file_model)
         self.new_utterance = new_utterance
-        self.resets_tier = True
         self.channel = self.new_utterance.channel
         if self.channel is None:
             self.channel = 0
@@ -366,6 +402,14 @@ class CreateUtteranceCommand(CorpusCommand):
         make_transient(self.new_utterance)
         if self.new_utterance.channel is None:
             self.new_utterance.channel = self.channel
+        try:
+            del self.new_utterance.duration
+        except AttributeError:
+            pass
+        try:
+            del self.new_utterance.kaldi_id
+        except AttributeError:
+            pass
         session.add(self.new_utterance)
 
     def _undo(self, session) -> None:
@@ -377,18 +421,22 @@ class CreateUtteranceCommand(CorpusCommand):
     def redo(self) -> None:
         super().redo()
         self.corpus_model.add_table_utterances([self.new_utterance])
+        self.file_model.add_table_utterances([self.new_utterance])
         self.corpus_model.changeCommandFired.emit()
 
     def undo(self) -> None:
         super().undo()
         self.corpus_model.delete_table_utterances([self.new_utterance])
+        self.file_model.delete_table_utterances([self.new_utterance])
         self.corpus_model.changeCommandFired.emit()
 
 
-class UpdateUtteranceTimesCommand(CorpusCommand):
-    def __init__(self, utterance: Utterance, begin: float, end: float, corpus_model: CorpusModel):
-        super().__init__(corpus_model)
-        self.utterance_id = utterance.id
+class UpdateUtteranceTimesCommand(FileCommand):
+    def __init__(
+        self, utterance: Utterance, begin: float, end: float, file_model: FileUtterancesModel
+    ):
+        super().__init__(file_model)
+        self.utterance = utterance
         self.new_begin = begin
         self.old_begin = utterance.begin
         self.new_end = end
@@ -400,37 +448,39 @@ class UpdateUtteranceTimesCommand(CorpusCommand):
         )
 
     def _redo(self, session) -> None:
-        session.query(Utterance).filter(Utterance.id == self.utterance_id).update(
-            {
-                Utterance.begin: self.new_begin,
-                Utterance.end: self.new_end,
-                Utterance.xvector: None,
-                Utterance.ivector: None,
-                Utterance.features: None,
-            }
-        )
+        self.utterance.begin = self.new_begin
+        self.utterance.end = self.new_end
+        self.utterance.xvector = None
+        self.utterance.ivector = None
+        self.utterance.features = None
+        try:
+            del self.utterance.duration
+        except AttributeError:
+            pass
+        session.merge(self.utterance)
 
     def _undo(self, session) -> None:
-        session.query(Utterance).filter(Utterance.id == self.utterance_id).update(
-            {
-                Utterance.begin: self.old_begin,
-                Utterance.end: self.old_end,
-                Utterance.xvector: None,
-                Utterance.ivector: None,
-                Utterance.features: None,
-            }
-        )
+        self.utterance.begin = self.old_begin
+        self.utterance.end = self.old_end
+        self.utterance.xvector = None
+        self.utterance.ivector = None
+        self.utterance.features = None
+        try:
+            del self.utterance.duration
+        except AttributeError:
+            pass
+        session.merge(self.utterance)
 
     def update_data(self):
         super().update_data()
         self.corpus_model.changeCommandFired.emit()
-        self.corpus_model.update_utterance_table_row(self.utterance_id)
+        self.corpus_model.update_utterance_table_row(self.utterance)
 
 
-class UpdateUtteranceTextCommand(CorpusCommand):
-    def __init__(self, utterance: Utterance, new_text: str, corpus_model: CorpusModel):
-        super().__init__(corpus_model)
-        self.utterance_id = utterance.id
+class UpdateUtteranceTextCommand(FileCommand):
+    def __init__(self, utterance: Utterance, new_text: str, file_model: FileUtterancesModel):
+        super().__init__(file_model)
+        self.utterance = utterance
         self.speaker_id = utterance.speaker_id
         self.old_text = utterance.text
         self.new_text = new_text
@@ -445,40 +495,36 @@ class UpdateUtteranceTextCommand(CorpusCommand):
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        session.query(Utterance).filter(Utterance.id == self.utterance_id).update(
-            {
-                Utterance.text: self.new_text,
-                Utterance.normalized_text: self.new_text,  # FIXME: Update this
-                Utterance.oovs: " ".join(oovs),
-                Utterance.ignored: not self.new_text,
-            }
-        )
+        try:
+            del self.utterance.duration
+        except AttributeError:
+            pass
+        self.utterance.text = self.new_text
+        self.utterance.normalized_text = self.new_text  # FIXME: Update this
+        self.utterance.oovs = " ".join(oovs)
+        self.utterance.ignored = not self.new_text
+        session.merge(self.utterance)
 
     def _undo(self, session) -> None:
         oovs = set()
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        session.query(Utterance).filter(Utterance.id == self.utterance_id).update(
-            {
-                Utterance.text: self.old_text,
-                Utterance.oovs: " ".join(oovs),
-                Utterance.ignored: not self.old_text,
-            }
-        )
-
-    def update_data(self):
-        super().update_data()
         try:
-            self.corpus_model.update_utterance_table_row(self.utterance_id)
-        except KeyError:
+            del self.utterance.duration
+        except AttributeError:
             pass
+        self.utterance.text = self.old_text
+        self.utterance.normalized_text = self.old_text  # FIXME: Update this
+        self.utterance.oovs = " ".join(oovs)
+        self.utterance.ignored = not self.old_text
+        session.merge(self.utterance)
 
     def id(self) -> int:
         return 1
 
     def mergeWith(self, other: UpdateUtteranceTextCommand) -> bool:
-        if other.id() != self.id() or other.utterance_id != self.utterance_id:
+        if other.id() != self.id() or other.utterance.id != self.utterance.id:
             return False
         self.new_text = other.new_text
         return True
@@ -627,16 +673,17 @@ class UpdateSpeakerCommand(SpeakerCommand):
         )
 
 
-class UpdateUtteranceSpeakerCommand(CorpusCommand):
+class UpdateUtteranceSpeakerCommand(FileCommand):
     def __init__(
         self,
         utterances: typing.Union[Utterance, typing.List[Utterance]],
         new_speaker: typing.Union[Speaker, int],
-        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
     ):
-        super().__init__(corpus_model)
+        super().__init__(file_model)
         if not isinstance(utterances, list):
             utterances = [utterances]
+        self.utterances = utterances
         self.utterance_ids = [x.id for x in utterances]
         self.file_ids = set([x.file_id for x in utterances])
         self.old_speaker_ids = [x.speaker_id for x in utterances]
@@ -644,7 +691,6 @@ class UpdateUtteranceSpeakerCommand(CorpusCommand):
             self.new_speaker_id = new_speaker
         else:
             self.new_speaker_id = new_speaker.id
-        self.resets_tier = True
         self.setText(
             QtCore.QCoreApplication.translate(
                 "UpdateUtteranceSpeakerCommand", "Update utterance speaker"
@@ -673,18 +719,15 @@ class UpdateUtteranceSpeakerCommand(CorpusCommand):
                 )
             )
             session.flush()
-        session.query(Utterance).filter(Utterance.id.in_(self.utterance_ids)).update(
-            {Utterance.speaker_id: self.new_speaker_id}
-        )
+        for u in self.utterances:
+            u.speaker_id = self.new_speaker_id
         session.query(Speaker).filter(
             Speaker.id.in_(self.old_speaker_ids + [self.new_speaker_id])
         ).update({Speaker.modified: True})
 
     def _undo(self, session) -> None:
-        update_mappings = []
-        for i, u_id in enumerate(self.utterance_ids):
-            update_mappings.append({"id": u_id, "speaker_id": self.old_speaker_ids[i]})
-        bulk_update(self.corpus_model.session, Utterance, update_mappings)
+        for i, u in enumerate(self.utterances):
+            u.speaker_id = self.old_speaker_ids[i]
         session.query(Speaker).filter(
             Speaker.id.in_(self.old_speaker_ids + [self.new_speaker_id])
         ).update({Speaker.modified: True})
@@ -692,6 +735,8 @@ class UpdateUtteranceSpeakerCommand(CorpusCommand):
     def update_data(self):
         super().update_data()
         self.corpus_model.set_file_modified(self.file_ids)
+        self.corpus_model.change_speaker_table_utterances(self.utterances)
+        self.file_model.change_speaker_table_utterances(self.utterances)
         self.corpus_model.changeCommandFired.emit()
         self.corpus_model.update_data()
         self.corpus_model.runFunction.emit(

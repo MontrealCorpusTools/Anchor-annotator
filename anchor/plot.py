@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import os.path
 import re
@@ -10,6 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
 from Bio import pairwise2
+from line_profiler_pycharm import profile
 from montreal_forced_aligner.data import CtmInterval
 from montreal_forced_aligner.db import Speaker, Utterance
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -19,6 +21,8 @@ from anchor.models import (
     CorpusModel,
     CorpusSelectionModel,
     DictionaryTableModel,
+    FileSelectionModel,
+    FileUtterancesModel,
     SpeakerModel,
     TextFilterQuery,
 )
@@ -408,6 +412,31 @@ class SpeakerTierItem(pg.PlotItem):
         self.setMenuEnabled(False)
         self.hideButtons()
 
+    def contextMenuEvent(self, event: QtWidgets.QGraphicsSceneContextMenuEvent):
+        vb = self.getViewBox()
+        item = self.items[0]
+        x = vb.mapFromItemToView(self, event.pos()).x()
+        begin = max(x - 0.5, 0)
+        end = min(x + 0.5, item.selection_model.model().file.duration)
+        for x in item.visible_utterances.values():
+            if begin >= x.item_min and end <= x.item_max:
+                event.accept()
+                return
+            if begin < x.item_max and begin > x.item_max:
+                begin = x.item_max
+            if end > x.item_min and end < x.item_min:
+                end = x.item_min
+                break
+        if end - begin > 0.001:
+            menu = QtWidgets.QMenu()
+
+            a = QtGui.QAction(menu)
+            a.setText("Create utterance")
+            a.triggered.connect(functools.partial(item.create_utterance, begin=begin, end=end))
+            menu.addAction(a)
+            menu.setStyleSheet(item.settings.menu_style_sheet)
+            menu.exec_(event.screenPos())
+
 
 class UtteranceView(QtWidgets.QWidget):
     undoRequested = QtCore.Signal()
@@ -418,23 +447,15 @@ class UtteranceView(QtWidgets.QWidget):
         super().__init__(*args)
         self.settings = AnchorSettings()
         self.corpus_model: typing.Optional[CorpusModel] = None
+        self.file_model: typing.Optional[FileUtterancesModel] = None
         self.dictionary_model: typing.Optional[DictionaryTableModel] = None
-        self.selection_model: typing.Optional[CorpusSelectionModel] = None
+        self.selection_model: typing.Optional[FileSelectionModel] = None
         layout = QtWidgets.QVBoxLayout()
         self.bottom_point = 0
         self.top_point = 8
         self.height = self.top_point - self.bottom_point
         self.separator_point = (self.height / 2) + self.bottom_point
-        self.waveform_worker = workers.WaveformWorker()
-        self.auto_waveform_worker = workers.AutoWaveformWorker()
-        self.spectrogram_worker = workers.SpectrogramWorker()
-        self.pitch_track_worker = workers.PitchWorker()
-        self.speaker_tier_worker = workers.SpeakerTierWorker()
-        self.waveform_worker.signals.result.connect(self.finalize_loading_wave_form)
-        self.auto_waveform_worker.signals.result.connect(self.finalize_loading_auto_wave_form)
-        self.spectrogram_worker.signals.result.connect(self.finalize_loading_spectrogram)
-        self.pitch_track_worker.signals.result.connect(self.finalize_loading_pitch_track)
-        self.speaker_tier_worker.signals.result.connect(self.finalize_loading_utterances)
+
         # self.break_line.setZValue(30)
         self.audio_layout = pg.GraphicsLayoutWidget()
         self.audio_layout.centralWidget.layout.setContentsMargins(0, 0, 0, 0)
@@ -454,7 +475,9 @@ class UtteranceView(QtWidgets.QWidget):
         self.speaker_tier_layout.centralWidget.layout.setContentsMargins(0, 0, 0, 0)
         self.speaker_tier_layout.centralWidget.layout.setSpacing(0)
         self.speaker_tiers: dict[SpeakerTier] = {}
+        self.speaker_tier_items = {}
         self.search_term = None
+        self.default_speaker_id = None
         self.extra_tiers = {}
         self.tier_scroll_area = QtWidgets.QScrollArea()
         self.audio_scroll_area = QtWidgets.QScrollArea()
@@ -476,22 +499,16 @@ class UtteranceView(QtWidgets.QWidget):
         scroll_layout.setSpacing(0)
         self.setLayout(layout)
 
-    def clean_up_for_close(self):
-        self.spectrogram_worker.stop()
-        self.pitch_track_worker.stop()
-        self.waveform_worker.stop()
-        self.auto_waveform_worker.stop()
-        self.speaker_tier_worker.stop()
-
     def set_models(
         self,
         corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
+        file_model: FileUtterancesModel,
+        selection_model: FileSelectionModel,
         dictionary_model: DictionaryTableModel,
     ):
         self.corpus_model = corpus_model
+        self.file_model = file_model
         self.corpus_model.corpusLoaded.connect(self.set_extra_tiers)
-        self.corpus_model.refreshTiers.connect(self.set_up_new_file)
         self.selection_model = selection_model
         self.dictionary_model = dictionary_model
         for t in self.speaker_tiers.values():
@@ -499,55 +516,61 @@ class UtteranceView(QtWidgets.QWidget):
         self.audio_plot.set_models(self.selection_model)
         self.selection_model.viewChanged.connect(self.update_plot)
         # self.corpus_model.utteranceTextUpdated.connect(self.refresh_utterance_text)
-        self.selection_model.fileChanged.connect(self.set_up_new_file)
-        self.selection_model.channelChanged.connect(self.update_channel)
         self.selection_model.resetView.connect(self.reset_plot)
+        self.file_model.utterancesReady.connect(self.finalize_loading_utterances)
+        self.selection_model.spectrogramReady.connect(self.finalize_loading_spectrogram)
+        self.selection_model.pitchTrackReady.connect(self.finalize_loading_pitch_track)
+        self.selection_model.waveformReady.connect(self.finalize_loading_auto_wave_form)
+        self.selection_model.speakerRequested.connect(self.set_default_speaker)
+        self.file_model.selectionRequested.connect(self.finalize_loading_utterances)
 
-    def finalize_loading_utterances(self, results):
-        utterances, file_id = results
-        if (
-            self.selection_model.current_file is None
-            or file_id != self.selection_model.current_file.id
-        ):
+    def finalize_loading_utterances(self):
+        if self.file_model.file is None:
             return
+        scroll_to = None
+
         self.speaker_tiers = {}
         self.speaker_tier_items = {}
         self.speaker_tier_layout.clear()
         available_speakers = {}
-        for u in utterances:
-            if u.speaker_id not in self.speaker_tiers:
-                speaker_name = self.corpus_model.get_speaker_name(u.speaker_id)
-                tier = SpeakerTier(
-                    self.bottom_point,
-                    self.separator_point,
-                    u.speaker_id,
-                    speaker_name,
-                    search_term=self.search_term,
-                )
-                tier.dragFinished.connect(self.update_selected_speaker)
-                tier.draggingLine.connect(self.audio_plot.update_drag_line)
-                tier.lineDragFinished.connect(self.audio_plot.hide_drag_line)
-                tier.receivedWheelEvent.connect(self.audio_plot.wheelEvent)
-                tier.set_models(self.corpus_model, self.selection_model, self.dictionary_model)
-                tier.set_extra_tiers(self.extra_tiers)
-                tier.setZValue(30)
-                available_speakers[speaker_name] = u.speaker_id
-                self.speaker_tiers[u.speaker_id] = tier
-            self.speaker_tiers[u.speaker_id].utterances.append(u)
+        speaker_tier_height = self.separator_point - self.bottom_point
+        for i, speaker_id in enumerate(self.file_model.speakers):
+            speaker_name = self.corpus_model.get_speaker_name(speaker_id)
+            top_point = i * speaker_tier_height
+            bottom_point = top_point - speaker_tier_height
+            tier = SpeakerTier(
+                top_point,
+                bottom_point,
+                speaker_id,
+                speaker_name,
+                self.corpus_model,
+                self.file_model,
+                self.selection_model,
+                self.dictionary_model,
+                search_term=self.search_term,
+            )
+            tier.draggingLine.connect(self.audio_plot.update_drag_line)
+            tier.lineDragFinished.connect(self.audio_plot.hide_drag_line)
+            tier.receivedWheelEvent.connect(self.audio_plot.wheelEvent)
+            tier.set_extra_tiers(self.extra_tiers)
+            tier.setZValue(30)
+            available_speakers[speaker_name] = speaker_id
+            self.speaker_tiers[speaker_id] = tier
         for i, (key, tier) in enumerate(self.speaker_tiers.items()):
-            tier.set_speaker_index(0, 1)
             tier.set_available_speakers(available_speakers)
             tier.refresh()
-            tier_item = SpeakerTierItem(self.bottom_point, self.separator_point)
+            top_point = i * speaker_tier_height
+            bottom_point = top_point - speaker_tier_height
+            tier_item = SpeakerTierItem(top_point, bottom_point)
             tier_item.setRange(
                 xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
             )
             tier_item.addItem(tier)
             self.speaker_tier_items[key] = tier_item
             self.speaker_tier_layout.addItem(tier_item, i, 0)
+            if tier.speaker_id == self.default_speaker_id:
+                scroll_to = i
         row_height = self.audio_plot_item.height()
-        if len(self.speaker_tiers) > 1 and len(self.extra_tiers) < 2:
-            row_height = int(row_height / 2)
         self.speaker_tier_layout.setFixedHeight(len(self.speaker_tiers) * row_height)
         if len(self.speaker_tiers) > 1:
             self.tier_scroll_area.verticalScrollBar().setSingleStep(row_height)
@@ -562,91 +585,73 @@ class UtteranceView(QtWidgets.QWidget):
             self.audio_layout.centralWidget.layout.setContentsMargins(
                 0, 0, self.settings.scroll_bar_height, 0
             )
+            if scroll_to is not None:
+                # self.tier_scroll_area.scrollContentsBy(0, scroll_to * tier_height)
+                self.tier_scroll_area.verticalScrollBar().setValue(
+                    scroll_to * self.tier_scroll_area.height()
+                )
+                self.default_speaker_id = None
         else:
             self.audio_layout.centralWidget.layout.setContentsMargins(0, 0, 0, 0)
             self.tier_scroll_area.setVerticalScrollBarPolicy(
                 QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
             )
 
-    def finalize_loading_wave_form(self, results):
-        y, file_path = results
-        if (
-            self.selection_model.current_file is None
-            or file_path != self.selection_model.current_file.sound_file.sound_file_path
-        ):
-            return
-        self.audio_plot.wave_form.y = y
-        self.get_latest_waveform()
+    def set_default_speaker(self, speaker_id):
+        self.default_speaker_id = speaker_id
 
-    def finalize_loading_spectrogram(self, results):
-        stft, channel, begin, end, min_db, max_db = results
-        if self.settings.right_to_left:
-            stft = np.flip(stft, 1)
-            begin, end = -end, -begin
-        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
+    def finalize_loading_spectrogram(self):
+        self.audio_plot.spectrogram.hide()
+        if self.selection_model.spectrogram is None:
+            self.audio_plot.spectrogram.clear()
             return
-        self.audio_plot.spectrogram.setData(stft, channel, begin, end, min_db, max_db)
-
-    def finalize_loading_pitch_track(self, results):
-        pitch_track, voicing_track, channel, begin, end, min_f0, max_f0 = results
-        if self.settings.right_to_left:
-            pitch_track = np.flip(pitch_track, 0)
-            begin, end = -end, -begin
-        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
-            return
-        if pitch_track is None:
-            return
-        x = np.linspace(
-            start=self.selection_model.plot_min,
-            stop=self.selection_model.plot_max,
-            num=pitch_track.shape[0],
+        self.audio_plot.spectrogram.setData(
+            self.selection_model.spectrogram,
+            self.selection_model.selected_channel,
+            self.selection_model.plot_min,
+            self.selection_model.plot_max,
+            self.selection_model.min_db,
+            self.selection_model.max_db,
         )
+
+    def finalize_loading_pitch_track(self):
         self.audio_plot.pitch_track.hide()
-        self.audio_plot.pitch_track.setData(x=x, y=pitch_track, connect="finite")
-        self.audio_plot.pitch_track.set_range(min_f0, max_f0, end)
+        self.audio_plot.pitch_track.clear()
+        if self.selection_model.pitch_track_y is None:
+            return
+        self.audio_plot.pitch_track.setData(
+            x=self.selection_model.pitch_track_x,
+            y=self.selection_model.pitch_track_y,
+            connect="finite",
+        )
+        self.audio_plot.pitch_track.set_range(
+            self.settings.value(self.settings.PITCH_MIN_F0),
+            self.settings.value(self.settings.PITCH_MAX_F0),
+            self.selection_model.plot_max,
+        )
         self.audio_plot.pitch_track.show()
 
-    def finalize_loading_auto_wave_form(self, results):
-        y, begin, end, channel = results
-        if self.settings.right_to_left:
-            y = np.flip(y, 0)
-            begin, end = -end, -begin
-        if begin != self.selection_model.plot_min or end != self.selection_model.plot_max:
+    def finalize_loading_auto_wave_form(self):
+        self.audio_plot.wave_form.hide()
+        if self.selection_model.waveform_y is None:
             return
-        x = np.linspace(
-            start=self.selection_model.plot_min, stop=self.selection_model.plot_max, num=y.shape[0]
+        self.audio_plot_item.setRange(
+            xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
         )
-        # self.audio_plot.wave_form.hide()
-        self.audio_plot.wave_form.setData(x=x, y=y)
+        self.audio_plot.update_plot()
+        self.audio_plot.wave_form.setData(
+            x=self.selection_model.waveform_x, y=self.selection_model.waveform_y
+        )
         self.audio_plot.wave_form.show()
 
-    def get_utterances(self):
-        for tier in self.speaker_tiers.values():
-            tier.reset_tier()
-            self.speaker_tier_layout.removeItem(tier)
-        if self.selection_model.current_file is None:
-            return
-        self.speaker_tier_worker.stop()
-        self.speaker_tier_worker.set_params(self.selection_model.current_file.id)
-        self.speaker_tier_worker.start()
-
     def set_extra_tiers(self):
-        self.speaker_tier_worker.query_alignment = False
-        self.speaker_tier_worker.session = self.corpus_model.session
         self.extra_tiers = {}
-        visible_tiers = self.settings.visible_tiers
         self.extra_tiers["Normalized text"] = "normalized_text"
         if self.corpus_model.has_alignments and "Words" not in self.extra_tiers:
             self.extra_tiers["Words"] = "aligned_word_intervals"
-            if visible_tiers.get("Words", True):
-                self.speaker_tier_worker.query_alignment = True
             self.extra_tiers["Phones"] = "aligned_phone_intervals"
-            if visible_tiers.get("Phones", True):
-                self.speaker_tier_worker.query_alignment = True
         if self.corpus_model.has_reference_alignments and "Reference" not in self.extra_tiers:
             self.extra_tiers["Reference"] = "reference_phone_intervals"
-            if visible_tiers.get("Reference", True):
-                self.speaker_tier_worker.query_alignment = True
         if (
             self.corpus_model.has_transcribed_alignments
             and "Transcription" not in self.extra_tiers
@@ -654,10 +659,6 @@ class UtteranceView(QtWidgets.QWidget):
             self.extra_tiers["Transcription"] = "transcription_text"
             self.extra_tiers["Transcribed words"] = "transcribed_word_intervals"
             self.extra_tiers["Transcribed phones"] = "transcribed_phone_intervals"
-            if visible_tiers.get("Transcribed words", True):
-                self.speaker_tier_worker.query_alignment = True
-            if visible_tiers.get("Transcribed phones", True):
-                self.speaker_tier_worker.query_alignment = True
         if (
             self.corpus_model.has_per_speaker_transcribed_alignments
             and "Transcription" not in self.extra_tiers
@@ -665,29 +666,6 @@ class UtteranceView(QtWidgets.QWidget):
             self.extra_tiers["Transcription"] = "transcription_text"
             self.extra_tiers["Transcribed words"] = "per_speaker_transcribed_word_intervals"
             self.extra_tiers["Transcribed phones"] = "per_speaker_transcribed_phone_intervals"
-            if visible_tiers.get("Transcribed words", True):
-                self.speaker_tier_worker.query_alignment = True
-            if visible_tiers.get("Transcribed phones", True):
-                self.speaker_tier_worker.query_alignment = True
-
-    def update_channel(self):
-        self.get_latest_waveform()
-
-    def set_up_new_file(self, *args):
-        self.audio_plot.spectrogram.cached_begin = None
-        self.audio_plot.spectrogram.cached_end = None
-        self.audio_plot.wave_form.y = None
-        for t in self.speaker_tiers.values():
-            t.visible_utterances = {}
-        self.speaker_tiers = {}
-        if self.selection_model.current_file is None:
-            return
-        self.get_utterances()
-        self.waveform_worker.stop()
-        self.waveform_worker.set_params(
-            self.selection_model.current_file.sound_file.sound_file_path
-        )
-        self.waveform_worker.start()
 
     def set_search_term(self):
         term = self.corpus_model.text_filter
@@ -704,73 +682,22 @@ class UtteranceView(QtWidgets.QWidget):
     def draw_text_grid(self):
         scroll_to = None
         for i, (key, tier) in enumerate(self.speaker_tiers.items()):
+            self.speaker_tier_items[key].hide()
             tier.refresh()
-            if tier.has_visible_utterances and scroll_to is None:
+            if tier.speaker_id == self.default_speaker_id:
                 scroll_to = i
                 tier_height = self.speaker_tier_items[key].height()
             self.speaker_tier_items[key].setRange(
                 xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
             )
+            self.speaker_tier_items[key].show()
         if scroll_to is not None:
-            self.tier_scroll_area.scrollContentsBy(0, scroll_to * tier_height)
+            self.tier_scroll_area.verticalScrollBar().setValue(scroll_to * tier_height)
+            self.default_speaker_id = None
 
     def update_show_speakers(self, state):
         self.show_all_speakers = state > 0
         self.update_plot()
-
-    def get_latest_waveform(self):
-        if self.audio_plot.wave_form.y is None:
-            return
-        self.audio_plot.wave_form.hide()
-        # self.audio_plot.spectrogram.hide()
-        self.audio_plot.pitch_track.hide()
-        begin_samp = int(
-            self.selection_model.min_time * self.selection_model.current_file.sample_rate
-        )
-        end_samp = int(
-            self.selection_model.max_time * self.selection_model.current_file.sample_rate
-        )
-        if len(self.audio_plot.wave_form.y.shape) > 1:
-            y = self.audio_plot.wave_form.y[
-                begin_samp:end_samp, self.selection_model.selected_channel
-            ]
-        else:
-            y = self.audio_plot.wave_form.y[begin_samp:end_samp]
-        self.spectrogram_worker.stop()
-        self.spectrogram_worker.set_params(
-            y,
-            self.selection_model.current_file.sound_file.sample_rate,
-            self.selection_model.min_time,
-            self.selection_model.max_time,
-            self.selection_model.selected_channel,
-        )
-        self.spectrogram_worker.start()
-        if self.selection_model.max_time - self.selection_model.min_time <= 10:
-            self.pitch_track_worker.stop()
-            self.pitch_track_worker.set_params(
-                y,
-                self.selection_model.current_file.sound_file.sample_rate,
-                self.selection_model.min_time,
-                self.selection_model.max_time,
-                self.selection_model.selected_channel,
-                self.audio_plot.pitch_track.bottom_point,
-                self.audio_plot.pitch_track.top_point,
-            )
-            self.pitch_track_worker.start()
-        self.auto_waveform_worker.stop()
-        self.auto_waveform_worker.set_params(
-            y,
-            self.audio_plot.wave_form.bottom_point,
-            self.audio_plot.wave_form.top_point,
-            self.selection_model.min_time,
-            self.selection_model.max_time,
-            self.selection_model.selected_channel,
-        )
-        self.auto_waveform_worker.start()
-        self.audio_plot_item.setRange(
-            xRange=[self.selection_model.plot_min, self.selection_model.plot_max]
-        )
-        self.audio_plot.update_plot()
 
     def reset_plot(self, *args):
         self.reset_text_grid()
@@ -781,9 +708,8 @@ class UtteranceView(QtWidgets.QWidget):
     def update_plot(self, *args):
         if self.corpus_model.rowCount() == 0:
             return
-        if self.selection_model.current_file is None or self.selection_model.min_time is None:
+        if self.file_model.file is None or self.selection_model.min_time is None:
             return
-        self.get_latest_waveform()
         self.audio_plot.update_plot()
         self.draw_text_grid()
 
@@ -798,7 +724,7 @@ class UtteranceView(QtWidgets.QWidget):
             if tier.top_point > pos > tier.bottom_point:
                 new_speaker_id = tier.speaker_id
         if new_speaker_id is not None and new_speaker_id != old_speaker_id:
-            self.corpus_model.update_utterance_speaker(utterance, new_speaker_id)
+            self.file_model.update_utterance_speaker(utterance, new_speaker_id)
 
 
 class UtteranceLine(pg.InfiniteLine):
@@ -1041,20 +967,23 @@ class UtterancePGTextItem(pg.TextItem):
         self.selection_model.viewChanged.connect(self.update_times)
 
     def update_times(self, begin, end):
-        self.hide()
         self.view_min = begin
         self.view_max = end
-        br = self.boundingRect()
+        if self.end <= self.view_min or self.begin >= self.view_max:
+            return
+        self.hide()
         if (
             self.view_min <= self.begin < self.view_max
             or self.view_max >= self.end > self.view_min
             or (self.begin <= self.view_min and self.end >= self.view_max)
-        ) and br.width() / self._cached_pixel_size[0] > 100:
+        ):
             self.show()
 
     def boundingRect(self):
         br = QtCore.QRectF(self.viewRect())  # bounds of containing ViewBox mapped to local coords.
         vb = self.getViewBox()
+        if self.begin is None or self.view_min is None:
+            return br
         visible_begin = max(self.begin, self.view_min)
         visible_end = min(self.end, self.view_max)
 
@@ -1532,24 +1461,24 @@ class Highlighter(QtGui.QSyntaxHighlighter):
 
 
 class MfaRegion(pg.LinearRegionItem):
-    dragFinished = QtCore.Signal(object)
     textEdited = QtCore.Signal(object, object)
     undoRequested = QtCore.Signal()
     redoRequested = QtCore.Signal()
     playRequested = QtCore.Signal()
-    selectRequested = QtCore.Signal(object, object, object, object)
+    selectRequested = QtCore.Signal(object, object, object)
     audioSelected = QtCore.Signal(object, object)
     viewRequested = QtCore.Signal(object, object)
 
     settings = AnchorSettings()
 
+    @profile
     def __init__(
         self,
         item: CtmInterval,
         corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
         dictionary_model: typing.Optional[DictionaryTableModel],
-        selection_model: CorpusSelectionModel,
-        selected: bool = False,
+        selection_model: FileSelectionModel,
         bottom_point: float = 0,
         top_point: float = 1,
     ):
@@ -1561,11 +1490,11 @@ class MfaRegion(pg.LinearRegionItem):
         if selection_model.settings.right_to_left:
             self.item_min, self.item_max = -self.item_max, -self.item_min
         self.corpus_model = corpus_model
+        self.file_model = file_model
         self.dictionary_model = dictionary_model
         self.selection_model = selection_model
         self.bottom_point = bottom_point
         self.top_point = top_point
-        self.selected = selected
         self.span = (self.bottom_point, self.top_point)
         self.text_margin_pixels = 2
 
@@ -1584,7 +1513,7 @@ class MfaRegion(pg.LinearRegionItem):
         self.border_pen = pg.mkPen(self.break_line_color, width=2)
         self.border_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
 
-        if self.selected:
+        if self.selection_model.checkSelected(getattr(self.item, "id", None)):
             self.background_brush = pg.mkBrush(self.selected_interval_color)
         else:
             # self.interval_background_color.setAlpha(0)
@@ -1604,11 +1533,207 @@ class MfaRegion(pg.LinearRegionItem):
         self._boundingRectCache = None
         self.setBrush(self.background_brush)
         self.movable = False
+        self.cached_visible_duration = None
+        self.cached_view = None
+
+    def paint(self, p, *args):
+        p.setBrush(self.currentBrush)
+        p.setPen(self.border_pen)
+        p.drawRect(self.boundingRect())
+
+    def mouseClickEvent(self, ev: QtGui.QMouseEvent):
+        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
+            ev.ignore()
+            return
+        self.audioSelected.emit(self.item_min, self.item_max)
+        ev.accept()
+
+    def mouseDoubleClickEvent(self, ev: QtGui.QMouseEvent):
+        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
+            ev.ignore()
+            return
+        self.audioSelected.emit(self.item_min, self.item_max)
+        padding = (self.item_max - self.item_min) / 2
+        self.viewRequested.emit(self.item_min - padding, self.item_max + padding)
+        ev.accept()
+
+    def setSelected(self, selected: bool):
+        if selected:
+            self.setBrush(pg.mkBrush(self.selected_interval_color))
+        else:
+            # self.interval_background_color.setAlpha(0)
+            self.setBrush(pg.mkBrush(self.interval_background_color))
+        self.update()
+
+    def setMouseHover(self, hover: bool):
+        # Inform the item that the mouse is(not) hovering over it
+        if self.mouseHovering == hover:
+            return
+        self.mouseHovering = hover
+        self.popup(hover)
+        self.update()
+
+    def select_self(self, deselect=False, reset=True):
+        self.selected = True
+        if self.selected and not deselect and not reset:
+            return
+
+
+class AlignmentRegion(MfaRegion):
+    @profile
+    def __init__(
+        self,
+        phone_interval: CtmInterval,
+        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
+        selection_model: CorpusSelectionModel,
+        bottom_point: float = 0,
+        top_point: float = 1,
+    ):
+        super().__init__(
+            phone_interval,
+            corpus_model,
+            file_model,
+            None,
+            selection_model,
+            bottom_point,
+            top_point,
+        )
+        self.original_text = self.item.label
+
+        self.text = pg.TextItem(
+            self.item.label, anchor=(0.5, 0.5), color=self.text_color  # , border=pg.mkColor("r")
+        )
+        self.text.setVisible(False)
+
+        self.text.setFont(self.settings.font)
+        options = QtGui.QTextOption()
+        options.setWrapMode(QtGui.QTextOption.WrapMode.NoWrap)
+        self.text.textItem.document().setDefaultTextOption(options)
+        self.text.setParentItem(self)
+        self.per_tier_range = self.top_point - self.bottom_point
+
+    def viewRangeChanged(self):
+        if (self.item_max - self.item_min) / (
+            self.selection_model.max_time - self.selection_model.min_time
+        ) < 0.01:
+            self.hide()
+        else:
+            self.show()
+        super().viewRangeChanged()
+
+    def boundingRect(self):
+        br = QtCore.QRectF(self.viewRect())  # bounds of containing ViewBox mapped to local coords.
+        vb = self.getViewBox()
+
+        pixel_size = vb.viewPixelSize()
+
+        br.setLeft(self.item_min)
+        br.setRight(self.item_max)
+
+        br.setTop(self.top_point)
+        # br.setBottom(self.top_point-self.per_tier_range)
+        br.setBottom(self.bottom_point + 0.01)
+        try:
+            visible_begin = max(self.item_min, self.selection_model.plot_min)
+            visible_end = min(self.item_max, self.selection_model.plot_max)
+        except TypeError:
+            return br
+        visible_duration = visible_end - visible_begin
+        x_margin_px = 8
+        available_text_width = visible_duration / pixel_size[0] - (2 * x_margin_px)
+        self.text.setVisible(available_text_width > 10)
+        if visible_duration != self.cached_visible_duration:
+            self.cached_visible_duration = visible_duration
+
+            self.text.setPos(
+                visible_begin + (visible_duration / 2), self.top_point - (self.per_tier_range / 2)
+            )
+        br = br.normalized()
+
+        if self._boundingRectCache != br:
+            self._boundingRectCache = br
+            self.prepareGeometryChange()
+        return br
+
+
+class PhoneRegion(AlignmentRegion):
+    def __init__(
+        self,
+        phone_interval: CtmInterval,
+        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
+        selection_model: CorpusSelectionModel,
+        bottom_point: float = 0,
+        top_point: float = 1,
+    ):
+        super().__init__(
+            phone_interval, corpus_model, file_model, selection_model, bottom_point, top_point
+        )
+
+
+class WordRegion(AlignmentRegion):
+    highlightRequested = QtCore.Signal(object)
+
+    def __init__(
+        self,
+        word_interval: CtmInterval,
+        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
+        selection_model: CorpusSelectionModel,
+        bottom_point: float = 0,
+        top_point: float = 1,
+    ):
+        super().__init__(
+            word_interval, corpus_model, file_model, selection_model, bottom_point, top_point
+        )
+
+    def mouseClickEvent(self, ev: QtGui.QMouseEvent):
+        search_term = TextFilterQuery(self.item.label, word=True)
+        self.highlightRequested.emit(search_term)
+        super().mouseClickEvent(ev)
+
+
+class UtteranceRegion(MfaRegion):
+    @profile
+    def __init__(
+        self,
+        utterance: workers.UtteranceData,
+        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
+        dictionary_model: DictionaryTableModel,
+        selection_model: FileSelectionModel,
+        bottom_point: float = 0,
+        top_point: float = 1,
+        extra_tiers=None,
+        available_speakers=None,
+        search_term=None,
+    ):
+        super().__init__(
+            utterance,
+            corpus_model,
+            file_model,
+            dictionary_model,
+            selection_model,
+            bottom_point,
+            top_point,
+        )
+        self.hide()
+        self.item = utterance
+        self.selection_model = selection_model
+        if extra_tiers is None:
+            extra_tiers = {}
+        self.extra_tiers = extra_tiers
+        self.extra_tier_intervals = {}
+        visible_tiers = self.settings.visible_tiers
+        self.num_tiers = len([x for x in extra_tiers if visible_tiers[x]]) + 1
+        self.per_tier_range = (top_point - bottom_point) / self.num_tiers
+        self.selected = self.selection_model.checkSelected(self.item.id)
 
         # note LinearRegionItem.Horizontal and LinearRegionItem.Vertical
         # are kept for backward compatibility.
         lineKwds = dict(
-            movable=False,
+            movable=True,
             bounds=None,
             span=self.span,
             pen=self.pen,
@@ -1642,218 +1767,6 @@ class MfaRegion(pg.LinearRegionItem):
         self.lines[1].sigPositionChanged.connect(self._line1Moved)
         self.lines[0].hoverChanged.connect(self.popup)
         self.lines[1].hoverChanged.connect(self.popup)
-        self.cached_visible_duration = None
-        self.cached_view = None
-
-    def paint(self, p, *args):
-        p.setBrush(self.currentBrush)
-        p.setPen(self.border_pen)
-        p.drawRect(self.boundingRect())
-
-    def mouseDragEvent(self, ev):
-        if not self.movable or ev.button() != QtCore.Qt.MouseButton.LeftButton:
-            return
-        ev.accept()
-
-        if ev.isStart():
-            bdp = ev.buttonDownPos()
-            self.cursorOffsets = [line.pos() - bdp for line in self.lines]
-            self.startPositions = [line.pos() for line in self.lines]
-            self.moving = True
-
-        if not self.moving:
-            return
-
-        # self.lines[0].blockSignals(True)  # only want to update once
-        # for i, l in enumerate(self.lines):
-        #    l.setPos(self.cursorOffsets[i] + ev.pos())
-        # self.lines[0].blockSignals(False)
-        self.prepareGeometryChange()
-
-        if ev.isFinish():
-            self.moving = False
-            self.dragFinished.emit(ev.pos())
-            self.sigRegionChangeFinished.emit(self)
-        else:
-            self.sigRegionChanged.emit(self)
-
-    def mouseClickEvent(self, ev: QtGui.QMouseEvent):
-        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
-            ev.ignore()
-            return
-        self.audioSelected.emit(self.item_min, self.item_max)
-        ev.accept()
-
-    def mouseDoubleClickEvent(self, ev: QtGui.QMouseEvent):
-        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
-            ev.ignore()
-            return
-        self.audioSelected.emit(self.item_min, self.item_max)
-        padding = (self.item_max - self.item_min) / 2
-        self.viewRequested.emit(self.item_min - padding, self.item_max + padding)
-        ev.accept()
-
-    def change_editing(self, editable: bool):
-        self.movable = editable
-        self.lines[0].movable = editable
-        self.lines[1].movable = editable
-
-    def setSelected(self, selected: bool):
-        self.selected = selected
-        if self.selected:
-            self.setBrush(pg.mkBrush(self.selected_interval_color))
-        else:
-            # self.interval_background_color.setAlpha(0)
-            self.setBrush(pg.mkBrush(self.interval_background_color))
-        self.update()
-
-    def popup(self, hover: bool):
-        if hover or self.moving or self.lines[0].moving or self.lines[1].moving:
-            self.setZValue(30)
-        else:
-            self.setZValue(0)
-
-    def setMouseHover(self, hover: bool):
-        # Inform the item that the mouse is(not) hovering over it
-        if self.mouseHovering == hover:
-            return
-        self.mouseHovering = hover
-        self.popup(hover)
-        self.update()
-
-    def select_self(self, deselect=False, reset=True, focus=False):
-        self.selected = True
-        if self.selected and not deselect and not reset:
-            return
-
-
-class AlignmentRegion(MfaRegion):
-    def __init__(
-        self,
-        phone_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
-        selected: bool = False,
-        bottom_point: float = 0,
-        top_point: float = 1,
-    ):
-        super().__init__(
-            phone_interval, corpus_model, None, selection_model, selected, bottom_point, top_point
-        )
-        self.original_text = self.item.label
-
-        self.text = pg.TextItem(
-            self.item.label, anchor=(0.5, 0.5), color=self.text_color  # , border=pg.mkColor("r")
-        )
-
-        self.text.setFont(self.settings.font)
-        options = QtGui.QTextOption()
-        options.setWrapMode(QtGui.QTextOption.WrapMode.NoWrap)
-        self.text.textItem.document().setDefaultTextOption(options)
-        self.text.setParentItem(self)
-        self.per_tier_range = self.top_point - self.bottom_point
-
-    def boundingRect(self):
-        br = QtCore.QRectF(self.viewRect())  # bounds of containing ViewBox mapped to local coords.
-        vb = self.getViewBox()
-
-        pixel_size = vb.viewPixelSize()
-        rng = self.getRegion()
-
-        br.setLeft(rng[0])
-        br.setRight(rng[1])
-
-        br.setTop(self.top_point)
-        # br.setBottom(self.top_point-self.per_tier_range)
-        br.setBottom(self.bottom_point + 0.01)
-        try:
-            visible_begin = max(rng[0], self.selection_model.plot_min)
-            visible_end = min(rng[1], self.selection_model.plot_max)
-        except TypeError:
-            return br
-        visible_duration = visible_end - visible_begin
-        x_margin_px = 8
-        available_text_width = visible_duration / pixel_size[0] - (2 * x_margin_px)
-        self.text.setVisible(available_text_width > 10)
-        if visible_duration != self.cached_visible_duration:
-            self.cached_visible_duration = visible_duration
-
-            self.text.setPos(
-                visible_begin + (visible_duration / 2), self.top_point - (self.per_tier_range / 2)
-            )
-        br = br.normalized()
-
-        if self._boundingRectCache != br:
-            self._boundingRectCache = br
-            self.prepareGeometryChange()
-        return br
-
-
-class PhoneRegion(AlignmentRegion):
-    def __init__(
-        self,
-        phone_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
-        selected: bool = False,
-        bottom_point: float = 0,
-        top_point: float = 1,
-    ):
-        super().__init__(
-            phone_interval, corpus_model, selection_model, selected, bottom_point, top_point
-        )
-
-
-class WordRegion(AlignmentRegion):
-    def __init__(
-        self,
-        phone_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
-        selected: bool = False,
-        bottom_point: float = 0,
-        top_point: float = 1,
-    ):
-        super().__init__(
-            phone_interval, corpus_model, selection_model, selected, bottom_point, top_point
-        )
-
-
-class UtteranceRegion(MfaRegion):
-    def __init__(
-        self,
-        utterance: workers.UtteranceData,
-        corpus_model: CorpusModel,
-        dictionary_model: DictionaryTableModel,
-        selection_model: CorpusSelectionModel,
-        selected: bool = False,
-        bottom_point: float = 0,
-        top_point: float = 1,
-        extra_tiers=None,
-        available_speakers=None,
-        search_term=None,
-    ):
-        super().__init__(
-            utterance,
-            corpus_model,
-            dictionary_model,
-            selection_model,
-            selected,
-            bottom_point,
-            top_point,
-        )
-        self.hide()
-        self.item = utterance
-        self.selection_model = selection_model
-        if extra_tiers is None:
-            extra_tiers = {}
-        self.extra_tiers = extra_tiers
-        self.extra_tier_intervals = {}
-        visible_tiers = self.settings.visible_tiers
-        self.num_tiers = len([x for x in extra_tiers if visible_tiers[x]]) + 1
-        self.per_tier_range = (top_point - bottom_point) / self.num_tiers
-
-        self.setMovable(True)
 
         self.corpus_model.utteranceTextUpdated.connect(self.update_text_from_model)
         self.original_text = self.item.text
@@ -1945,6 +1858,8 @@ class UtteranceRegion(MfaRegion):
             if intervals is None:
                 continue
             for interval in intervals:
+                # if (interval.end - interval.begin) /(self.selection_model.max_time -self.selection_model.min_time) < 0.01:
+                #    continue
                 if lookup == "transcription_text":
                     interval_reg = TranscriberTextRegion(
                         self,
@@ -1964,8 +1879,8 @@ class UtteranceRegion(MfaRegion):
                     interval_reg = PhoneRegion(
                         interval,
                         self.corpus_model,
+                        self.file_model,
                         selection_model=selection_model,
-                        selected=False,
                         top_point=tier_top_point,
                         bottom_point=tier_bottom_point,
                     )
@@ -1974,12 +1889,13 @@ class UtteranceRegion(MfaRegion):
                     interval_reg = WordRegion(
                         interval,
                         self.corpus_model,
+                        self.file_model,
                         selection_model=selection_model,
-                        selected=False,
                         top_point=tier_top_point,
                         bottom_point=tier_bottom_point,
                     )
                     interval_reg.setParentItem(self)
+                    interval_reg.highlightRequested.connect(self.highlighter.setSearchTerm)
 
                 else:
                     interval_reg = IntervalTextRegion(
@@ -2000,6 +1916,25 @@ class UtteranceRegion(MfaRegion):
         self.selection_model.viewChanged.connect(self.update_view_times)
         self.show()
         self.available_speakers = available_speakers
+
+    def change_editing(self, editable: bool):
+        self.lines[0].movable = editable
+        self.lines[1].movable = editable
+        self.text_edit.setReadOnly(not editable)
+
+    def popup(self, hover: bool):
+        if hover or self.moving or self.lines[0].moving or self.lines[1].moving:
+            self.setZValue(30)
+        else:
+            self.setZValue(0)
+
+    def setMovable(self, m=True):
+        """Set lines to be movable by the user, or not. If lines are movable, they will
+        also accept HoverEvents."""
+        for line in self.lines:
+            line.setMovable(m)
+        self.movable = False
+        self.setAcceptHoverEvents(False)
 
     def contextMenuEvent(self, ev: QtWidgets.QGraphicsSceneContextMenuEvent):
         menu = QtWidgets.QMenu()
@@ -2032,6 +1967,17 @@ class UtteranceRegion(MfaRegion):
             a.toggled.connect(self.update_tier_visibility)
             visible_tiers_menu.addAction(a)
         menu.addMenu(visible_tiers_menu)
+        menu.addSeparator()
+
+        a = QtGui.QAction(menu)
+        a.setText("Split utterance")
+        a.triggered.connect(self.split_utterance)
+        menu.addAction(a)
+
+        a = QtGui.QAction(menu)
+        a.setText("Delete utterance")
+        a.triggered.connect(self.delete_utterance)
+        menu.addAction(a)
         change_speaker_menu.setStyleSheet(self.settings.menu_style_sheet)
         visible_tiers_menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.setStyleSheet(self.settings.menu_style_sheet)
@@ -2050,7 +1996,7 @@ class UtteranceRegion(MfaRegion):
         if dialog.exec_():
             speaker_id = dialog.speaker_dropdown.current_text()
             if isinstance(speaker_id, int):
-                self.corpus_model.update_utterance_speaker(self.item, speaker_id)
+                self.file_model.update_utterance_speaker(self.item, speaker_id)
 
     def update_speaker(self):
         speaker_name = self.sender().text()
@@ -2058,21 +2004,21 @@ class UtteranceRegion(MfaRegion):
             speaker_id = 0
         else:
             speaker_id = self.available_speakers[speaker_name]
-        self.corpus_model.update_utterance_speaker(self.item, speaker_id)
+        self.file_model.update_utterance_speaker(self.item, speaker_id)
+
+    def split_utterance(self):
+        self.file_model.split_utterances([self.item])
+
+    def delete_utterance(self):
+        self.file_model.delete_utterances([self.item])
 
     def refresh_timer(self):
         self.timer.start(500)
         self.update()
 
-    def change_editing(self, editable: bool):
-        super().change_editing(editable)
-        self.text_edit.setReadOnly(not editable)
-
-    def select_self(self, deselect=False, reset=True, focus=False):
-        self.selected = True
-        if self.selected and not deselect and not reset:
-            return
-        self.selectRequested.emit(self.item.id, deselect, reset, focus)
+    def select_self(self, deselect=False, reset=True):
+        self.setSelected(not deselect)
+        self.selectRequested.emit(self.item.id, deselect, reset)
 
     def mouseDoubleClickEvent(self, ev: QtGui.QMouseEvent):
         if ev.button() != QtCore.Qt.MouseButton.LeftButton:
@@ -2080,7 +2026,10 @@ class UtteranceRegion(MfaRegion):
             return
         deselect = False
         reset = True
-        if ev.modifiers() == QtCore.Qt.Modifier.CTRL:
+        if ev.modifiers() in [
+            QtCore.Qt.KeyboardModifier.ControlModifier,
+            QtCore.Qt.KeyboardModifier.ShiftModifier,
+        ]:
             reset = False
             if self.selected:
                 deselect = True
@@ -2089,7 +2038,7 @@ class UtteranceRegion(MfaRegion):
                 self.selected = True
         else:
             self.selected = True
-        self.select_self(deselect=deselect, reset=reset, focus=True)
+        self.select_self(deselect=deselect, reset=reset)
         ev.accept()
 
     def mouseClickEvent(self, ev: QtGui.QMouseEvent):
@@ -2098,7 +2047,10 @@ class UtteranceRegion(MfaRegion):
             return
         deselect = False
         reset = True
-        if ev.modifiers() == QtCore.Qt.Modifier.CTRL:
+        if ev.modifiers() in [
+            ev.modifiers().ControlModifier,
+            ev.modifiers().ShiftModifier,
+        ]:
             reset = False
             if self.selected:
                 deselect = True
@@ -2107,7 +2059,7 @@ class UtteranceRegion(MfaRegion):
                 self.selected = True
         else:
             self.selected = True
-        self.select_self(deselect=deselect, reset=reset, focus=False)
+        self.select_self(deselect=deselect, reset=reset)
         ev.accept()
 
     def update_view_times(self):
@@ -2349,7 +2301,7 @@ class AudioPlots(pg.GraphicsObject):
     def __init__(self, top_point, separator_point, bottom_point):
         super().__init__()
         self.settings = AnchorSettings()
-        self.selection_model: typing.Optional[CorpusSelectionModel] = None
+        self.selection_model: typing.Optional[FileSelectionModel] = None
         self.top_point = top_point
         self.separator_point = separator_point
         self.bottom_point = bottom_point
@@ -2434,7 +2386,45 @@ class AudioPlots(pg.GraphicsObject):
         if ev.button() != QtCore.Qt.MouseButton.LeftButton:
             ev.ignore()
             return
-        self.selection_model.request_start_time(ev.pos().x())
+        if ev.modifiers() in [
+            QtCore.Qt.KeyboardModifier.ControlModifier,
+            QtCore.Qt.KeyboardModifier.ShiftModifier,
+        ]:
+            time = ev.pos().x()
+            if self.selection_model.selected_max_time is not None:
+                if (
+                    self.selection_model.selected_min_time
+                    < time
+                    < self.selection_model.selected_max_time
+                ):
+                    if (
+                        time - self.selection_model.selected_min_time
+                        < self.selection_model.selected_max_time - time
+                    ):
+                        min_time = time
+                        max_time = self.selection_model.selected_max_time
+                    else:
+                        min_time = self.selection_model.selected_min_time
+                        max_time = time
+                else:
+                    min_time = min(
+                        time,
+                        self.selection_model.selected_min_time,
+                        self.selection_model.selected_max_time,
+                    )
+                    max_time = max(
+                        time,
+                        self.selection_model.selected_min_time,
+                        self.selection_model.selected_max_time,
+                    )
+            else:
+                min_time = min(time, self.selection_model.selected_min_time)
+                max_time = max(time, self.selection_model.selected_min_time)
+            self.selection_area.setRegion((min_time, max_time))
+            self.selection_area.setVisible(True)
+            self.selection_model.select_audio(min_time, max_time)
+        else:
+            self.selection_model.request_start_time(ev.pos().x())
         ev.accept()
 
     def hoverEvent(self, ev):
@@ -2476,9 +2466,9 @@ class AudioPlots(pg.GraphicsObject):
 
     def update_plot(self):
         if (
-            self.selection_model.current_file is None
-            or self.selection_model.current_file.sound_file is None
-            or not os.path.exists(self.selection_model.current_file.sound_file.sound_file_path)
+            self.selection_model.model().file is None
+            or self.selection_model.model().file.sound_file is None
+            or not os.path.exists(self.selection_model.model().file.sound_file.sound_file_path)
         ):
             return
         self.rect.setLeft(self.selection_model.plot_min)
@@ -2490,48 +2480,68 @@ class AudioPlots(pg.GraphicsObject):
 
 
 class SpeakerTier(pg.GraphicsObject):
-    dragFinished = QtCore.Signal(object, object)
     receivedWheelEvent = QtCore.Signal(object)
     draggingLine = QtCore.Signal(object)
     lineDragFinished = QtCore.Signal(object)
 
     def __init__(
-        self, bottom_point, top_point, speaker_id: int, speaker_name: str, search_term=None
+        self,
+        top_point,
+        bottom_point,
+        speaker_id: int,
+        speaker_name: str,
+        corpus_model: CorpusModel,
+        file_model: FileUtterancesModel,
+        selection_model: FileSelectionModel,
+        dictionary_model: DictionaryTableModel,
+        search_term: str = None,
     ):
         super().__init__()
+        self.file_model = file_model
+        self.corpus_model = corpus_model
+        self.selection_model = selection_model
+        self.dictionary_model = dictionary_model
         self.settings = AnchorSettings()
-        self.corpus_model: Optional[CorpusModel] = None
-        self.selection_model: Optional[CorpusSelectionModel] = None
         self.search_term = search_term
         self.speaker_id = speaker_id
         self.speaker_name = speaker_name
         self.speaker_index = 0
-        self.textgrid_top_point = top_point
         self.top_point = top_point
         self.speaker_label = pg.TextItem(self.speaker_name, color=self.settings.accent_base_color)
         self.speaker_label.setFont(self.settings.font)
         self.speaker_label.setParentItem(self)
         self.speaker_label.setZValue(40)
         self.bottom_point = bottom_point
-        self.textgrid_bottom_point = bottom_point
         self.annotation_range = self.top_point - self.bottom_point
         self.extra_tiers = {}
-        self.utterances = []
         self.visible_utterances: dict[str, UtteranceRegion] = {}
         self.background_brush = pg.mkBrush(self.settings.primary_very_dark_color)
         self.border = pg.mkPen(self.settings.accent_light_color)
         self.picture = QtGui.QPicture()
+        self.has_visible_utterances = False
+        self.has_selected_utterances = False
+        self.rect = QtCore.QRectF(
+            left=self.selection_model.plot_min,
+            riht=self.selection_model.plot_max,
+            top=self.top_point,
+            bottom=self.bottom_point,
+        )
+        self._generate_picture()
+        self.corpus_model.lockCorpus.connect(self.lock)
+        self.corpus_model.refreshUtteranceText.connect(self.refreshTexts)
+        self.selection_model.selectionChanged.connect(self.update_select)
+        self.selection_model.model().utterancesReady.connect(self.refresh)
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
 
-    def mouseDoubleClickEvent(self, ev):
-        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
+    def mouseClickEvent(self, ev):
+        if ev.button() != QtCore.Qt.MouseButton.RightButton:
             ev.ignore()
             return
         x = ev.pos().x()
         begin = max(x - 0.5, 0)
-        end = min(x + 0.5, self.selection_model.current_file.duration)
+        end = min(x + 0.5, self.selection_model.model().file.duration)
         for x in self.visible_utterances.values():
             if begin >= x.item_min and end <= x.item_max:
                 ev.accept()
@@ -2542,10 +2552,40 @@ class SpeakerTier(pg.GraphicsObject):
                 end = x.item_min
                 break
         if end - begin > 0.001:
-            self.corpus_model.create_utterance(
-                self.selection_model.current_file, self.speaker_id, begin, end
-            )
-            ev.accept()
+            menu = QtWidgets.QMenu()
+
+            a = QtGui.QAction(menu)
+            a.setText("Create utterance")
+            a.triggered.connect(functools.partial(self.create_utterance, begin=begin, end=end))
+            menu.addAction(a)
+            menu.setStyleSheet(self.settings.menu_style_sheet)
+            menu.exec_(ev.screenPos())
+
+    def contextMenuEvent(self, ev):
+        x = ev.pos().x()
+        begin = max(x - 0.5, 0)
+        end = min(x + 0.5, self.selection_model.model().file.duration)
+        for x in self.visible_utterances.values():
+            if begin >= x.item_min and end <= x.item_max:
+                ev.accept()
+                return
+            if begin < x.item_max and begin > x.item_max:
+                begin = x.item_max
+            if end > x.item_min and end < x.item_min:
+                end = x.item_min
+                break
+        if end - begin > 0.001:
+            menu = QtWidgets.QMenu()
+
+            a = QtGui.QAction(menu)
+            a.setText("Create utterance")
+            a.triggered.connect(functools.partial(self.create_utterance, begin=begin, end=end))
+            menu.addAction(a)
+            menu.setStyleSheet(self.settings.menu_style_sheet)
+            menu.exec_(ev.screenPos())
+
+    def create_utterance(self, begin, end):
+        self.file_model.create_utterance(self.speaker_id, begin, end)
 
     def setSearchterm(self, term):
         self.search_term = term
@@ -2558,22 +2598,7 @@ class SpeakerTier(pg.GraphicsObject):
     def paint(self, p, *args):
         p.drawPicture(0, 0, self.picture)
 
-    def set_speaker_index(self, index, num_speakers):
-        self.speaker_index = index
-        speaker_tier_range = self.annotation_range / num_speakers
-        self.top_point = self.textgrid_top_point - (speaker_tier_range * self.speaker_index)
-        self.bottom_point = self.top_point - speaker_tier_range
-        self.rect = QtCore.QRectF(
-            left=self.selection_model.plot_min,
-            top=self.top_point,
-            width=self.selection_model.plot_max - self.selection_model.plot_min,
-            height=speaker_tier_range,
-        )
-        self.rect.setHeight(speaker_tier_range)
-        self._generate_picture()
-
     def _generate_picture(self):
-        self.speaker_label.setPos(self.selection_model.plot_min, self.top_point)
         self.picture = QtGui.QPicture()
         painter = QtGui.QPainter(self.picture)
         painter.setPen(self.border)
@@ -2587,22 +2612,6 @@ class SpeakerTier(pg.GraphicsObject):
 
     def set_available_speakers(self, available_speakers):
         self.available_speakers = available_speakers
-
-    def set_models(
-        self,
-        corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
-        dictionary_model: DictionaryTableModel,
-    ):
-        self.corpus_model = corpus_model
-        self.selection_model = selection_model
-        self.dictionary_model = dictionary_model
-        for reg in self.visible_utterances.values():
-            reg.highlighter.set_models(self.dictionary_model)
-        # self.corpus_model.changeCommandFired.connect(self.refresh)
-        self.corpus_model.lockCorpus.connect(self.lock)
-        self.corpus_model.refreshUtteranceText.connect(self.refreshTexts)
-        self.selection_model.selectionChanged.connect(self.update_select)
 
     def lock(self):
         for utt in self.visible_utterances.values():
@@ -2629,36 +2638,55 @@ class SpeakerTier(pg.GraphicsObject):
             if reg.scene() is not None:
                 reg.scene().removeItem(reg)
         self.visible_utterances = {}
-        self.other_intervals = []
 
+    @profile
     def refresh(self, *args):
+        self.hide()
         if self.selection_model.plot_min is None:
             return
-        self.rect.setLeft(self.selection_model.plot_min)
-        self.rect.setRight(self.selection_model.plot_max)
-        self._generate_picture()
+        # self.rect.setLeft(self.selection_model.plot_min)
+        # self.rect.setRight(self.selection_model.plot_max)
+        # self._generate_picture()
         self.has_visible_utterances = False
-        for u in self.utterances:
-            if u.end < self.selection_model.min_time:
-                if u.id in self.visible_utterances:
-                    self.visible_utterances[u.id].hide()
+        self.has_selected_utterances = False
+        self.speaker_label.setPos(self.selection_model.plot_min, self.top_point)
+        cleanup_ids = []
+        model_visible_utterances = self.selection_model.visible_utterances()
+        visible_ids = [x.id for x in model_visible_utterances]
+        for reg in self.visible_utterances.values():
+            reg.hide()
+            if (
+                self.selection_model.min_time - reg.item.end > 15
+                or reg.item.begin - self.selection_model.max_time > 15
+                or (
+                    reg.item.id not in visible_ids
+                    and (
+                        reg.item.begin < self.selection_model.max_time
+                        or reg.item.end > self.selection_model.min_time
+                    )
+                )
+            ):
+                if reg.scene() is not None:
+                    reg.scene().removeItem(reg)
+                cleanup_ids.append(reg.item.id)
+        self.visible_utterances = {
+            k: v for k, v in self.visible_utterances.items() if k not in cleanup_ids
+        }
+        for u in model_visible_utterances:
+            if u.speaker_id != self.speaker_id:
                 continue
-            if u.begin > self.selection_model.max_time:
-                if u.id in self.visible_utterances:
-                    self.visible_utterances[u.id].hide()
-                continue
-            self.has_visible_utterances = True
             if u.id in self.visible_utterances:
+                self.visible_utterances[u.id].setSelected(self.selection_model.checkSelected(u.id))
                 self.visible_utterances[u.id].show()
                 continue
-            selected = self.selection_model.checkSelected(u)
+            self.has_visible_utterances = True
             # Utterance region always at the top
             reg = UtteranceRegion(
                 u,
                 self.corpus_model,
+                self.file_model,
                 self.dictionary_model,
                 selection_model=self.selection_model,
-                selected=selected,
                 extra_tiers=self.extra_tiers,
                 available_speakers=self.available_speakers,
                 bottom_point=self.bottom_point,
@@ -2667,7 +2695,6 @@ class SpeakerTier(pg.GraphicsObject):
             )
             reg.sigRegionChanged.connect(self.check_utterance_bounds)
             reg.sigRegionChangeFinished.connect(self.update_utterance)
-            reg.dragFinished.connect(self.update_selected_speaker)
             reg.lines[0].sigPositionChanged.connect(self.draggingLine.emit)
             reg.lines[0].sigPositionChangeFinished.connect(self.lineDragFinished.emit)
             reg.lines[1].sigPositionChanged.connect(self.draggingLine.emit)
@@ -2683,17 +2710,13 @@ class SpeakerTier(pg.GraphicsObject):
             reg.setParentItem(self)
             self.visible_utterances[u.id] = reg
 
-    def update_utterance_text(self, utterance, new_text):
-        self.corpus_model.update_utterance_text(utterance, text=new_text)
+        self.show()
 
-    def update_selected_speaker(self, pos):
-        pos = pos.y()
-        reg = self.sender()
-        utterance = reg.item
-        self.dragFinished.emit(utterance, pos)
+    def update_utterance_text(self, utterance, new_text):
+        self.selection_model.model().update_utterance_text(utterance, text=new_text)
 
     def update_select(self):
-        selected_rows = {x.id for x in self.selection_model.selectedUtterances()}
+        selected_rows = {x.id for x in self.selection_model.selected_utterances()}
         for r in self.visible_utterances.values():
             if r.item.id in selected_rows:
                 r.setSelected(True)
@@ -2708,15 +2731,21 @@ class SpeakerTier(pg.GraphicsObject):
                 if end > 0:
                     reg.setRegion([beg, 0])
                     return
-                if -end > self.selection_model.current_file.duration:
-                    reg.setRegion([beg, self.selection_model.current_file.duration])
+                if (
+                    self.selection_model.model().file is not None
+                    and -end > self.selection_model.model().file.duration
+                ):
+                    reg.setRegion([beg, self.selection_model.model().file.duration])
                     return
             else:
                 if beg < 0:
                     reg.setRegion([0, end])
                     return
-                if end > self.selection_model.current_file.duration:
-                    reg.setRegion([beg, self.selection_model.current_file.duration])
+                if (
+                    self.selection_model.model().file is not None
+                    and end > self.selection_model.model().file.duration
+                ):
+                    reg.setRegion([beg, self.selection_model.model().file.duration])
                     return
             for r in self.visible_utterances.values():
                 if r == reg:
@@ -2747,7 +2776,7 @@ class SpeakerTier(pg.GraphicsObject):
         new_end = round(end, 4)
         if new_begin == utt.begin and new_end == utt.end:
             return
-        self.corpus_model.update_utterance_times(utt, begin=new_begin, end=new_end)
+        self.selection_model.model().update_utterance_times(utt, begin=new_begin, end=new_end)
         self.selection_model.select_audio(new_begin, None)
         reg.text.begin = new_begin
         reg.text.end = new_end

@@ -6,6 +6,12 @@ Changelog
 
    Alpha releases
 
+0.2.0
+-----
+
+- Revamped and optimized utterance loading to improve performance for long sound files with many utterances
+- Added ability to click on word intervals to highlight those words in transcripts
+
 0.1.0
 -----
 

@@ -25,6 +25,8 @@ from anchor.models import (
     CorpusSelectionModel,
     DiarizationModel,
     DictionaryTableModel,
+    FileSelectionModel,
+    FileUtterancesModel,
     OovModel,
     SpeakerModel,
     TextFilterQuery,
@@ -61,7 +63,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.max_time = None
         self.start_load_time = None
         self.min_time = None
-        self.corpus_model = None
         self.selection_model = None
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(1)
@@ -78,7 +79,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self._audio_output.setDevice(self.devices.defaultAudioOutput())
         self.setAudioOutput(self._audio_output)
         self.playbackStateChanged.connect(self.reset_position)
-        self.mediaStatusChanged.connect(self.update_load)
         self.fade_in_anim = QtCore.QPropertyAnimation(self._audio_output, b"volume")
         self.fade_in_anim.setDuration(10)
         self.fade_in_anim.setStartValue(0.1)
@@ -94,11 +94,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.fade_out_anim.setKeyValueAt(0.1, self._audio_output.volume())
         self.fade_out_anim.finished.connect(super().pause)
         self.file_path = None
-
-    def update_load(self, state):
-        if state == self.MediaStatus.LoadedMedia:
-            self.reset_position()
-            self.audioReady.emit(True)
 
     def handle_error(self, *args):
         print("ERROR")
@@ -118,12 +113,22 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.fade_in_anim.start()
 
     def startTime(self):
-        if self.selection_model.selected_min_time is not None:
+        if (
+            self.selection_model.selected_min_time is not None
+            and self.selection_model.min_time
+            <= self.selection_model.selected_min_time
+            <= self.selection_model.max_time
+        ):
             return self.selection_model.selected_min_time
         return self.selection_model.min_time
 
     def maxTime(self):
-        if self.selection_model.selected_max_time is not None:
+        if (
+            self.selection_model.selected_max_time is not None
+            and self.selection_model.min_time
+            <= self.selection_model.selected_max_time
+            <= self.selection_model.max_time
+        ):
             return self.selection_model.selected_max_time
         return self.selection_model.max_time
 
@@ -149,14 +154,10 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
                 break
         self._audio_output.setDevice(o)
 
-    def set_corpus_models(
-        self, corpus_model: Optional[CorpusModel], selection_model: Optional[CorpusSelectionModel]
-    ):
-        self.corpus_model = corpus_model
-        self.selection_model = selection_model
-        if corpus_model is None:
+    def set_models(self, selection_model: Optional[FileSelectionModel]):
+        if selection_model is None:
             return
-        # self.selection_model.fileAboutToChange.connect(self.unload_file)
+        self.selection_model = selection_model
         self.selection_model.fileChanged.connect(self.loadNewFile)
         self.selection_model.viewChanged.connect(self.update_times)
         self.selection_model.selectionAudioChanged.connect(self.update_selection_times)
@@ -187,29 +188,27 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.setCurrentTime(self.startTime())
 
     def update_times(self):
-        if (
-            self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.StoppedState
-            or self.currentTime() < self.startTime()
-            or self.currentTime() > self.maxTime()
-        ):
+        if self.currentTime() < self.startTime() or self.currentTime() > self.maxTime():
+            self.stop()
+        if self.playbackState() != QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
             self.setCurrentTime(self.startTime())
 
     def loadNewFile(self, *args):
         self.audioReady.emit(False)
         self.stop()
         try:
-            new_file = self.selection_model.current_file.sound_file.sound_file_path
+            new_file = self.selection_model.model().file.sound_file.sound_file_path
         except Exception:
             self.setSource(QtCore.QUrl())
             return
         if (
             self.selection_model.max_time is None
-            or self.selection_model.current_file is None
-            or self.selection_model.current_file.duration is None
+            or self.selection_model.model().file is None
+            or self.selection_model.model().file.duration is None
         ):
             self.setSource(QtCore.QUrl())
             return
-        self.channels = self.selection_model.current_file.num_channels
+        self.channels = self.selection_model.model().file.num_channels
         self.setSource(f"file:///{new_file}")
         self.setPosition(0)
         self.audioReady.emit(True)
@@ -217,19 +216,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
     def currentTime(self):
         pos = self.position()
         return pos / 1000
-
-    def setMaxTime(self, max_time):
-        if max_time is None:
-            return
-        self.max_time = max_time * 1000
-
-    def setMinTime(
-        self, min_time
-    ):  # Positions for MediaPlayer are in milliseconds, no SR required
-        if min_time is None:
-            min_time = 0
-        self.min_time = int(min_time * 1000)
-        self.setCurrentTime(min_time)
 
     def setCurrentTime(self, time):
         if time is None:
@@ -245,7 +231,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             self.stop()
             self.setSource(
                 QtCore.QUrl.fromLocalFile(
-                    self.selection_model.current_file.sound_file.sound_file_path
+                    self.selection_model.model().file.sound_file.sound_file_path
                 )
             )
             self.play()
@@ -793,6 +779,7 @@ class UtteranceDetailWidget(QtWidgets.QWidget):  # pragma: no cover
         self.settings = AnchorSettings()
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.corpus_model = None
+        self.file_model = None
         self.selection_model = None
         self.dictionary_model = None
         self.plot_widget = UtteranceView(self)
@@ -829,24 +816,28 @@ class UtteranceDetailWidget(QtWidgets.QWidget):  # pragma: no cover
     def set_models(
         self,
         corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
+        file_model: FileUtterancesModel,
+        selection_model: FileSelectionModel,
         dictionary_model: DictionaryTableModel,
     ):
         self.corpus_model = corpus_model
+        self.file_model = file_model
         self.selection_model = selection_model
         self.dictionary_model = dictionary_model
         self.corpus_model.textFilterChanged.connect(self.plot_widget.set_search_term)
         self.selection_model.viewChanged.connect(self.update_to_slider)
         self.selection_model.fileChanged.connect(self.update_to_slider)
-        self.plot_widget.set_models(corpus_model, selection_model, self.dictionary_model)
+        self.plot_widget.set_models(
+            corpus_model, file_model, selection_model, self.dictionary_model
+        )
 
     def update_to_slider(self):
         with QtCore.QSignalBlocker(self.scroll_bar):
-            if self.selection_model.current_file is None or self.selection_model.min_time is None:
+            if self.selection_model.model().file is None or self.selection_model.min_time is None:
                 return
             if (
                 self.selection_model.min_time == 0
-                and self.selection_model.max_time == self.selection_model.current_file.duration
+                and self.selection_model.max_time == self.selection_model.model().file.duration
             ):
                 self.scroll_bar.setPageStep(10)
                 self.scroll_bar.setEnabled(False)
@@ -854,7 +845,7 @@ class UtteranceDetailWidget(QtWidgets.QWidget):  # pragma: no cover
                 self.pan_right_button.setEnabled(False)
                 self.scroll_bar.setMaximum(0)
                 return
-            duration_ms = int(self.selection_model.current_file.duration * 1000)
+            duration_ms = int(self.selection_model.model().file.duration * 1000)
             begin = self.selection_model.min_time * 1000
             end = self.selection_model.max_time * 1000
             window_size_ms = int(end - begin)
