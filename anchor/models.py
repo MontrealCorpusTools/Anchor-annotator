@@ -31,7 +31,7 @@ from montreal_forced_aligner.utils import mfa_open
 from PySide6 import QtCore
 from sqlalchemy.orm import joinedload
 
-from anchor import undo
+from anchor import undo, workers
 from anchor.settings import AnchorSettings
 
 
@@ -148,38 +148,480 @@ class TableModel(QtCore.QAbstractTableModel):
         return len(self._header_data)
 
 
-class CorpusSelectionModel(QtCore.QItemSelectionModel):
+class FileUtterancesModel(QtCore.QAbstractListModel):
+    addCommand = QtCore.Signal(object)
+    selectionRequested = QtCore.Signal(object)
+
+    waveformReady = QtCore.Signal()
+    utterancesReady = QtCore.Signal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.utterances = []
+        self.file = None
+        self.y = None
+        self.speakers = []
+        self._indices = []
+        self._speaker_indices = []
+        self.reversed_indices = {}
+        self.speaker_channel_mapping = {}
+        self.corpus_model: CorpusModel = None
+        self.waveform_worker = workers.WaveformWorker()
+        self.speaker_tier_worker = workers.SpeakerTierWorker()
+        self.speaker_tier_worker.signals.result.connect(self.finalize_loading_utterances)
+        self.waveform_worker.signals.result.connect(self.finalize_loading_wave_form)
+
+    def get_utterance(self, utterance_id: int) -> Utterance:
+        try:
+            return self.utterances[self.reversed_indices[utterance_id]]
+        except KeyError:
+            return None
+
+    def set_corpus_model(self, corpus_model: CorpusModel):
+        self.corpus_model = corpus_model
+
+    def clean_up_for_close(self):
+        self.waveform_worker.stop()
+        self.speaker_tier_worker.stop()
+
+    def set_file(self, file_id):
+        self.file = (
+            self.corpus_model.session.query(File).options(joinedload(File.sound_file)).get(file_id)
+        )
+        self.y = None
+        self.get_utterances()
+        self.waveform_worker.stop()
+        self.waveform_worker.set_params(self.file.sound_file.sound_file_path)
+        self.waveform_worker.start()
+
+    def finalize_loading_utterances(self, results):
+        utterances, file_id = results
+        if file_id != self.file.id:
+            return
+        self.utterances = utterances
+        for i, u in enumerate(utterances):
+            if u.speaker_id not in self.speakers:
+                self.speakers.append(u.speaker_id)
+            self._speaker_indices.append(u.speaker_id)
+            self.reversed_indices[u.id] = i
+            self._indices.append(u.id)
+            if self.file.num_channels > 1 and u.speaker_id not in self.speaker_channel_mapping:
+                self.speaker_channel_mapping[u.speaker_id] = u.channel
+        self.utterancesReady.emit()
+
+    def finalize_loading_wave_form(self, results):
+        y, file_path = results
+        if self.file is None or file_path != self.file.sound_file.sound_file_path:
+            return
+        self.y = y
+        self.waveformReady.emit()
+
+    def get_utterances(self):
+        parent_index = self.index(0, 0)
+        self.beginRemoveRows(parent_index, 0, len(self.utterances))
+        self.utterances = []
+        self.speakers = []
+        self._indices = []
+        self._speaker_indices = []
+        self.speaker_channel_mapping = {}
+        self.reversed_indices = {}
+        self.endRemoveRows()
+        if self.file is None:
+            return
+        self.speaker_tier_worker.stop()
+        self.speaker_tier_worker.query_alignment = (
+            self.corpus_model.has_alignments
+            or self.corpus_model.has_reference_alignments
+            or self.corpus_model.has_transcribed_alignments
+        )
+        self.speaker_tier_worker.session = self.corpus_model.session
+        self.speaker_tier_worker.set_params(self.file.id)
+        self.speaker_tier_worker.start()
+
+    def create_utterance(self, speaker_id: Optional[int], begin: float, end: float):
+        if not self.corpus_model.editable:
+            return
+        channel = 0
+        if speaker_id is None:
+            speaker_id = self.corpus_model.corpus.add_speaker(
+                "speech", session=self.corpus_model.session
+            ).id
+        if self.file.num_channels > 1:
+            if speaker_id not in self.speaker_channel_mapping:
+                self.speaker_channel_mapping[speaker_id] = 0
+            channel = self.speaker_channel_mapping[speaker_id]
+        begin = round(begin, 4)
+        end = round(end, 4)
+        text = ""
+        next_pk = self.corpus_model.corpus.get_next_primary_key(Utterance)
+        new_utt = Utterance(
+            id=next_pk,
+            speaker_id=speaker_id,
+            file_id=self.file.id,
+            file=self.file,
+            begin=begin,
+            end=end,
+            channel=channel,
+            text=text,
+            normalized_text=text,
+            oovs=text,
+        )
+        print(new_utt.id, new_utt.speaker_id, new_utt.file_id, new_utt.begin, new_utt.end)
+        self.addCommand.emit(undo.CreateUtteranceCommand(new_utt, self))
+        self.corpus_model.set_file_modified(self.file.id)
+        self.corpus_model.set_speaker_modified(speaker_id)
+
+    def add_table_utterances(self, utterances: typing.List[Utterance]):
+        for utterance in utterances:
+            if len(self.utterances) > 0:
+                for i, u in enumerate(self.utterances):
+                    if u.begin < utterance.begin:
+                        continue
+                    break
+                else:
+                    i = len(self.utterances) - 1
+            else:
+                i = 0
+            parent_index = self.index(i, 0)
+            self.beginInsertRows(parent_index, i, i + 1)
+            self.utterances.insert(i, utterance)
+            self._indices.insert(i, utterance.id)
+            self._speaker_indices.insert(i, utterance.speaker_id)
+            self.endInsertRows()
+        self.reversed_indices = {u: j for j, u in enumerate(self._indices)}
+        self.selectionRequested.emit(utterances)
+
+    def delete_table_utterances(self, utterances: typing.List[Utterance]):
+        for utterance in utterances:
+            try:
+                index = self.reversed_indices.pop(utterance.id)
+            except KeyError:
+                continue
+            parent_index = self.index(index, 0)
+            self.beginRemoveRows(parent_index, index, index + 1)
+            _ = self.utterances.pop(index)
+            _ = self._indices.pop(index)
+            _ = self._speaker_indices.pop(index)
+            self.reversed_indices = {u: j for j, u in enumerate(self._indices)}
+            self.endRemoveRows()
+        self.selectionRequested.emit(None)
+
+    def change_speaker_table_utterances(self, utterances: typing.List[Utterance]):
+        for utterance in utterances:
+            try:
+                index = self.reversed_indices[utterance.id]
+            except KeyError:
+                continue
+            if utterance.speaker_id not in self.speakers:
+                self.speakers.append(utterance.speaker_id)
+                self.speaker_channel_mapping[utterance.speaker_id] = utterance.channel
+            self._speaker_indices[index] = utterance.speaker_id
+
+    def merge_table_utterances(
+        self, merged_utterance: Utterance, split_utterances: typing.List[Utterance]
+    ):
+        self.delete_table_utterances(split_utterances)
+        self.add_table_utterances([merged_utterance])
+
+    def split_table_utterances(
+        self, merged_utterance: Utterance, split_utterances: typing.List[Utterance]
+    ):
+        self.delete_table_utterances([merged_utterance])
+        self.add_table_utterances(split_utterances)
+
+    def update_utterance_text(self, utterance: Utterance, text):
+        if not self.corpus_model.editable:
+            return
+        if text != utterance.text:
+            self.addCommand.emit(undo.UpdateUtteranceTextCommand(utterance, text, self))
+            self.corpus_model.set_file_modified(self.file.id)
+
+    def refresh_utterances(self):
+        for utterance in self.utterances:
+            self.corpus_model.session.refresh(utterance)
+
+    def update_utterance_speaker(self, utterance: Utterance, speaker_id: int):
+        if not self.corpus_model.editable:
+            return
+        old_speaker_id = utterance.speaker_id
+        if old_speaker_id == speaker_id:
+            return
+        self.addCommand.emit(undo.UpdateUtteranceSpeakerCommand(utterance, speaker_id, self))
+        self.corpus_model.set_file_modified(self.file.id)
+        self.corpus_model.set_speaker_modified(speaker_id)
+        self.corpus_model.set_speaker_modified(old_speaker_id)
+
+    def update_utterance_times(
+        self, utterance: Utterance, begin: Optional[float] = None, end: Optional[float] = None
+    ):
+        if not self.corpus_model.editable:
+            return
+        if utterance.begin == begin and utterance.end == end:
+            return
+        self.addCommand.emit(undo.UpdateUtteranceTimesCommand(utterance, begin, end, self))
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def split_vad_utterance(
+        self, original_utterance_id, replacement_utterance_data: typing.List[KalpyUtterance]
+    ):
+        if not replacement_utterance_data:
+            return
+        utt = self.utterances[self.reversed_indices[original_utterance_id]]
+        replacement_utterances = []
+        next_pk = self.corpus_model.corpus.get_next_primary_key(Utterance)
+        speaker_id = utt.speaker_id
+        for new_utt in replacement_utterance_data:
+            replacement_utterances.append(
+                Utterance(
+                    id=next_pk,
+                    begin=new_utt.segment.begin,
+                    end=new_utt.segment.end,
+                    speaker_id=speaker_id,
+                    file_id=self.file.id,
+                    text=new_utt.transcript,
+                    normalized_text=new_utt.transcript,
+                    features="",
+                    in_subset=False,
+                    ignored=False,
+                    channel=new_utt.segment.channel,
+                )
+            )
+            next_pk += 1
+        self.addCommand.emit(
+            undo.SplitUtteranceCommand(utt, replacement_utterances, self, update_table=False)
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+        self.corpus_model.set_speaker_modified(speaker_id)
+
+    def split_utterances(self, utterance: Utterance):
+        if not self.corpus_model.editable:
+            return
+        beg = utterance.begin
+        end = utterance.end
+        duration = end - beg
+        first_text = []
+        second_text = []
+        speaker_id = utterance.speaker_id
+        if (
+            utterance.text
+            and utterance.normalized_text
+            and " " not in utterance.text
+            and " " in utterance.normalized_text
+        ):
+            t = utterance.normalized_text.split()
+            mid_ind = int(len(t) / 2)
+            first_text = t[:mid_ind]
+            second_text = t[mid_ind:]
+        elif utterance.text:
+            t = utterance.text.split()
+            mid_ind = int(len(t) / 2)
+            first_text = t[:mid_ind]
+            second_text = t[mid_ind:]
+        split_time = beg + (duration / 2)
+        oovs = set()
+        for w in first_text:
+            if not self.corpus_model.dictionary_model.check_word(w, speaker_id):
+                oovs.add(w)
+        next_pk = self.corpus_model.corpus.get_next_primary_key(Utterance)
+        first_utt = Utterance(
+            id=next_pk,
+            speaker_id=speaker_id,
+            file_id=self.file.id,
+            begin=beg,
+            end=split_time,
+            channel=utterance.channel,
+            text=" ".join(first_text),
+            normalized_text=" ".join(first_text),
+            oovs=" ".join(oovs),
+        )
+        next_pk += 1
+        oovs = set()
+        for w in second_text:
+            if not self.corpus_model.dictionary_model.check_word(w, utterance.speaker_id):
+                oovs.add(w)
+        second_utt = Utterance(
+            id=next_pk,
+            speaker_id=speaker_id,
+            file_id=self.file.id,
+            begin=split_time,
+            end=end,
+            channel=utterance.channel,
+            text=" ".join(second_text),
+            normalized_text=" ".join(second_text),
+            oovs=" ".join(oovs),
+        )
+        self.addCommand.emit(undo.SplitUtteranceCommand(utterance, [first_utt, second_utt], self))
+        self.corpus_model.set_file_modified(self.file.id)
+        self.corpus_model.set_speaker_modified(speaker_id)
+        self.selectionRequested.emit([first_utt, second_utt])
+
+    def merge_utterances(self, utterances: list[Utterance]):
+        if not self.corpus_model.editable:
+            return
+        if not utterances:
+            return
+        min_begin = 1000000000
+        max_end = 0
+        text = ""
+        normalized_text = ""
+        speaker_id = None
+        channel = None
+        for old_utt in sorted(utterances, key=lambda x: x.begin):
+            if speaker_id is None:
+                speaker_id = old_utt.speaker_id
+            if channel is None:
+                channel = old_utt.channel
+            if old_utt.begin < min_begin:
+                min_begin = old_utt.begin
+            if old_utt.end > max_end:
+                max_end = old_utt.end
+            utt_text = old_utt.text
+            if utt_text == "speech" and text.strip() == "speech":
+                continue
+            text += utt_text + " "
+            normalized_text += old_utt.normalized_text + " "
+        text = text[:-1]
+        normalized_text = normalized_text[:-1]
+        next_pk = self.corpus_model.corpus.get_next_primary_key(Utterance)
+        oovs = set()
+        for w in text.split():
+            if not self.corpus_model.dictionary_model.check_word(w, speaker_id):
+                oovs.add(w)
+        new_utt = Utterance(
+            id=next_pk,
+            speaker_id=speaker_id,
+            file_id=self.file.id,
+            begin=min_begin,
+            end=max_end,
+            channel=channel,
+            text=text,
+            normalized_text=normalized_text,
+            oovs=" ".join(oovs),
+        )
+        self.addCommand.emit(undo.MergeUtteranceCommand(utterances, new_utt, self))
+        self.corpus_model.set_file_modified(self.file.id)
+        self.corpus_model.set_speaker_modified(speaker_id)
+        self.selectionRequested.emit([new_utt])
+
+    def delete_utterances(self, utterances: typing.List[Utterance]):
+        if not self.corpus_model.editable:
+            return
+        if not utterances:
+            return
+        speaker_ids = set(x.speaker_id for x in utterances)
+        self.addCommand.emit(undo.DeleteUtteranceCommand(utterances, self))
+        self.corpus_model.set_file_modified(self.file.id)
+        for speaker_id in speaker_ids:
+            self.corpus_model.set_speaker_modified(speaker_id)
+
+    def rowCount(self, parent=None):
+        return len(self.utterances)
+
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            return self.utterances[index.row()]
+
+
+class FileSelectionModel(QtCore.QItemSelectionModel):
+    fileAboutToChange = QtCore.Signal()
     fileChanged = QtCore.Signal()
     channelChanged = QtCore.Signal()
     resetView = QtCore.Signal()
-    fileAboutToChange = QtCore.Signal()
     viewChanged = QtCore.Signal(object, object)
     selectionAudioChanged = QtCore.Signal()
     currentTimeChanged = QtCore.Signal(object)
     currentUtteranceChanged = QtCore.Signal()
+    speakerRequested = QtCore.Signal(object)
+
+    spectrogramReady = QtCore.Signal()
+    waveformReady = QtCore.Signal()
+    pitchTrackReady = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
-        super(CorpusSelectionModel, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.settings = AnchorSettings()
         self.min_time = 0
         self.max_time = 10
         self.selected_min_time = None
         self.selected_max_time = None
-        self.current_file: Optional[File] = None
         self.x = None
         self.y = None
-        self.current_utterance_id = None
+        self.top_point = 2
+        self.bottom_point = 0
+        self.separator_point = 1
         self.selected_channel = 0
-        # self.viewChanged.connect(self.update_selected_waveform)
-        # self.fileChanged.connect(self.update_selected_waveform)
-        self.currentRowChanged.connect(self.switch_utterance)
-        # self.selectionChanged.connect(self.update_selection_audio)
-        # self.selectionChanged.connect(self.update_selection_audio)
-        # self.model().changeCommandFired.connect(self.expire_current)
-        self.selectionChanged.connect(self._update_selection)
-        self.model().layoutChanged.connect(self.check_selection)
-        self.model().unlockCorpus.connect(self.fileChanged.emit)
-        self.model().selectionRequested.connect(self.update_select_rows)
+        self.spectrogram = None
+        self.min_db = None
+        self.max_db = None
+        self.pitch_track_x = None
+        self.pitch_track_y = None
+        self.waveform_x = None
+        self.waveform_y = None
+        self.requested_utterance_id = None
+        self.auto_waveform_worker = workers.AutoWaveformWorker()
+        self.spectrogram_worker = workers.SpectrogramWorker()
+        self.pitch_track_worker = workers.PitchWorker()
+        self.auto_waveform_worker.signals.result.connect(self.finalize_loading_auto_wave_form)
+        self.spectrogram_worker.signals.result.connect(self.finalize_loading_spectrogram)
+        self.pitch_track_worker.signals.result.connect(self.finalize_loading_pitch_track)
+        self.model().waveformReady.connect(self.load_audio_selection)
+        self.model().utterancesReady.connect(self.finalize_set_new_file)
+        self.viewChanged.connect(self.load_audio_selection)
+        self.model().selectionRequested.connect(self.update_selected_utterances)
+
+    def selected_utterances(self):
+        utts = []
+        m = self.model()
+        for index in self.selectedRows(0):
+            utt = m.utterances[index.row()]
+            utts.append(utt)
+        return utts
+
+    def load_audio_selection(self):
+        if self.model().y is None:
+            return
+        begin_samp = int(self.min_time * self.model().file.sample_rate)
+        end_samp = int(self.max_time * self.model().file.sample_rate)
+        if len(self.model().y.shape) > 1:
+            y = self.model().y[begin_samp:end_samp, self.selected_channel]
+        else:
+            y = self.model().y[begin_samp:end_samp]
+        self.spectrogram_worker.stop()
+        self.spectrogram_worker.set_params(
+            y,
+            self.model().file.sound_file.sample_rate,
+            self.min_time,
+            self.max_time,
+            self.selected_channel,
+        )
+        self.spectrogram_worker.start()
+        if self.max_time - self.min_time <= 10:
+            self.pitch_track_worker.stop()
+            self.pitch_track_worker.set_params(
+                y,
+                self.model().file.sound_file.sample_rate,
+                self.min_time,
+                self.max_time,
+                self.selected_channel,
+                self.bottom_point,
+                self.separator_point,
+            )
+            self.pitch_track_worker.start()
+        self.auto_waveform_worker.stop()
+        self.auto_waveform_worker.set_params(
+            y,
+            self.separator_point,
+            self.top_point,
+            self.min_time,
+            self.max_time,
+            self.selected_channel,
+        )
+        self.auto_waveform_worker.start()
+
+    def clean_up_for_close(self):
+        self.spectrogram_worker.stop()
+        self.pitch_track_worker.stop()
+        self.auto_waveform_worker.stop()
 
     @property
     def plot_min(self):
@@ -193,85 +635,47 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
             return -self.min_time
         return self.max_time
 
-    def set_current_utterance(self, utterance_id):
-        self.current_utterance_id = utterance_id
-        self.currentUtteranceChanged.emit()
-
-    def check_selection(self):
-        if self.currentIndex().row() == -1 and self.model().rowCount() > 0:
-            self.update_select_rows([0])
-        elif self.model().rowCount() == 0:
-            self.clearSelection()
-
-    def set_current_channel(self, channel):
-        self.selected_channel = channel
-        self.channelChanged.emit()
-
-    def clearSelection(self) -> None:
-        self.fileAboutToChange.emit()
-        self.current_file = None
-        self.current_utterance_id = None
-        self.min_time = None
-        self.max_time = None
-        self.selected_min_time = None
-        self.selected_max_time = None
-        super(CorpusSelectionModel, self).clearCurrentIndex()
-        super(CorpusSelectionModel, self).clearSelection()
-        self.fileChanged.emit()
-
-    def update_selected_wavform(self, *args):
-        if self.min_time is None or self.current_file is None:
-            self.x = None
-            self.y = None
-        else:
-            self.x, self.y = self.current_file.sound_file.normalized_waveform(
-                self.min_time, self.max_time
-            )
-
-    def get_selected_wave_form(self):
-        if self.y is None:
-            return None, None
-        if len(self.y.shape) > 1 and self.y.shape[0] == 2:
-            return self.x, self.y[self.selected_channel, :]
-        return self.x, self.y
-
-    def update_select_rows(self, rows: list[int]):
-        super(CorpusSelectionModel, self).clearCurrentIndex()
-        super(CorpusSelectionModel, self).clearSelection()
-        if not rows:
+    def finalize_loading_spectrogram(self, results):
+        stft, channel, begin, end, min_db, max_db = results
+        if self.settings.right_to_left:
+            stft = np.flip(stft, 1)
+            begin, end = -end, -begin
+        if begin != self.plot_min or end != self.plot_max:
             return
-        for r in rows:
-            index = self.model().index(r, 0)
-            if not index.isValid():
-                continue
-            self.setCurrentIndex(
-                index,
-                QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
-                | QtCore.QItemSelectionModel.SelectionFlag.Rows,
-            )
+        self.spectrogram = stft
+        self.min_db = self.min_db
+        self.max_db = self.max_db
+        self.spectrogramReady.emit()
 
-    def update_select(self, utterance_id: int, deselect=False, reset=False, focus=False):
-        if reset and [x.id for x in self.selectedUtterances()] == [utterance_id]:
+    def finalize_loading_pitch_track(self, results):
+        pitch_track, voicing_track, channel, begin, end, min_f0, max_f0 = results
+        if self.settings.right_to_left:
+            pitch_track = np.flip(pitch_track, 0)
+            begin, end = -end, -begin
+        if begin != self.plot_min or end != self.plot_max:
             return
-        flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
-        if reset:
-            flags |= QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
-        elif deselect:
-            flags |= QtCore.QItemSelectionModel.SelectionFlag.Deselect
-        else:
-            flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
-        if utterance_id not in self.model().reversed_indices:
+        self.pitch_track_y = pitch_track
+        if pitch_track is None:
             return
-        row = self.model().reversed_indices[utterance_id]
-        if focus:
-            flags |= QtCore.QItemSelectionModel.SelectionFlag.Current
-            if row == self.currentIndex().row():
-                self.update_view_times(force_update=True)
+        x = np.linspace(
+            start=self.plot_min,
+            stop=self.plot_max,
+            num=pitch_track.shape[0],
+        )
+        self.pitch_track_x = x
+        self.pitchTrackReady.emit()
 
-        index = self.model().index(row, 0)
-        if not index.isValid():
+    def finalize_loading_auto_wave_form(self, results):
+        y, begin, end, channel = results
+        if self.settings.right_to_left:
+            y = np.flip(y, 0)
+            begin, end = -end, -begin
+        if begin != self.plot_min or end != self.plot_max:
             return
-        self.select(index, flags)
+        x = np.linspace(start=self.plot_min, stop=self.plot_max, num=y.shape[0])
+        self.waveform_x = x
+        self.waveform_y = y
+        self.waveformReady.emit()
 
     def select_audio(self, begin, end):
         if end is not None and end - begin < 0.025:
@@ -289,72 +693,18 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.selected_max_time = None
         self.selectionAudioChanged.emit()
 
-    def visible_utts(self) -> typing.List[Utterance]:
-        file_utts = []
-        if not self.current_file:
-            return file_utts
-        if self.current_file.num_utterances > 1:
-            for u in sorted(self.current_file.utterances, key=lambda x: x.begin):
-                if u.begin >= self.max_time:
-                    break
-                if u.end <= self.min_time:
-                    continue
-                file_utts.append(u)
-        else:
-            file_utts.extend(self.current_file.utterances)
-        return file_utts
-
-    def currentUtterance(self) -> Optional[Utterance]:
-        if self.current_utterance_id is None:
+    def set_current_channel(self, channel):
+        if channel == self.selected_channel:
             return
-        m = self.model()
-        utterance = (
-            m.session.query(Utterance)
-            .options(
-                joinedload(Utterance.file).joinedload(File.sound_file),
-                joinedload(Utterance.file).subqueryload(File.speakers),
-            )
-            .get(self.current_utterance_id)
-        )
-        return utterance
+        self.selected_channel = channel
+        self.load_audio_selection()
 
-    def _update_selection(self):
-        index = self.currentIndex()
-        if not index.isValid():
-            return
-        m = self.model()
-        self.current_utterance_id = m._indices[index.row()]
-        self.currentUtteranceChanged.emit()
-
-    def selectedUtterances(self):
-        current_utterance = self.currentUtterance()
-        if current_utterance is None:
-            return []
-        utts = [current_utterance]
-        m = self.model()
-        for index in self.selectedRows(1):
-            if current_utterance is not None and m._indices[index.row()] == current_utterance.id:
-                continue
-            utt = m.utteranceAt(index)
-            if utt is None:
-                continue
-            if current_utterance is None:
-                current_utterance = utt
-            if utt.file_id != current_utterance.file_id:
-                continue
-            utts.append(utt)
-        return utts
-
-    def currentText(self):
-        index = self.currentIndex()
-        if not index:
-            return
-        if not index.isValid():
-            return
-        m = self.model()
-
-        text = m.data(m.index(index.row(), m.text_column), QtCore.Qt.ItemDataRole.DisplayRole)
-        return text
+    def get_selected_wave_form(self):
+        if self.y is None:
+            return None, None
+        if len(self.y.shape) > 1 and self.y.shape[0] == 2:
+            return self.x, self.y[self.selected_channel, :]
+        return self.x, self.y
 
     def zoom(self, factor, mid_point=None):
         if factor == 0 or self.min_time is None:
@@ -365,7 +715,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         new_duration = cur_duration / factor
         new_begin = mid_point - (mid_point - self.min_time) / factor
         new_begin = max(new_begin, 0)
-        new_end = min(new_begin + new_duration, self.current_file.duration)
+        new_end = min(new_begin + new_duration, self.model().file.duration)
         if new_end - new_begin <= 0.025:
             return
         self.set_view_times(new_begin, new_end)
@@ -379,7 +729,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         else:
             right = False
             factor = factor - 1
-        if right and self.max_time == self.current_file.duration:
+        if right and self.max_time == self.model().file.duration:
             return
         if not right and self.min_time == 0:
             return
@@ -394,40 +744,23 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if new_begin < 0:
             new_end = new_end + abs(new_begin)
             new_begin = 0
-        if new_end > self.current_file.duration:
-            new_begin -= self.current_file.duration - new_end
-            new_end = self.current_file.duration
+        if new_end > self.model().file.duration:
+            new_begin -= self.model().file.duration - new_end
+            new_end = self.model().file.duration
         self.set_view_times(new_begin, new_end)
 
     def zoom_in(self):
-        if self.current_file is None:
+        if self.model().file is None:
             return
         self.zoom(1.5)
 
     def zoom_out(self):
-        if self.current_file is None:
+        if self.model().file is None:
             return
         self.zoom(0.5)
 
     def zoom_to_selection(self):
-        if self.selected_min_time is None or self.selected_max_time is None:
-            rows = self.selectedRows(1)
-            if not rows:
-                return
-            begin = None
-            end = None
-            for r in rows:
-                u = self.model().utteranceAt(r)
-                if u is None:
-                    continue
-                if u.file_id != self.current_file.id:
-                    continue
-                if begin is None or begin > u.begin:
-                    begin = u.begin
-                if end is None or end < u.end:
-                    end = u.end
-            self.set_view_times(begin, end)
-        else:
+        if self.selected_min_time is not None and self.selected_max_time is not None:
             self.set_view_times(self.selected_min_time, self.selected_max_time)
 
     def update_from_slider(self, value):
@@ -436,62 +769,291 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         cur_window = self.max_time - self.min_time
         self.set_view_times(value, value + cur_window)
 
-    def update_selection_audio(self):
-        begins = self.selectedRows(self.model().begin_column)
-        ends = self.selectedRows(self.model().end_column)
-        begin = None
-        end = None
-        if len(begins) > 0:
-            for i, b in enumerate(begins):
-                b = self.model().data(b, QtCore.Qt.ItemDataRole.DisplayRole)
-                e = self.model().data(ends[i], QtCore.Qt.ItemDataRole.DisplayRole)
-                if begin is None or begin > b:
-                    begin = b
-                if end is None or end < e:
-                    end = e
-            if self.current_file is None or begin > self.current_file.duration:
-                begin = None
-                end = None
-            elif end > self.current_file.duration:
-                end = self.current_file.duration
+    def update_selection_audio(self, begin, end):
+        if begin < self.min_time:
+            begin = self.min_time
+        if end > self.max_time:
+            end = self.max_time
         self.selected_min_time = begin
         self.selected_max_time = end
         self.selectionAudioChanged.emit()
 
+    def visible_utterances(self) -> typing.List[Utterance]:
+        file_utts = []
+        if not self.model().file:
+            return file_utts
+        if self.model().rowCount() > 1:
+            for u in self.model().utterances:
+                if u.begin >= self.max_time:
+                    break
+                if u.end <= self.min_time:
+                    continue
+                file_utts.append(u)
+        else:
+            file_utts.extend(self.model().utterances)
+        return file_utts
+
+    def model(self) -> FileUtterancesModel:
+        return super().model()
+
+    def set_view_times(self, begin, end):
+        begin = max(begin, 0)
+        end = min(end, self.model().file.duration)
+        if (begin, end) == (self.min_time, self.max_time):
+            return
+        self.min_time = begin
+        self.max_time = end
+        if (
+            self.selected_max_time is not None
+            and not self.min_time <= self.selected_min_time <= self.max_time
+        ):
+            self.selected_min_time = self.min_time
+        if (
+            self.selected_max_time is not None
+            and not self.min_time <= self.selected_max_time <= self.max_time
+        ):
+            self.selected_max_time = None
+        self.viewChanged.emit(self.min_time, self.max_time)
+
+    def set_current_file(self, info, force_update=False):
+        file_id, begin, end, utterance_id, speaker_id = info
+        try:
+            new_file = self.model().file is None or self.model().file.id != file_id
+        except sqlalchemy.orm.exc.DetachedInstanceError:
+            new_file = True
+        self.requested_utterance_id = utterance_id
+        if new_file:
+            self.fileAboutToChange.emit()
+            self.model().set_file(file_id)
+            self.speakerRequested.emit(speaker_id)
+        else:
+            self.finalize_set_new_file()
+            self.speakerRequested.emit(speaker_id)
+        self.set_view_times(begin, end)
+
+    def finalize_set_new_file(self):
+        if self.requested_utterance_id is None:
+            return
+        utterance = self.model().get_utterance(self.requested_utterance_id)
+        if utterance is None:
+            return
+        self.update_select(self.requested_utterance_id, reset=True)
+        self.selected_channel = 0
+        if utterance is not None and utterance.channel is not None:
+            self.selected_channel = utterance.channel
+        self.fileChanged.emit()
+
+    def checkSelected(self, utterance_id: int):
+        m = self.model()
+        for index in self.selectedRows(0):
+            if utterance_id == m._indices[index.row()]:
+                return True
+        return False
+
+    def update_selected_utterances(self, utterances):
+        super().clearSelection()
+        super().clearCurrentIndex()
+        if not utterances:
+            return
+        flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
+        flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
+        for u in utterances:
+            if u.id not in self.model().reversed_indices:
+                continue
+            row = self.model().reversed_indices[u.id]
+
+            index = self.model().index(row, 0)
+            if not index.isValid():
+                return
+            self.select(index, flags)
+        self.currentUtteranceChanged.emit()
+
+    def update_select(self, utterance_id: int, deselect=False, reset=False):
+        if reset and [x.id for x in self.selected_utterances()] == [utterance_id]:
+            return
+        flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
+        if reset:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
+        elif deselect:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.Deselect
+        else:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
+        if utterance_id not in self.model().reversed_indices:
+            return
+        row = self.model().reversed_indices[utterance_id]
+
+        index = self.model().index(row, 0)
+        if not index.isValid():
+            return
+        self.select(index, flags)
+        if not deselect:
+            self.select_audio(self.model().utterances[row].begin, self.model().utterances[row].end)
+        self.currentUtteranceChanged.emit()
+
+
+class CorpusSelectionModel(QtCore.QItemSelectionModel):
+    fileChanged = QtCore.Signal()
+    channelChanged = QtCore.Signal()
+    resetView = QtCore.Signal()
+    fileAboutToChange = QtCore.Signal()
+    fileViewRequested = QtCore.Signal(object)
+    selectionAudioChanged = QtCore.Signal()
+    currentTimeChanged = QtCore.Signal(object)
+    currentUtteranceChanged = QtCore.Signal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        self.min_time = 0
+        self.max_time = 10
+        self.selected_min_time = None
+        self.selected_max_time = None
+        self.x = None
+        self.y = None
+        self.current_utterance_id = None
+        self.selected_channel = 0
+        # self.viewChanged.connect(self.update_selected_waveform)
+        # self.fileChanged.connect(self.update_selected_waveform)
+        self.currentRowChanged.connect(self.switch_utterance)
+        # self.selectionChanged.connect(self.update_selection_audio)
+        # self.selectionChanged.connect(self.update_selection_audio)
+        # self.model().changeCommandFired.connect(self.expire_current)
+        self.model().layoutChanged.connect(self.check_selection)
+        self.model().unlockCorpus.connect(self.fileChanged.emit)
+
+    def set_current_utterance(self, utterance_id):
+        self.current_utterance_id = utterance_id
+        self.currentUtteranceChanged.emit()
+
+    def check_selection(self):
+        if self.currentIndex().row() == -1 and self.model().rowCount() > 0:
+            self.update_select_rows([0])
+        elif self.model().rowCount() == 0:
+            self.clearSelection()
+
+    def clearSelection(self) -> None:
+        self.fileAboutToChange.emit()
+        self.current_utterance_id = None
+        self.min_time = None
+        self.max_time = None
+        self.selected_min_time = None
+        self.selected_max_time = None
+        super(CorpusSelectionModel, self).clearCurrentIndex()
+        super(CorpusSelectionModel, self).clearSelection()
+        self.fileChanged.emit()
+
+    def update_select_rows(self, rows: list[int]):
+        super(CorpusSelectionModel, self).clearCurrentIndex()
+        super(CorpusSelectionModel, self).clearSelection()
+        if not rows:
+            return
+        for r in rows:
+            index = self.model().index(r, 0)
+            if not index.isValid():
+                continue
+            self.setCurrentIndex(
+                index,
+                QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent
+                | QtCore.QItemSelectionModel.SelectionFlag.Rows,
+            )
+
+    def update_selected_utterances(self, utterances):
+        if not utterances:
+            return
+        first = True
+        for u in utterances:
+            if u.id not in self.model().reversed_indices:
+                continue
+            row = self.model().reversed_indices[u.id]
+
+            index = self.model().index(row, 0)
+            if not index.isValid():
+                return
+            if not first:
+                flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
+                flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
+            else:
+                flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
+                flags |= QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
+                first = False
+            self.select(index, flags)
+
+    def update_select(self, utterance_id: int, deselect=False, reset=False, focus=False):
+        if reset and self.selected_utterances() == [utterance_id]:
+            return
+        flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
+        if reset:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.ClearAndSelect
+        elif deselect:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.Deselect
+        else:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
+        if utterance_id not in self.model().reversed_indices:
+            return
+        row = self.model().reversed_indices[utterance_id]
+        if focus:
+            flags |= QtCore.QItemSelectionModel.SelectionFlag.Current
+            if row == self.currentIndex().row():
+                self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
+
+        index = self.model().index(row, 0)
+        if not index.isValid():
+            return
+        self.select(index, flags)
+
+    def _update_selection(self):
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+        m = self.model()
+        self.current_utterance_id = m._indices[index.row()]
+        self.currentUtteranceChanged.emit()
+
+    def selected_utterances(self):
+        current_utterance = self.current_utterance_id
+        if current_utterance is None:
+            return []
+        utts = [current_utterance]
+        m = self.model()
+        for index in self.selectedRows(1):
+            if current_utterance is not None and m._indices[index.row()] == current_utterance:
+                continue
+            utt = m.utterance_id_at(index)
+            if utt is None:
+                continue
+            if current_utterance is None:
+                current_utterance = utt
+            utts.append(utt)
+        return utts
+
+    def currentText(self):
+        index = self.currentIndex()
+        if not index:
+            return
+        if not index.isValid():
+            return
+        m = self.model()
+
+        text = m.data(m.index(index.row(), m.text_column), QtCore.Qt.ItemDataRole.DisplayRole)
+        return text
+
     def switch_utterance(self, new_index, old_index):
+        if not self.model().fully_loaded:
+            return
         if not isinstance(new_index, QtCore.QModelIndex):
             row = 0
         else:
             if not new_index.isValid():
                 return
             row = new_index.row()
-        utt = self.model().utteranceAt(row)
+        utt = self.model().utterance_id_at(row)
         if utt is None:
             return
-        if utt.id == self.current_utterance_id:
+        if utt == self.current_utterance_id:
             return
-        self.current_utterance_id = utt.id
+        self.current_utterance_id = utt
         self.currentUtteranceChanged.emit()
-        self.set_current_file(
-            utt.file_id, utt.begin, utt.end, channel=utt.channel, force_update=True
-        )
-
-    def update_view_times(self, *args, force_update=False):
-        utts = self.selectedUtterances()
-        if len(utts) == 0:
-            self.resetView.emit()
-            return
-        if len(utts) == 1:
-            force_update = True
-        begin = utts[0].begin
-        f_id = utts[0].file_id
-        end_ind = -1
-        while True:
-            if utts[end_ind].file_id == f_id:
-                end = utts[end_ind].end
-                break
-        self.set_current_file(f_id, begin, end, channel=utts[0].channel, force_update=force_update)
-        self.selected_min_time = self.min_time
+        self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
 
     def model(self) -> CorpusModel:
         return super(CorpusSelectionModel, self).model()
@@ -503,43 +1065,6 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
                 return True
         return False
 
-    def set_current_file(self, file_id, begin=None, end=None, channel=None, force_update=False):
-        try:
-            new_file = self.current_file is None or self.current_file.id != file_id
-        except sqlalchemy.orm.exc.DetachedInstanceError:
-            new_file = True
-        if new_file:
-            self.selected_min_time = None
-            self.selected_max_time = None
-            self.fileAboutToChange.emit()
-            self.selected_channel = 0 if channel is None else channel
-            self.current_file = (
-                self.model().session.query(File).options(joinedload(File.sound_file)).get(file_id)
-            )
-            self.min_time = begin
-            self.max_time = end
-            self.fileChanged.emit()
-        elif (
-            self.current_file is not None
-            and begin is not None
-            and end is not None
-            and force_update
-        ):
-            self.selected_channel = channel
-            self.set_view_times(begin, end)
-
-    def set_view_times(self, begin, end):
-        begin = max(begin, 0)
-        end = min(end, self.current_file.duration)
-        if (begin, end) == (self.min_time, self.max_time):
-            return
-        self.min_time = begin
-        self.max_time = end
-        self.selected_min_time = self.min_time
-        if self.selected_max_time is not None and self.selected_max_time > self.max_time:
-            self.selected_max_time = None
-        self.viewChanged.emit(self.min_time, self.max_time)
-
     def focusUtterance(self, index):
         m = self.model()
         u = m.utteranceAt(index)
@@ -547,10 +1072,8 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
             self.min_time = 0
             self.max_time = 1
             self.fileAboutToChange()
-            self.current_file = None
             self.fileChanged.emit()
             return
-        self.current_file = u.file
         begin = u.begin
         end = u.end
         padding = 1
@@ -1450,6 +1973,7 @@ class CorpusModel(TableModel):
         self.speakers = {}
         self.speaker_id_mapping = {}
         self.utterances = None
+        self.session: sqlalchemy.orm.scoped_session = None
         self.utterance_count = 0
         self.speaker_count = 0
         self.file_count = 0
@@ -1494,29 +2018,46 @@ class CorpusModel(TableModel):
             return True
         return False
 
-    def update_utterance_table_row(self, utterance_id: int):
-        if utterance_id not in self.reversed_indices:
-            return
-        utterance = self.session.query(Utterance).get(utterance_id)
+    def update_utterance_table_row(self, utterance: typing.Union[int, Utterance]):
+        if isinstance(utterance, int):
+            utterance_id = utterance
+            if utterance_id not in self.reversed_indices:
+                return
+            utterance = self.session.query(Utterance).get(utterance_id)
+        else:
+            utterance_id = utterance.id
+            if utterance_id not in self.reversed_indices:
+                return
         index = self.reversed_indices[utterance_id]
         self.layoutAboutToBeChanged.emit()
         self._data[index][self.text_column] = utterance.text
         self._data[index][self.begin_column] = utterance.begin
         self._data[index][self.end_column] = utterance.end
-        self._data[index][self.duration_column] = utterance.duration
+        self._data[index][self.duration_column] = utterance.end - utterance.begin
+        self.layoutChanged.emit()
+
+    def change_speaker_table_utterances(self, utterances: typing.List[Utterance]):
+        self.layoutAboutToBeChanged.emit()
+        for u in utterances:
+            if u.id not in self.reversed_indices:
+                continue
+            index = self.reversed_indices[u.id]
+            self._speaker_indices[index] = u.speaker_id
+            self._data[index][self.speaker_column] = self.get_speaker_name(u.speaker_id)
         self.layoutChanged.emit()
 
     def add_table_utterances(self, utterances: typing.List[Utterance]):
         self.layoutAboutToBeChanged.emit()
         rows = []
         for utterance in utterances:
+            speaker_name = self.get_speaker_name(utterance.speaker_id)
             row_data = [
                 utterance.oovs,
                 utterance.file_name,
-                utterance.speaker_name,
+                speaker_name,
                 utterance.begin,
                 utterance.end,
-                utterance.duration,
+                utterance.end - utterance.begin,
                 utterance.text,
             ]
             self._data.append(row_data)
@@ -1531,7 +2072,10 @@ class CorpusModel(TableModel):
     def delete_table_utterances(self, utterances: typing.List[Utterance]):
         self.layoutAboutToBeChanged.emit()
         for utterance in utterances:
-            index = self.reversed_indices.pop(utterance.id)
+            try:
+                index = self.reversed_indices.pop(utterance.id)
+            except KeyError:
+                continue
             _ = self._data.pop(index)
             _ = self._indices.pop(index)
             _ = self._file_indices.pop(index)
@@ -1552,7 +2096,6 @@ class CorpusModel(TableModel):
 
         self.layoutAboutToBeChanged.emit()
         first = split_utterances[0]
-        self.session.merge(first)
         file_name = self._data[index][1]
         speaker_name = self._data[index][2]
         row_data = [
@@ -1561,7 +2104,7 @@ class CorpusModel(TableModel):
             speaker_name,
             first.begin,
             first.end,
-            first.duration,
+            first.end - first.begin,
             first.text,
         ]
         self._data[index] = row_data
@@ -1571,7 +2114,6 @@ class CorpusModel(TableModel):
         self.reversed_indices[first.id] = index
         rows = [index]
         for utterance in split_utterances[1:]:
-            self.session.merge(utterance)
             index += 1
             rows.append(index)
             self.reversed_indices = {
@@ -1584,7 +2126,7 @@ class CorpusModel(TableModel):
                 speaker_name,
                 utterance.begin,
                 utterance.end,
-                utterance.duration,
+                utterance.end - utterance.begin,
                 utterance.text,
             ]
             self.reversed_indices[utterance.id] = index
@@ -1603,14 +2145,13 @@ class CorpusModel(TableModel):
         except KeyError:
             return
         self.layoutAboutToBeChanged.emit()
-        self.session.merge(merged_utterance)
         row_data = [
             merged_utterance.oovs,
             merged_utterance.file_name,
             merged_utterance.speaker_name,
             merged_utterance.begin,
             merged_utterance.end,
-            merged_utterance.duration,
+            merged_utterance.end - merged_utterance.begin,
             merged_utterance.text,
         ]
         first = split_utterances[0]
@@ -1659,32 +2200,6 @@ class CorpusModel(TableModel):
         self.language_model = language_model
         self.languageModelChanged.emit()
 
-    def create_utterance(self, file: File, speaker: Optional[Speaker], begin: float, end: float):
-        if not self.editable:
-            return
-        channel = 0
-        if file.num_channels > 1:
-            ind = file.speaker_ordering.index(speaker)
-            if ind >= len(file.speaker_ordering) / 2:
-                channel = 1
-        if speaker is None:
-            speaker = self.corpus.add_speaker("speech", session=self.session)
-        begin = round(begin, 4)
-        end = round(end, 4)
-        text = ""
-        next_pk = self.corpus.get_next_primary_key(Utterance)
-        new_utt = Utterance(
-            id=next_pk,
-            speaker_id=speaker.id,
-            file_id=file.id,
-            begin=begin,
-            end=end,
-            channel=channel,
-            text=text,
-        )
-        self.addCommand.emit(undo.CreateUtteranceCommand(new_utt, self))
-        self.unsaved_files.add(file.id)
-
     def set_file_modified(self, file_id: typing.Union[int, typing.List[int]]):
         if isinstance(file_id, int):
             file_id = [file_id]
@@ -1698,32 +2213,6 @@ class CorpusModel(TableModel):
             {Speaker.modified: True}
         )
         self.session.commit()
-
-    def update_utterance_text(self, utterance: Utterance, text):
-        if text != utterance.text:
-            self.addCommand.emit(undo.UpdateUtteranceTextCommand(utterance, text, self))
-            self.set_file_modified(utterance.file_id)
-
-    def update_utterance_times(
-        self, utterance: Utterance, begin: Optional[float] = None, end: Optional[float] = None
-    ):
-        if not self.editable:
-            return
-        self.addCommand.emit(undo.UpdateUtteranceTimesCommand(utterance, begin, end, self))
-        self.set_file_modified(utterance.file_id)
-
-    def update_utterance_speaker(self, utterance: Utterance, speaker: Speaker):
-        if not self.editable:
-            return
-        self.addCommand.emit(undo.UpdateUtteranceSpeakerCommand(utterance, speaker, self))
-
-    def delete_utterances(self, utterances: list[Utterance]):
-        if not self.editable:
-            return
-        for u in utterances:
-            self.set_file_modified(u.file_id)
-            self.set_speaker_modified(u.speaker_id)
-        self.addCommand.emit(undo.DeleteUtteranceCommand(utterances, self))
 
     def check_align_lexicon_compiler(self):
         if self.acoustic_model is None:
@@ -1743,150 +2232,13 @@ class CorpusModel(TableModel):
                 dictionary_id, self.acoustic_model, disambiguation=True
             )
 
-    def split_vad_utterance(
-        self, original_utterance_id, replacement_utterance_data: typing.List[KalpyUtterance]
-    ):
-        utt = self.session.get(Utterance, original_utterance_id)
-        replacement_utterances = []
-        speaker_id = utt.speaker_id
-        file_id = utt.file_id
-        next_pk = self.corpus.get_next_primary_key(Utterance)
-        for new_utt in replacement_utterance_data:
-            replacement_utterances.append(
-                Utterance(
-                    id=next_pk,
-                    begin=new_utt.segment.begin,
-                    end=new_utt.segment.end,
-                    speaker_id=speaker_id,
-                    file_id=file_id,
-                    text=new_utt.transcript,
-                    normalized_text=new_utt.transcript,
-                    features="",
-                    in_subset=False,
-                    ignored=False,
-                    channel=new_utt.segment.channel,
-                )
-            )
-            next_pk += 1
-        splitting_utterances = [[utt, *replacement_utterances]]
-        self.addCommand.emit(
-            undo.SplitUtteranceCommand(splitting_utterances, self, update_table=False)
-        )
-        self.requestFileView.emit(utt.file_name)
-        self.set_file_modified(file_id)
-        self.set_speaker_modified(speaker_id)
-
-    def split_utterances(self, utterances: list[Utterance]):
-        if not self.editable:
-            return
-        splitting_utterances = []
-        for utt in utterances:
-            duration = utt.duration
-            beg = utt.begin
-            end = utt.end
-            first_text = ""
-            second_text = ""
-            if " " not in utt.text and " " in utt.normalized_text:
-                t = utt.normalized_text.split()
-                mid_ind = int(len(t) / 2)
-                first_text = t[:mid_ind]
-                second_text = t[mid_ind:]
-            elif utt.text:
-                t = utt.text.split()
-                mid_ind = int(len(t) / 2)
-                first_text = t[:mid_ind]
-                second_text = t[mid_ind:]
-            split_time = beg + (duration / 2)
-            oovs = set()
-            for w in first_text:
-                if not self.dictionary_model.check_word(w, utt.speaker_id):
-                    oovs.add(w)
-            next_pk = self.corpus.get_next_primary_key(Utterance)
-            first_utt = Utterance(
-                id=next_pk,
-                speaker_id=utt.speaker_id,
-                file_id=utt.file_id,
-                begin=beg,
-                end=split_time,
-                channel=utt.channel,
-                text=" ".join(first_text),
-                normalized_text=" ".join(first_text),
-                oovs=" ".join(oovs),
-            )
-            next_pk += 1
-            oovs = set()
-            for w in second_text:
-                if not self.dictionary_model.check_word(w, utt.speaker_id):
-                    oovs.add(w)
-            second_utt = Utterance(
-                id=next_pk,
-                speaker_id=utt.speaker_id,
-                file_id=utt.file_id,
-                begin=split_time,
-                end=end,
-                channel=utt.channel,
-                text=" ".join(second_text),
-                normalized_text=" ".join(second_text),
-                oovs=" ".join(oovs),
-            )
-            splitting_utterances.append([utt, first_utt, second_utt])
-        self.addCommand.emit(undo.SplitUtteranceCommand(splitting_utterances, self))
-        self.set_file_modified([utt[0].file_id for utt in splitting_utterances])
-
     def merge_speakers(self, speakers: list[int]):
         self.addCommand.emit(undo.MergeSpeakersCommand(speakers, self))
-
-    def merge_utterances(self, utterances: list[Utterance]):
-        if not self.editable:
-            return
-        min_begin = 1000000000
-        max_end = 0
-        text = ""
-        normalized_text = ""
-        speaker = None
-        file = None
-        channel = None
-        for old_utt in sorted(utterances, key=lambda x: x.begin):
-            if speaker is None:
-                speaker = old_utt.speaker
-            if file is None:
-                file = old_utt.file
-            if channel is None:
-                channel = old_utt.channel
-            if old_utt.begin < min_begin:
-                min_begin = old_utt.begin
-            if old_utt.end > max_end:
-                max_end = old_utt.end
-            utt_text = old_utt.text
-            if utt_text == "speech" and text.strip() == "speech":
-                continue
-            text += utt_text + " "
-            normalized_text += old_utt.normalized_text + " "
-        text = text[:-1]
-        normalized_text = normalized_text[:-1]
-        next_pk = self.corpus.get_next_primary_key(Utterance)
-        oovs = set()
-        for w in text.split():
-            if not self.dictionary_model.check_word(w, speaker.id):
-                oovs.add(w)
-        new_utt = Utterance(
-            id=next_pk,
-            speaker=speaker,
-            file=file,
-            begin=min_begin,
-            end=max_end,
-            channel=channel,
-            text=text,
-            normalized_text=normalized_text,
-            oovs=" ".join(oovs),
-        )
-        self.set_file_modified(file.id)
-        self.addCommand.emit(undo.MergeUtteranceCommand(utterances, new_utt, self))
 
     def replace_all(self, search_query: TextFilterQuery, replacement: str):
         self.addCommand.emit(undo.ReplaceAllCommand(search_query, replacement, self))
 
-    def utteranceAt(self, index) -> Optional[Utterance]:
+    def utterance_id_at(self, index) -> Optional[Utterance]:
         if not isinstance(index, int):
             if not index.isValid():
                 return None
@@ -1895,15 +2247,16 @@ class CorpusModel(TableModel):
             return None
         if len(self._indices) == 0:
             return None
-        utterance = (
-            self.session.query(Utterance)
-            .options(
-                joinedload(Utterance.file).joinedload(File.sound_file),
-                joinedload(Utterance.file).subqueryload(File.speakers),
-            )
-            .get(self._indices[index])
+        return self._indices[index]
+
+    def audio_info_for_utterance(self, row: int):
+        return (
+            self._file_indices[row],
+            self._data[row][self.begin_column],
+            self._data[row][self.end_column],
+            self._indices[row],
+            self._speaker_indices[row],
         )
-        return utterance
 
     def fileAt(self, index) -> int:
         if not isinstance(index, int):
