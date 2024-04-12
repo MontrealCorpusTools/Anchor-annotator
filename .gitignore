@@ -141,3 +141,5 @@ dmypy.json
 anchor/_version.py
 
 *.pclprof
+
+.qtcreator/

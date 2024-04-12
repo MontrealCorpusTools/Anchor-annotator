@@ -1058,27 +1058,19 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
     def model(self) -> CorpusModel:
         return super(CorpusSelectionModel, self).model()
 
-    def checkSelected(self, utterance: Utterance):
+    def focus_utterance(self, index):
         m = self.model()
-        for index in self.selectedRows(1):
-            if utterance.id == m._indices[index.row()]:
-                return True
-        return False
-
-    def focusUtterance(self, index):
-        m = self.model()
-        u = m.utteranceAt(index)
-        if u is None:
+        row = index.row()
+        utt_id = m.utterance_id_at(row)
+        if utt_id is None:
             self.min_time = 0
             self.max_time = 1
             self.fileAboutToChange()
             self.fileChanged.emit()
             return
-        begin = u.begin
-        end = u.end
-        padding = 1
-        self.set_view_times(begin - padding, end + padding)
-        self.selectionAudioChanged.emit()
+        self.current_utterance_id = utt_id
+        self.currentUtteranceChanged.emit()
+        self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
 
 
 class OovModel(TableModel):

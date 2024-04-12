@@ -402,7 +402,7 @@ class UtteranceListTable(AnchorTableView):
     def set_models(self, model: CorpusModel, selection_model: CorpusSelectionModel):
         self.setModel(model)
         self.setSelectionModel(selection_model)
-        self.doubleClicked.connect(self.selectionModel().focusUtterance)
+        self.doubleClicked.connect(self.selectionModel().focus_utterance)
         self.model().utteranceTextUpdated.connect(self.repaint)
         self.refresh_settings()
         model.corpusLoaded.connect(self.update_header)
