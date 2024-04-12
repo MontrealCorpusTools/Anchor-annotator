@@ -6,6 +6,12 @@ Changelog
 
    Alpha releases
 
+0.2.1
+-----
+
+- Fixed bug with calculated columns when merging/splitting and then changing time boundaries
+- Fixed bug when double clicking on an utterance to focus it
+
 0.2.0
 -----
 

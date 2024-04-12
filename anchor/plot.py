@@ -1616,7 +1616,7 @@ class AlignmentRegion(MfaRegion):
     def viewRangeChanged(self):
         if (self.item_max - self.item_min) / (
             self.selection_model.max_time - self.selection_model.min_time
-        ) < 0.01:
+        ) < 0.001:
             self.hide()
         else:
             self.show()

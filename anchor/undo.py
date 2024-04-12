@@ -150,26 +150,10 @@ class DeleteUtteranceCommand(FileCommand):
 
     def _undo(self, session) -> None:
         for i, utt in enumerate(self.deleted_utterances):
-            try:
-                del utt.duration
-            except AttributeError:
-                pass
-            try:
-                del utt.kaldi_id
-            except AttributeError:
-                pass
             make_transient(utt)
             for x in utt.phone_intervals:
-                try:
-                    del x.duration
-                except AttributeError:
-                    pass
                 make_transient(x)
             for x in utt.word_intervals:
-                try:
-                    del x.duration
-                except AttributeError:
-                    pass
                 make_transient(x)
             if utt.channel is None:
                 utt.channel = self.channels[i]
@@ -212,52 +196,20 @@ class SplitUtteranceCommand(FileCommand):
             if u.id is not None:
                 make_transient(u)
             for x in u.phone_intervals:
-                try:
-                    del x.duration
-                except AttributeError:
-                    pass
                 make_transient(x)
             for x in u.word_intervals:
-                try:
-                    del x.duration
-                except AttributeError:
-                    pass
                 make_transient(x)
             if u.channel is None:
                 u.channel = self.merged_utterance.channel
-            try:
-                del u.duration
-            except AttributeError:
-                pass
-            try:
-                del u.kaldi_id
-            except AttributeError:
-                pass
             session.add(u)
 
     def _undo(self, session) -> None:
         if self.merged_utterance.channel is None:
             self.merged_utterance.channel = self.split_utterances[0].channel
-        try:
-            del self.merged_utterance.duration
-        except AttributeError:
-            pass
-        try:
-            del self.merged_utterance.kaldi_id
-        except AttributeError:
-            pass
         make_transient(self.merged_utterance)
         for x in self.merged_utterance.phone_intervals:
-            try:
-                del x.duration
-            except AttributeError:
-                pass
             make_transient(x)
         for x in self.merged_utterance.word_intervals:
-            try:
-                del x.duration
-            except AttributeError:
-                pass
             make_transient(x)
         session.add(self.merged_utterance)
         for u in self.split_utterances:
@@ -300,7 +252,6 @@ class MergeUtteranceCommand(FileCommand):
         make_transient(self.merged_utterance)
         if self.merged_utterance.channel is None:
             self.merged_utterance.channel = self.channel
-        self.merged_utterance.kaldi_id = None
         session.add(self.merged_utterance)
 
     def _undo(self, session) -> None:
@@ -309,12 +260,9 @@ class MergeUtteranceCommand(FileCommand):
             if old_utt.channel is None:
                 old_utt.channel = self.channel
             for x in old_utt.phone_intervals:
-                x.duration = None
                 make_transient(x)
             for x in old_utt.word_intervals:
                 make_transient(x)
-            old_utt.duration = None
-            old_utt.kaldi_id = None
             session.add(old_utt)
         session.delete(self.merged_utterance)
 
@@ -402,14 +350,6 @@ class CreateUtteranceCommand(FileCommand):
         make_transient(self.new_utterance)
         if self.new_utterance.channel is None:
             self.new_utterance.channel = self.channel
-        try:
-            del self.new_utterance.duration
-        except AttributeError:
-            pass
-        try:
-            del self.new_utterance.kaldi_id
-        except AttributeError:
-            pass
         session.add(self.new_utterance)
 
     def _undo(self, session) -> None:
@@ -453,10 +393,6 @@ class UpdateUtteranceTimesCommand(FileCommand):
         self.utterance.xvector = None
         self.utterance.ivector = None
         self.utterance.features = None
-        try:
-            del self.utterance.duration
-        except AttributeError:
-            pass
         session.merge(self.utterance)
 
     def _undo(self, session) -> None:
@@ -465,10 +401,6 @@ class UpdateUtteranceTimesCommand(FileCommand):
         self.utterance.xvector = None
         self.utterance.ivector = None
         self.utterance.features = None
-        try:
-            del self.utterance.duration
-        except AttributeError:
-            pass
         session.merge(self.utterance)
 
     def update_data(self):
@@ -495,10 +427,6 @@ class UpdateUtteranceTextCommand(FileCommand):
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        try:
-            del self.utterance.duration
-        except AttributeError:
-            pass
         self.utterance.text = self.new_text
         self.utterance.normalized_text = self.new_text  # FIXME: Update this
         self.utterance.oovs = " ".join(oovs)
@@ -510,10 +438,6 @@ class UpdateUtteranceTextCommand(FileCommand):
         for w in self.new_text.split():
             if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
                 oovs.add(w)
-        try:
-            del self.utterance.duration
-        except AttributeError:
-            pass
         self.utterance.text = self.old_text
         self.utterance.normalized_text = self.old_text  # FIXME: Update this
         self.utterance.oovs = " ".join(oovs)
