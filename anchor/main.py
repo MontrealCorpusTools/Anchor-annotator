@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import os
 import subprocess
 import sys
@@ -29,16 +30,23 @@ from PySide6 import QtCore, QtGui, QtMultimedia, QtWidgets
 import anchor.db
 from anchor import workers
 from anchor.models import (
+    AcousticModelTableModel,
     CorpusModel,
     CorpusSelectionModel,
+    CorpusTableModel,
     DiarizationModel,
+    DictionaryModelTableModel,
     DictionaryTableModel,
     FileSelectionModel,
     FileUtterancesModel,
+    G2PModelTableModel,
+    IvectorExtractorTableModel,
+    LanguageModelTableModel,
     OovModel,
     SpeakerModel,
 )
 from anchor.settings import AnchorSettings
+from anchor.ui_corpus_manager import Ui_CorpusManagerDialog
 from anchor.ui_error_dialog import Ui_ErrorDialog
 from anchor.ui_main_window import Ui_MainWindow
 from anchor.ui_preferences import Ui_PreferencesDialog
@@ -52,6 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
     acousticModelLoaded = QtCore.Signal(object)
     languageModelLoaded = QtCore.Signal(object)
     newSpeaker = QtCore.Signal(object)
+    styleSheetChanged = QtCore.Signal(object)
 
     def __init__(self, debug):
         super().__init__()
@@ -94,6 +103,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_indicator.setFixedWidth(self.ui.statusbar.height())
         self.ui.statusbar.addPermanentWidget(self.status_indicator, 0)
         self.settings = AnchorSettings()
+        self.model_manager = ModelManager(
+            token=self.settings.value(AnchorSettings.GITHUB_TOKEN), ignore_cache=True
+        )
         self.sync_models()
         if self.settings.contains(AnchorSettings.GEOMETRY):
             self.restoreGeometry(self.settings.value(AnchorSettings.GEOMETRY))
@@ -307,7 +319,6 @@ class MainWindow(QtWidgets.QMainWindow):
             AnchorSqlBase.metadata.create_all(self.db_engine)
 
     def sync_models(self):
-        self.model_manager = ModelManager(token=self.settings.value(AnchorSettings.GITHUB_TOKEN))
         try:
             self.model_manager.refresh_remote()
         except Exception:
@@ -333,23 +344,23 @@ class MainWindow(QtWidgets.QMainWindow):
     def file_loaded(self, ready):
         if ready:
             self.ui.playAct.setEnabled(ready)
+            self.ui.muteAct.setEnabled(ready)
         else:
             self.ui.playAct.setEnabled(False)
             self.ui.playAct.setChecked(False)
+            self.ui.muteAct.setChecked(False)
+            self.ui.muteAct.setEnabled(False)
 
     def corpus_changed(self, clean):
         if clean:
-            self.ui.revertChangesAct.setEnabled(False)
-            self.ui.saveChangesAct.setEnabled(False)
+            self.ui.exportFilesAct.setEnabled(False)
         else:
-            self.ui.revertChangesAct.setEnabled(True)
-            self.ui.saveChangesAct.setEnabled(True)
+            self.ui.exportFilesAct.setEnabled(True)
 
     def handle_changes_synced(self, changed: bool):
-        self.ui.revertChangesAct.setEnabled(False)
         self.undo_group.setActiveStack(self.corpus_undo_stack)
         self.corpus_undo_stack.setClean()
-        self.ui.saveChangesAct.setEnabled(False)
+        self.ui.exportFilesAct.setEnabled(False)
 
     def execute_runnable(self, function, finished_function, extra_args=None):
         if self.corpus_model.corpus is None:
@@ -516,6 +527,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.oov_model.set_corpus_model(self.corpus_model)
         self.selection_model = CorpusSelectionModel(self.corpus_model)
         self.file_selection_model = FileSelectionModel(self.file_utterances_model)
+        self.diarization_model.changeUtteranceSpeakerRequested.connect(
+            self.file_utterances_model.update_utterance_speaker
+        )
         self.ui.utteranceListWidget.set_models(
             self.corpus_model, self.selection_model, self.speaker_model
         )
@@ -777,6 +791,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.cancelCorpusLoadAct.triggered.connect(self.cancel_corpus_load)
         self.ui.changeTemporaryDirectoryAct.triggered.connect(self.change_temp_dir)
         self.ui.openPreferencesAct.triggered.connect(self.open_options)
+        self.ui.openCorpusManagerAct.triggered.connect(self.open_corpus_manager)
         self.ui.loadAcousticModelAct.triggered.connect(self.change_acoustic_model)
         self.ui.loadLanguageModelAct.triggered.connect(self.change_language_model)
         self.ui.loadIvectorExtractorAct.triggered.connect(self.change_ivector_extractor)
@@ -820,8 +835,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.volume_slider.setMaximum(100)
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximumWidth(100)
-        self.volume_slider.setValue(self.media_player.volume())
-        self.volume_slider.valueChanged.connect(self.ui.changeVolumeAct.trigger)
+        self.volume_slider.setValue(self.settings.value(self.settings.VOLUME))
+        self.volume_slider.valueChanged.connect(self.media_player.set_volume)
         self.channel_select = QtWidgets.QComboBox(self)
         self.channel_select.addItem("Channel 0")
         self.ui.toolBar.addWidget(self.volume_slider)
@@ -830,7 +845,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.channel_select.currentIndexChanged.connect(
             self.file_selection_model.set_current_channel
         )
-        self.ui.changeVolumeAct.triggered.connect(self.media_player.set_volume)
         self.ui.addSpeakerAct.triggered.connect(self.add_new_speaker)
         self.ui.speakerWidget.tool_bar.addAction(self.ui.addSpeakerAct)
         self.ui.transcribeCorpusAct.triggered.connect(self.begin_transcription)
@@ -1071,7 +1085,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 .filter(anchor.db.AnchorCorpus.current == True)  # noqa
                 .first()
             )
-            for m in session.query(anchor.db.AcousticModel).filter_by(available_locally=True):
+            for m in (
+                session.query(anchor.db.AcousticModel)
+                .order_by(anchor.db.AcousticModel.last_used.desc())
+                .filter_by(available_locally=True)
+            ):
                 a = QtGui.QAction(f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
                 a.setCheckable(True)
@@ -1085,7 +1103,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.acoustic_action_group.addAction(a)
                 self.ui.acousticModelMenu.addAction(a)
 
-            for m in session.query(anchor.db.Dictionary).filter_by(available_locally=True):
+            for m in (
+                session.query(anchor.db.Dictionary)
+                .order_by(anchor.db.Dictionary.last_used.desc())
+                .filter_by(available_locally=True)
+            ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
                 if (
@@ -1098,7 +1120,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.dictionary_action_group.addAction(a)
                 self.ui.mfaDictionaryMenu.addAction(a)
 
-            for m in session.query(anchor.db.LanguageModel).filter_by(available_locally=True):
+            for m in (
+                session.query(anchor.db.LanguageModel)
+                .order_by(anchor.db.LanguageModel.last_used.desc())
+                .filter_by(available_locally=True)
+            ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
                 if (
@@ -1111,7 +1137,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.ui.languageModelMenu.addAction(a)
                 self.language_model_action_group.addAction(a)
 
-            for m in session.query(anchor.db.G2PModel).filter_by(available_locally=True):
+            for m in (
+                session.query(anchor.db.G2PModel)
+                .order_by(anchor.db.G2PModel.last_used.desc())
+                .filter_by(available_locally=True)
+            ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
                 if (
@@ -1144,9 +1174,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.ui.ivectorExtractorMenu.addAction(a)
                 self.ivector_action_group.addAction(a)
 
-            for m in session.query(anchor.db.IvectorExtractor).filter(
-                anchor.db.IvectorExtractor.available_locally == True,  # noqa
-                anchor.db.IvectorExtractor.name != "speechbrain",
+            for m in (
+                session.query(anchor.db.IvectorExtractor)
+                .filter(
+                    anchor.db.IvectorExtractor.available_locally == True,  # noqa
+                    anchor.db.IvectorExtractor.name != "speechbrain",
+                )
+                .order_by(anchor.db.IvectorExtractor.last_used.desc())
             ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
@@ -1168,11 +1202,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.playAct.setChecked(False)
 
     def update_mute_status(self, is_muted):
-        if is_muted:
-            self.previous_volume = self.media_player.volume()
-            self.change_volume_act.widget.setValue(0)
-        else:
-            self.change_volume_act.widget.setValue(self.previous_volume)
         self.media_player.setMuted(is_muted)
 
     def change_corpus(self):
@@ -1210,8 +1239,8 @@ class MainWindow(QtWidgets.QMainWindow):
             m.current = True
             session.commit()
         self.refresh_corpus_history()
+        self.close_corpus()
         self.load_corpus()
-        self.deleted_utts = []
 
     def load_reference_alignments(self):
         reference_directory = QtWidgets.QFileDialog.getExistingDirectory(
@@ -1233,13 +1262,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selection_model.clearSelection()
         self.file_selection_model.clearSelection()
         if self.corpus_model.corpus is not None:
+            self.corpus_model.clear_data()
             self.corpus_model.session.close()
+            del self.corpus_model.session
         self.corpus_model.setCorpus(None)
-        self.settings.setValue(AnchorSettings.CURRENT_CORPUS, "")
 
     def load_corpus(self):
-        self.selection_model.clearSelection()
-        self.corpus_model.setCorpus(None)
         with sqlalchemy.orm.Session(self.db_engine) as session:
             c = (
                 session.query(anchor.db.AnchorCorpus)
@@ -1773,7 +1801,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.mergeUtterancesAct.setShortcut(self.settings.value(AnchorSettings.MERGE_KEYBIND))
         self.ui.splitUtterancesAct.setShortcut(self.settings.value(AnchorSettings.SPLIT_KEYBIND))
         self.ui.deleteUtterancesAct.setShortcut(self.settings.value(AnchorSettings.DELETE_KEYBIND))
-        self.ui.saveChangesAct.setShortcut(self.settings.value(AnchorSettings.SAVE_KEYBIND))
+        self.ui.exportFilesAct.setShortcut(self.settings.value(AnchorSettings.SAVE_KEYBIND))
         self.ui.searchAct.setShortcut(self.settings.value(AnchorSettings.SEARCH_KEYBIND))
         self.undo_act.setShortcut(self.settings.value(AnchorSettings.UNDO_KEYBIND))
         self.redo_act.setShortcut(self.settings.value(AnchorSettings.REDO_KEYBIND))
@@ -1809,22 +1837,39 @@ class MainWindow(QtWidgets.QMainWindow):
             self.settings.sync()
             self.refresh_settings()
 
+    def open_corpus_manager(self):
+        dialog = ManagerDialog(self.model_manager, self.db_engine, parent=self)
+        dialog.corpus_model.corpusDataDeleteRequested.connect(self.close_corpus)
+        if dialog.exec_():
+            self.refresh_model_actions()
+            self.refresh_corpus_history()
+            if dialog.load_requested:
+                self.close_corpus()
+                self.load_corpus()
+
     def refresh_style_sheets(self):
         self.setStyleSheet(self.settings.style_sheet)
 
     def refresh_corpus_history(self):
         self.ui.loadRecentCorpusMenu.clear()
         with sqlalchemy.orm.Session(self.db_engine) as session:
-            corpora = session.query(anchor.db.AnchorCorpus).filter_by(current=False)
+            corpora = (
+                session.query(anchor.db.AnchorCorpus)
+                # .filter_by(current=False)
+                # .order_by(anchor.db.AnchorCorpus.last_used.desc())
+                .order_by(anchor.db.AnchorCorpus.id.desc()).limit(10)
+            )
             for c in corpora:
                 a = QtGui.QAction(c.name, parent=self)
+                if c.current:
+                    a.setChecked(True)
                 a.triggered.connect(self.change_corpus)
                 self.ui.loadRecentCorpusMenu.addAction(a)
 
     def refresh_settings(self):
-        self.refresh_fonts()
+        self.setStyleSheet(self.settings.style_sheet)
+        self.styleSheetChanged.emit(self.settings.style_sheet)
         self.refresh_shortcuts()
-        self.refresh_style_sheets()
         self.corpus_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.dictionary_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.speaker_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
@@ -1832,19 +1877,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.utteranceListWidget.refresh_settings()
         self.ui.dictionaryWidget.refresh_settings()
         self.ui.speakerWidget.refresh_settings()
-        self.ui.loadingScreen.refresh_settings()
         self.media_player.refresh_settings()
-
-    def refresh_fonts(self):
-        base_font = self.settings.font
-        self.menuBar().setFont(base_font)
-        self.ui.utteranceDockWidget.setFont(base_font)
-        self.ui.speakerDockWidget.setFont(base_font)
-        self.ui.dictionaryDockWidget.setFont(base_font)
-        self.ui.oovDockWidget.setFont(base_font)
-        self.ui.diarizationDockWidget.setFont(base_font)
-        self.channel_select.setFont(base_font)
-        self.volume_slider.setFont(base_font)
 
     def download_language_model(self):
         self.download_worker.set_params(
@@ -1898,6 +1931,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.acoustic_model_id: m_id}
+                )
+                session.query(anchor.db.AcousticModel).filter_by(
+                    anchor.db.AcousticModel.id == m_id
+                ).update(
+                    {
+                        anchor.db.AcousticModel.last_used: datetime.datetime.now(),
+                    }
                 )
                 session.commit()
         else:
@@ -1963,6 +2003,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.dictionary_id: m_id}
                 )
+                session.query(anchor.db.Dictionary).filter_by(
+                    anchor.db.Dictionary.id == m_id
+                ).update(
+                    {
+                        anchor.db.Dictionary.last_used: datetime.datetime.now(),
+                    }
+                )
                 session.commit()
         else:
             dictionary_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -2012,6 +2059,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.language_model_id: m_id}
+                )
+                session.query(anchor.db.LanguageModel).filter_by(
+                    anchor.db.LanguageModel.id == m_id
+                ).update(
+                    {
+                        anchor.db.LanguageModel.last_used: datetime.datetime.now(),
+                    }
                 )
                 session.commit()
         else:
@@ -2081,7 +2135,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 g2p_path = m.path
 
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
-                    {anchor.db.AnchorCorpus.g2p_model_id: m_id}
+                    {
+                        anchor.db.AnchorCorpus.g2p_model_id: m_id,
+                    }
+                )
+                session.query(anchor.db.G2PModel).filter_by(anchor.db.G2PModel.id == m_id).update(
+                    {
+                        anchor.db.G2PModel.last_used: datetime.datetime.now(),
+                    }
                 )
                 session.commit()
         else:
@@ -2120,6 +2181,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.ivector_extractor_id: m_id}
+                )
+                session.query(anchor.db.IvectorExtractor).filter_by(
+                    anchor.db.IvectorExtractor.id == m_id
+                ).update(
+                    {
+                        anchor.db.IvectorExtractor.last_used: datetime.datetime.now(),
+                    }
                 )
                 session.commit()
         else:
@@ -2218,17 +2286,97 @@ class DetailedMessageBox(QtWidgets.QDialog):  # pragma: no cover
         self.ui.setupUi(self)
         self.settings = AnchorSettings()
         self.ui.detailed_message.setText(detailed_message)
-        self.setStyleSheet(self.settings.style_sheet)
         self.ui.buttonBox.report_bug_button.clicked.connect(self.reportBug.emit)
         self.ui.buttonBox.rejected.connect(self.reject)
-        self.ui.label.setFont(self.settings.font)
-        self.ui.label_2.setFont(self.settings.font)
-        self.ui.detailed_message.setFont(self.settings.font)
+        self.setStyleSheet(self.settings.style_sheet)
+
+
+class ManagerDialog(QtWidgets.QDialog):
+    def __init__(
+        self, model_manager: ModelManager, db_engine: sqlalchemy.engine.Engine, parent=None
+    ):
+        super().__init__(parent=parent)
+        self.ui = Ui_CorpusManagerDialog()
+        self.ui.setupUi(self)
+        self.ui.tabWidget.setCurrentIndex(0)
+        self.settings = AnchorSettings()
+        self.model_manager = model_manager
+
+        self.db_engine = db_engine
+        self.session = sqlalchemy.orm.Session(self.db_engine)
+
+        self.corpus_model = CorpusTableModel(self.session, self)
+        self.acoustic_model_model = AcousticModelTableModel(self.session, self.model_manager, self)
+        self.g2p_model_model = G2PModelTableModel(self.session, self.model_manager, self)
+        self.language_model_model = LanguageModelTableModel(self.session, self.model_manager, self)
+        self.ivector_extractor_model = IvectorExtractorTableModel(
+            self.session, self.model_manager, self
+        )
+        self.dictionary_model = DictionaryModelTableModel(self.session, self.model_manager, self)
+
+        self.ui.corpusListWidget.set_model(self.corpus_model)
+        self.ui.corpusDetailWidget.set_models(
+            self.corpus_model,
+            self.dictionary_model,
+            self.acoustic_model_model,
+            self.g2p_model_model,
+            self.language_model_model,
+            self.ivector_extractor_model,
+        )
+
+        self.ui.acousticModelListWidget.set_model(self.acoustic_model_model)
+        self.ui.acousticModelDetailWidget.set_model(self.acoustic_model_model)
+
+        self.ui.g2pModelListWidget.set_model(self.g2p_model_model)
+        self.ui.g2pModelDetailWidget.set_model(self.g2p_model_model)
+
+        self.ui.languageModelListWidget.set_model(self.language_model_model)
+        self.ui.languageModelDetailWidget.set_model(self.language_model_model)
+
+        self.ui.ivectorExtractorListWidget.set_model(self.ivector_extractor_model)
+        self.ui.ivectorExtractorDetailWidget.set_model(self.ivector_extractor_model)
+
+        self.ui.dictionaryListWidget.set_model(self.dictionary_model)
+        self.ui.dictionaryDetailWidget.set_model(self.dictionary_model)
+
+        self.ui.dictionaryListWidget.modelDetailsRequested.connect(
+            self.ui.dictionaryDetailWidget.update_details
+        )
+        self.ui.acousticModelListWidget.modelDetailsRequested.connect(
+            self.ui.acousticModelDetailWidget.update_details
+        )
+        self.ui.g2pModelListWidget.modelDetailsRequested.connect(
+            self.ui.g2pModelDetailWidget.update_details
+        )
+        self.ui.languageModelListWidget.modelDetailsRequested.connect(
+            self.ui.languageModelDetailWidget.update_details
+        )
+        self.ui.ivectorExtractorListWidget.modelDetailsRequested.connect(
+            self.ui.ivectorExtractorDetailWidget.update_details
+        )
+        self.setWindowTitle("Corpus manager")
+
+        self.ui.corpusDetailWidget.corpusLoadRequested.connect(self.load_corpus)
+        self.load_requested = False
+
+    def load_corpus(self):
+        self.load_requested = True
+        self.accept()
+
+    def accept(self):
+        self.session.commit()
+        self.session.close()
+        super().accept()
+
+    def reject(self):
+        self.session.rollback()
+        self.session.close()
+        super().accept()
 
 
 class OptionsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
-        super(OptionsDialog, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.ui = Ui_PreferencesDialog()
         self.ui.setupUi(self)
         self.settings = AnchorSettings()
@@ -2301,6 +2449,7 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.autoloadLastUsedCorpusCheckBox.setChecked(
             self.settings.value(self.settings.AUTOLOAD)
         )
+        self.ui.enableFadeCheckBox.setChecked(self.settings.value(self.settings.ENABLE_FADE))
         self.ui.resultsPerPageEdit.setValue(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.ui.timeDirectionComboBox.setCurrentIndex(
             self.ui.timeDirectionComboBox.findText(
@@ -2309,12 +2458,14 @@ class OptionsDialog(QtWidgets.QDialog):
         )
 
         self.ui.dynamicRangeEdit.setValue(self.settings.value(self.settings.SPEC_DYNAMIC_RANGE))
+        self.ui.specMaxTimeEdit.setText(str(self.settings.value(self.settings.SPEC_MAX_TIME)))
         self.ui.fftSizeEdit.setValue(self.settings.value(self.settings.SPEC_N_FFT))
         self.ui.numTimeStepsEdit.setValue(self.settings.value(self.settings.SPEC_N_TIME_STEPS))
         self.ui.windowSizeEdit.setText(str(self.settings.value(self.settings.SPEC_WINDOW_SIZE)))
         self.ui.preemphasisEdit.setText(str(self.settings.value(self.settings.SPEC_PREEMPH)))
         self.ui.maxFrequencyEdit.setValue(self.settings.value(self.settings.SPEC_MAX_FREQ))
 
+        self.ui.pitchMaxTimeEdit.setText(str(self.settings.value(self.settings.PITCH_MAX_TIME)))
         self.ui.minPitchEdit.setValue(self.settings.value(self.settings.PITCH_MIN_F0))
         self.ui.maxPitchEdit.setValue(self.settings.value(self.settings.PITCH_MAX_F0))
         self.ui.timeStepEdit.setValue(self.settings.value(self.settings.PITCH_FRAME_SHIFT))
@@ -2331,8 +2482,9 @@ class OptionsDialog(QtWidgets.QDialog):
         except TypeError:
             self.ui.useMpCheckBox.setChecked(True)
         self.setWindowTitle("Preferences")
-        self.setFont(self.settings.font)
-        self.setStyleSheet(self.settings.style_sheet)
+        self.ui.tabWidget.setCurrentIndex(0)
+        # self.setFont(self.settings.font)
+        # self.setStyleSheet(self.settings.style_sheet)
 
     def accept(self) -> None:
         config.NUM_JOBS = self.ui.numJobsEdit.value()
@@ -2354,8 +2506,12 @@ class OptionsDialog(QtWidgets.QDialog):
             self.settings.SPEC_WINDOW_SIZE, float(self.ui.windowSizeEdit.text())
         )
         self.settings.setValue(self.settings.SPEC_PREEMPH, float(self.ui.preemphasisEdit.text()))
+        self.settings.setValue(self.settings.SPEC_MAX_TIME, float(self.ui.specMaxTimeEdit.text()))
         self.settings.setValue(self.settings.SPEC_MAX_FREQ, int(self.ui.maxFrequencyEdit.value()))
 
+        self.settings.setValue(
+            self.settings.PITCH_MAX_TIME, float(self.ui.pitchMaxTimeEdit.text())
+        )
         self.settings.setValue(self.settings.PITCH_MIN_F0, int(self.ui.minPitchEdit.value()))
         self.settings.setValue(self.settings.PITCH_MAX_F0, int(self.ui.maxPitchEdit.value()))
         self.settings.setValue(self.settings.PITCH_FRAME_SHIFT, int(self.ui.timeStepEdit.value()))
@@ -2441,6 +2597,7 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(
             self.settings.AUTOLOAD, self.ui.autoloadLastUsedCorpusCheckBox.isChecked()
         )
+        self.settings.setValue(self.settings.ENABLE_FADE, self.ui.enableFadeCheckBox.isChecked())
         self.settings.setValue(self.settings.CUDA, self.ui.cudaCheckBox.isChecked())
         self.settings.setValue(self.settings.AUTOSAVE, self.ui.autosaveOnExitCheckBox.isChecked())
         self.settings.setValue(self.settings.AUDIO_DEVICE, self.ui.audioDeviceEdit.currentData())
@@ -2453,4 +2610,6 @@ class OptionsDialog(QtWidgets.QDialog):
 
 
 class Application(QtWidgets.QApplication):
-    pass
+    def setActiveWindow(self, act):
+        super().setActiveWindow(act)
+        act.styleSheetChanged.connect(self.setStyleSheet)

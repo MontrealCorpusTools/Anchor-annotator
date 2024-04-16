@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import datetime
+import logging
 import os
 import re
+import subprocess
 import typing
 from threading import Lock
 from typing import Any, Optional, Union
@@ -14,6 +17,7 @@ from _kalpy.ivector import Plda
 from dataclassy import dataclass
 from kalpy.fstext.lexicon import LexiconCompiler
 from kalpy.utterance import Utterance as KalpyUtterance
+from montreal_forced_aligner import config
 from montreal_forced_aligner.corpus.acoustic_corpus import (
     AcousticCorpus,
     AcousticCorpusWithPronunciations,
@@ -31,8 +35,14 @@ from montreal_forced_aligner.utils import mfa_open
 from PySide6 import QtCore
 from sqlalchemy.orm import joinedload
 
+import anchor.db
 from anchor import undo, workers
 from anchor.settings import AnchorSettings
+
+if typing.TYPE_CHECKING:
+    from montreal_forced_aligner.models import ModelManager
+
+logger = logging.getLogger("anchor")
 
 
 # noinspection PyUnresolvedReferences
@@ -79,7 +89,7 @@ class TableModel(QtCore.QAbstractTableModel):
     newResults = QtCore.Signal()
 
     def __init__(self, header_data, parent=None):
-        super(TableModel, self).__init__(parent)
+        super().__init__(parent)
         self._header_data = header_data
         self._data = []
         self.result_count = None
@@ -133,7 +143,7 @@ class TableModel(QtCore.QAbstractTableModel):
         self._data = []
         self.layoutChanged.emit()
 
-    def headerData(self, index, orientation, role):
+    def headerData(self, index, orientation, role=None, *args, **kwargs):
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             return self._header_data[index]
 
@@ -258,7 +268,6 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             id=next_pk,
             speaker_id=speaker_id,
             file_id=self.file.id,
-            file=self.file,
             begin=begin,
             end=end,
             channel=channel,
@@ -266,7 +275,6 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             normalized_text=text,
             oovs=text,
         )
-        print(new_utt.id, new_utt.speaker_id, new_utt.file_id, new_utt.begin, new_utt.end)
         self.addCommand.emit(undo.CreateUtteranceCommand(new_utt, self))
         self.corpus_model.set_file_modified(self.file.id)
         self.corpus_model.set_speaker_modified(speaker_id)
@@ -340,9 +348,13 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         for utterance in self.utterances:
             self.corpus_model.session.refresh(utterance)
 
-    def update_utterance_speaker(self, utterance: Utterance, speaker_id: int):
+    def update_utterance_speaker(self, utterance: typing.Union[Utterance, int], speaker_id: int):
         if not self.corpus_model.editable:
             return
+        if isinstance(utterance, int):
+            if utterance not in self.reversed_indices:
+                return
+            utterance = self.reversed_indices[utterance]
         old_speaker_id = utterance.speaker_id
         if old_speaker_id == speaker_id:
             return
@@ -595,18 +607,19 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             self.selected_channel,
         )
         self.spectrogram_worker.start()
-        if self.max_time - self.min_time <= 10:
-            self.pitch_track_worker.stop()
-            self.pitch_track_worker.set_params(
-                y,
-                self.model().file.sound_file.sample_rate,
-                self.min_time,
-                self.max_time,
-                self.selected_channel,
-                self.bottom_point,
-                self.separator_point,
-            )
-            self.pitch_track_worker.start()
+
+        self.pitch_track_worker.stop()
+        self.pitch_track_worker.set_params(
+            y,
+            self.model().file.sound_file.sample_rate,
+            self.min_time,
+            self.max_time,
+            self.selected_channel,
+            self.bottom_point,
+            self.separator_point,
+        )
+        self.pitch_track_worker.start()
+
         self.auto_waveform_worker.stop()
         self.auto_waveform_worker.set_params(
             y,
@@ -636,6 +649,12 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         return self.max_time
 
     def finalize_loading_spectrogram(self, results):
+        if results is None:
+            self.spectrogram = None
+            self.min_db = None
+            self.max_db = None
+            self.spectrogramReady.emit()
+            return
         stft, channel, begin, end, min_db, max_db = results
         if self.settings.right_to_left:
             stft = np.flip(stft, 1)
@@ -648,6 +667,11 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.spectrogramReady.emit()
 
     def finalize_loading_pitch_track(self, results):
+        if results is None:
+            self.pitch_track_y = None
+            self.pitch_track_x = None
+            self.pitchTrackReady.emit()
+            return
         pitch_track, voicing_track, channel, begin, end, min_f0, max_f0 = results
         if self.settings.right_to_left:
             pitch_track = np.flip(pitch_track, 0)
@@ -938,13 +962,13 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.max_time = None
         self.selected_min_time = None
         self.selected_max_time = None
-        super(CorpusSelectionModel, self).clearCurrentIndex()
-        super(CorpusSelectionModel, self).clearSelection()
+        super().clearCurrentIndex()
+        super().clearSelection()
         self.fileChanged.emit()
 
     def update_select_rows(self, rows: list[int]):
-        super(CorpusSelectionModel, self).clearCurrentIndex()
-        super(CorpusSelectionModel, self).clearSelection()
+        super().clearCurrentIndex()
+        super().clearSelection()
         if not rows:
             return
         for r in rows:
@@ -1056,7 +1080,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
 
     def model(self) -> CorpusModel:
-        return super(CorpusSelectionModel, self).model()
+        return super().model()
 
     def focus_utterance(self, index):
         m = self.model()
@@ -1077,7 +1101,6 @@ class OovModel(TableModel):
     def __init__(self, parent=None):
         super().__init__(["OOV word", "Count"], parent=parent)
         self.settings = AnchorSettings()
-        self.font = self.settings.font
         self.corpus_model: Optional[CorpusModel] = None
         self.sort_index = None
         self.sort_order = None
@@ -1139,7 +1162,6 @@ class DictionaryTableModel(TableModel):
     def __init__(self, parent=None):
         super().__init__(["Word", "Word type", "Count", "Pronunciation"], parent=parent)
         self.settings = AnchorSettings()
-        self.font = self.settings.font
         self.current_dictionary = None
         self.corpus_model: Optional[CorpusModel] = None
         self.sort_index = None
@@ -1288,7 +1310,7 @@ class DictionaryTableModel(TableModel):
     def delete_pronunciations(self, pronunciation_ids: typing.List[int]):
         self.corpus_model.addCommand.emit(undo.DeletePronunciationCommand(pronunciation_ids, self))
 
-    def data(self, index, role):
+    def data(self, index, role=None):
         if not index.isValid() or index.row() > len(self._data) - 1:
             return
         data = self._data[index.row()][index.column()]
@@ -1654,6 +1676,8 @@ class SpeakerModel(TableModel):
 
 
 class DiarizationModel(TableModel):
+    changeUtteranceSpeakerRequested = QtCore.Signal(object, object)
+
     def __init__(self, parent=None):
         columns = [
             "Utterance",
@@ -1699,10 +1723,10 @@ class DiarizationModel(TableModel):
             return self._data[index.row()][index.column()]
         return super().data(index, role)
 
-    def utterance_at(self, row: int):
+    def utterance_id_at(self, row: int):
         if row is None:
             return None
-        return self.corpus_model.corpus.session.get(Utterance, self._utterance_ids[row])
+        return self._utterance_ids[row]
 
     def set_threshold(self, threshold: float):
         if threshold != self.threshold:
@@ -1763,10 +1787,10 @@ class DiarizationModel(TableModel):
                 self.alternate_speaker_filter = current_speaker.id
 
     def reassign_utterance(self, row: int):
-        utterance = self.utterance_at(row)
-        if utterance is None:
+        utterance_id = self.utterance_id_at(row)
+        if utterance_id is None:
             return
-        self.corpus_model.update_utterance_speaker(utterance, self._suggested_indices[row])
+        self.changeUtteranceSpeakerRequested.emit(utterance_id, self._suggested_indices[row])
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
         self._utterance_ids.pop(row)
@@ -1910,7 +1934,7 @@ class CorpusModel(TableModel):
             "WER",
             "Ivector distance",
         ]
-        super(CorpusModel, self).__init__(header, parent=parent)
+        super().__init__(header, parent=parent)
         self.oov_column = header.index("OOVs?")
         self.file_column = header.index("File")
         self.speaker_column = header.index("Speaker")
@@ -1954,7 +1978,6 @@ class CorpusModel(TableModel):
         self.plda: Optional[Plda] = None
         self.speaker_plda = None
         self.segmented = True
-        self.engine: typing.Optional[sqlalchemy.engine.Engine] = None
         self.reversed_indices = {}
         self._indices = []
         self._file_indices = []
@@ -2373,6 +2396,19 @@ class CorpusModel(TableModel):
                 self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.DisplayRole])
                 self.refreshUtteranceText.emit(utt_id, texts[utt_id])
 
+    def clear_data(self):
+        self.layoutAboutToBeChanged.emit()
+        self.reversed_indices = {}
+        self._indices = []
+        self._file_indices = []
+        self._speaker_indices = []
+        self._data = []
+        self.unsaved_files = set()
+        self.files = []
+        self.speakers = {}
+        self.speaker_id_mapping = {}
+        self.layoutChanged.emit()
+
     def finish_update_data(self, result, *args, **kwargs):
         if not result:
             return
@@ -2424,3 +2460,187 @@ class CorpusModel(TableModel):
         self.runFunction.emit(
             "Counting utterance results", self.finalize_result_count, [self.count_kwargs]
         )
+
+
+class MfaModelTableModel(QtCore.QAbstractTableModel):
+    model_type = None
+
+    def __init__(self, session: sqlalchemy.orm.Session, model_manager: ModelManager, parent=None):
+        super().__init__(parent)
+        self.session = session
+        self.model_manager = model_manager
+        self._header_data = ["Status", "Name", "Path"]
+        model_class = anchor.db.MODEL_TYPES[self.model_type]
+        self.models = (
+            self.session.query(model_class)
+            .filter(model_class.name != "speechbrain")
+            .order_by(model_class.name)
+            .all()
+        )
+        self.result_count = None
+        self.sort_index = None
+        self.sort_order = None
+        self.current_offset = 0
+        self.limit = 1
+        self.text_filter = None
+        self.header_mapping = {1: "name", 2: "path"}
+
+    def headerData(self, index, orientation, role=None, *args, **kwargs):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            return self._header_data[index]
+
+    def data(self, index, role=None):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            model = self.models[index.row()]
+            if index.column() == 0:
+                status = "available"
+                if not os.path.exists(model.path):
+                    if model.name in self.model_manager.remote_models[self.model_type]:
+                        status = "remote"
+                    else:
+                        status = "unavailable"
+                return status
+            return str(getattr(model, self.header_mapping[index.column()]))
+
+    def add_model(self, path):
+        m = self.session.query(self.model_type).filter_by(path=path).first()
+        if m is not None:
+            return
+        self.layoutAboutToBeChanged.emit()
+        m_name = os.path.basename(path)
+        m = anchor.db.MODEL_TYPES[self.model_type](name=m_name, path=path, available_locally=True)
+        self.session.add(m)
+        self.session.commit()
+        self.models.append(m)
+        self.layoutChanged.emit()
+
+    def download_model(self, row):
+        from montreal_forced_aligner.models import MODEL_TYPES
+
+        self.layoutAboutToBeChanged.emit()
+        m = self.models[row]
+        if m.name in self.model_manager.remote_models[self.model_type]:
+            self.model_manager.download_model(self.model_type, m.name)
+            m.path = MODEL_TYPES[self.model_type].get_pretrained_path(m.name)
+            m.available_locally = True
+            m.last_used = datetime.datetime.now()
+        self.session.commit()
+        self.layoutChanged.emit()
+
+    def remove_model(self, row):
+        self.layoutAboutToBeChanged.emit()
+        if self.models[row].name in self.model_manager.local_models[self.model_type]:
+            os.remove(self.models[row].path)
+            self.models[row].path = ""
+            self.models[row].available_locally = False
+        else:
+            m = self.models.pop(row)
+            self.session.delete(m)
+        self.session.commit()
+        self.layoutChanged.emit()
+
+    def rowCount(self, parent=None):
+        return len(self.models)
+
+    def columnCount(self, parent=None):
+        return len(self._header_data)
+
+
+class CorpusTableModel(QtCore.QAbstractTableModel):
+    corpusDataDeleteRequested = QtCore.Signal()
+
+    def __init__(self, session: sqlalchemy.orm.Session, parent=None):
+        super().__init__(parent)
+        self._header_data = ["Status", "Name", "Path"]
+        self.session = session
+        self.corpora = (
+            self.session.query(anchor.db.AnchorCorpus).order_by(anchor.db.AnchorCorpus.name).all()
+        )
+        self.result_count = None
+        self.sort_index = None
+        self.sort_order = None
+        self.current_offset = 0
+        self.limit = 1
+        self.text_filter = None
+        self.header_mapping = {1: "name", 2: "path"}
+
+    def headerData(self, index, orientation, role=None, *args, **kwargs):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            return self._header_data[index]
+
+    def data(self, index, role=None):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            model = self.corpora[index.row()]
+            if index.column() == 0:
+                status = "unknown"
+                if not os.path.exists(model.path):
+                    status = "unavailable"
+                return status
+            return str(getattr(model, self.header_mapping[index.column()]))
+
+    def add_corpus(self, corpus_directory, **kwargs):
+        self.layoutAboutToBeChanged.emit()
+        self.session.query(anchor.db.AnchorCorpus).update({anchor.db.AnchorCorpus.current: False})
+        self.session.commit()
+        corpus_name = os.path.basename(corpus_directory)
+        c = anchor.db.AnchorCorpus(name=corpus_name, path=corpus_directory, current=True, **kwargs)
+        print(c.current)
+        self.session.add(c)
+        self.session.commit()
+        self.corpora.append(c)
+        self.layoutChanged.emit()
+
+    def reset_corpus(self, row):
+        corpus = self.corpora[row]
+        if corpus.current:
+            self.corpusDataDeleteRequested.emit()
+        logger.debug(f"Dropping {corpus.name} database...")
+        proc = subprocess.run(
+            [
+                "dropdb",
+                f"--host={config.database_socket()}",
+                "--if-exists",
+                "--force",
+                corpus.name,
+            ],
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            check=True,
+            encoding="utf-8",
+        )
+        logger.debug(f"Stdout: {proc.stdout}")
+        logger.debug(f"Stderr: {proc.stderr}")
+
+    def remove_corpus(self, row):
+        self.layoutAboutToBeChanged.emit()
+        self.reset_corpus(row)
+        corpus = self.corpora.pop(row)
+        self.session.delete(corpus)
+        self.session.commit()
+        self.layoutChanged.emit()
+
+    def rowCount(self, parent=None):
+        return len(self.corpora)
+
+    def columnCount(self, parent=None):
+        return len(self._header_data)
+
+
+class AcousticModelTableModel(MfaModelTableModel):
+    model_type = "acoustic"
+
+
+class G2PModelTableModel(MfaModelTableModel):
+    model_type = "g2p"
+
+
+class DictionaryModelTableModel(MfaModelTableModel):
+    model_type = "dictionary"
+
+
+class LanguageModelTableModel(MfaModelTableModel):
+    model_type = "language_model"
+
+
+class IvectorExtractorTableModel(MfaModelTableModel):
+    model_type = "ivector"

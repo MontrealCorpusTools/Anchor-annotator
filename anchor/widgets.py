@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import typing
 from typing import TYPE_CHECKING, Optional
@@ -10,23 +11,31 @@ from _kalpy.matrix import DoubleVector
 from montreal_forced_aligner.data import (  # noqa
     ClusterType,
     DistanceMetric,
+    Language,
     ManifoldAlgorithm,
     PhoneSetType,
     PhoneType,
     WordType,
 )
 from montreal_forced_aligner.db import Corpus, Phone, Speaker, Utterance  # noqa
-from montreal_forced_aligner.utils import DatasetType, inspect_database  # noqa
+from montreal_forced_aligner.utils import DatasetType, inspect_database, mfa_open  # noqa
 from PySide6 import QtCore, QtGui, QtMultimedia, QtSvgWidgets, QtWidgets
 
 import anchor.resources_rc  # noqa
 from anchor.models import (
+    AcousticModelTableModel,
     CorpusModel,
     CorpusSelectionModel,
+    CorpusTableModel,
     DiarizationModel,
+    DictionaryModelTableModel,
     DictionaryTableModel,
     FileSelectionModel,
     FileUtterancesModel,
+    G2PModelTableModel,
+    IvectorExtractorTableModel,
+    LanguageModelTableModel,
+    MfaModelTableModel,
     OovModel,
     SpeakerModel,
     TextFilterQuery,
@@ -36,6 +45,7 @@ from anchor.settings import AnchorSettings
 from anchor.workers import Worker
 
 if TYPE_CHECKING:
+    import anchor.db
     from anchor.main import MainWindow
 
 outside_column_ratio = 0.2
@@ -79,6 +89,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self._audio_output.setDevice(self.devices.defaultAudioOutput())
         self.setAudioOutput(self._audio_output)
         self.playbackStateChanged.connect(self.reset_position)
+        self.set_volume(self.settings.value(self.settings.VOLUME))
         self.fade_in_anim = QtCore.QPropertyAnimation(self._audio_output, b"volume")
         self.fade_in_anim.setDuration(10)
         self.fade_in_anim.setStartValue(0.1)
@@ -95,6 +106,9 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.fade_out_anim.finished.connect(super().pause)
         self.file_path = None
 
+    def setMuted(self, muted: bool):
+        self.audioOutput().setMuted(muted)
+
     def handle_error(self, *args):
         print("ERROR")
         print(args)
@@ -102,7 +116,9 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
     def play(self) -> None:
         if self.startTime() is None:
             return
-        self._audio_output.setVolume(0.1)
+        fade_in = self.settings.value(self.settings.ENABLE_FADE)
+        if fade_in:
+            self._audio_output.setVolume(0.1)
         if (
             self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.StoppedState
             or self.currentTime() < self.startTime()
@@ -110,7 +126,8 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         ):
             self.setCurrentTime(self.startTime())
         super(MediaPlayer, self).play()
-        self.fade_in_anim.start()
+        if fade_in:
+            self.fade_in_anim.start()
 
     def startTime(self):
         if (
@@ -177,12 +194,15 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         if self.audioOutput() is None:
             return 100
         volume = self.audioOutput().volume()
-        volume = QtMultimedia.QAudio.convertVolume(
-            volume / 100.0,
-            QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
-            QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
+        volume = int(
+            QtMultimedia.QAudio.convertVolume(
+                volume,
+                QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
+                QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
+            )
+            * 100
         )
-        return int(volume)
+        return volume
 
     def update_selection_times(self):
         self.setCurrentTime(self.startTime())
@@ -208,7 +228,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         ):
             self.setSource(QtCore.QUrl())
             return
-        self.channels = self.selection_model.model().file.num_channels
         self.setSource(f"file:///{new_file}")
         self.setPosition(0)
         self.audioReady.emit(True)
@@ -316,7 +335,7 @@ class SpeakerDropDown(QtWidgets.QToolButton):
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
         self.current_speaker = ""
         self.menu = QtWidgets.QMenu(self)
-        self.menu.setStyleSheet(self.parent().settings.menu_style_sheet)
+        # self.menu.setStyleSheet(self.parent().settings.menu_style_sheet)
         self.speakers = []
         self.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.MenuButtonPopup)
@@ -344,7 +363,7 @@ class SpeakerDropDown(QtWidgets.QToolButton):
         self.setText(speaker.name)
 
 
-class AnchorTableView(QtWidgets.QTableView):
+class BaseTableView(QtWidgets.QTableView):
     def __init__(self, *args):
         self.settings = AnchorSettings()
         super().__init__(*args)
@@ -360,12 +379,8 @@ class AnchorTableView(QtWidgets.QTableView):
         self.setDragEnabled(False)
         self.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.setSelectionBehavior(QtWidgets.QTableView.SelectionBehavior.SelectRows)
-
-    def setModel(self, model: QtCore.QAbstractItemModel) -> None:
-        super(AnchorTableView, self).setModel(model)
-        self.model().newResults.connect(self.scrollToTop)
-        self.selectionModel().clear()
-        self.horizontalHeader().sortIndicatorChanged.connect(self.model().update_sort)
+        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
+        self.setHorizontalHeader(self.header)
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
         copy_combo = QtCore.QKeyCombination(QtCore.Qt.Modifier.CTRL, QtCore.Qt.Key.Key_C)
@@ -375,11 +390,26 @@ class AnchorTableView(QtWidgets.QTableView):
             text = self.selectionModel().model().data(current, QtCore.Qt.ItemDataRole.DisplayRole)
             clipboard.setText(str(text))
 
+    def setModel(self, model: QtCore.QAbstractItemModel) -> None:
+        super().setModel(model)
+        self.refresh_settings()
+
     def refresh_settings(self):
         self.settings.sync()
-        self.horizontalHeader().setFont(self.settings.font)
-        self.setFont(self.settings.font)
-        fm = QtGui.QFontMetrics(self.settings.font)
+        # self.horizontalHeader().setFont(self.settings.big_font)
+        # self.setFont(self.settings.font)
+
+
+class AnchorTableView(BaseTableView):
+    def setModel(self, model: QtCore.QAbstractItemModel) -> None:
+        super().setModel(model)
+        self.model().newResults.connect(self.scrollToTop)
+        self.selectionModel().clear()
+        self.horizontalHeader().sortIndicatorChanged.connect(self.model().update_sort)
+
+    def refresh_settings(self):
+        super().refresh_settings()
+        fm = QtGui.QFontMetrics(self.settings.big_font)
         minimum = 100
         for i in range(self.horizontalHeader().count()):
             text = self.model().headerData(
@@ -387,7 +417,7 @@ class AnchorTableView(QtWidgets.QTableView):
             )
 
             width = fm.boundingRect(text).width() + (3 * self.settings.sort_indicator_padding)
-            if width < minimum and i != 0:
+            if width < minimum:
                 minimum = width
             self.setColumnWidth(i, width)
         self.horizontalHeader().setMinimumSectionSize(minimum)
@@ -396,8 +426,6 @@ class AnchorTableView(QtWidgets.QTableView):
 class UtteranceListTable(AnchorTableView):
     def __init__(self, *args):
         super().__init__(*args)
-        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
-        self.setHorizontalHeader(self.header)
 
     def set_models(self, model: CorpusModel, selection_model: CorpusSelectionModel):
         self.setModel(model)
@@ -455,7 +483,7 @@ class CompleterLineEdit(QtWidgets.QWidget):
         # self.clear_action.setVisible(False)
         layout.addWidget(self.button)
         self.setLayout(layout)
-        self.setStyleSheet(self.settings.style_sheet)
+        # self.setStyleSheet(self.settings.style_sheet)
         self.completions = {}
 
     def validate(self) -> bool:
@@ -689,7 +717,6 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
         self.status_indicator.setVisible(False)
         if self.requested_utterance_id is not None:
             self.selection_model.update_select(self.requested_utterance_id, reset=True)
-            self.selection_model.update_view_times(force_update=True)
         else:
             self.selection_model.clearSelection()
 
@@ -712,18 +739,11 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
 
     def refresh_settings(self):
         self.settings.sync()
-        font = self.settings.font
-        header_font = self.settings.big_font
-
-        self.file_dropdown.setFont(font)
-        self.setFont(header_font)
         self.icon_delegate.refresh_settings()
         self.highlight_delegate.refresh_settings()
         self.nowrap_delegate.refresh_settings()
-        self.search_box.setFont(font)
-        self.replace_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
-        self.replace_box.setStyleSheet(self.settings.search_box_style_sheet)
+        # self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        # self.replace_box.setStyleSheet(self.settings.search_box_style_sheet)
         self.table_widget.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
 
@@ -932,14 +952,6 @@ class LoadingScreen(QtWidgets.QWidget):
             self.progress_bar.deleteLater()
             self.progress_bar = None
 
-    def refresh_settings(self):
-        if not self.has_logo:
-            return
-        self.settings.sync()
-        font = self.settings.big_font
-        self.text_label.setFont(font)
-        self.exit_label.setFont(font)
-
     def setExiting(self):
         self.tool_bar.setVisible(False)
         self.exit_label.setVisible(True)
@@ -1032,10 +1044,6 @@ class ClearableField(InternalToolButtonEdit):
         self.textChanged.connect(self.check_contents)
         self.add_internal_action(self.clear_action, "clear_field")
 
-    def setFont(self, a0: QtGui.QFont) -> None:
-        super().setFont(a0)
-        self.clear_action.setFont(a0)
-
     def clear(self) -> None:
         super().clear()
         self.returnPressed.emit()
@@ -1079,6 +1087,7 @@ class SearchBox(ClearableField):
     def __init__(self, *args):
         super().__init__(*args)
         self.returnPressed.connect(self.activate)
+        self.setObjectName("search_box")
 
         self.clear_action.triggered.connect(self.returnPressed.emit)
 
@@ -1121,12 +1130,6 @@ class SearchBox(ClearableField):
                 return
         self.searchActivated.emit(self.query())
 
-    def setFont(self, a0: QtGui.QFont) -> None:
-        super().setFont(a0)
-        self.regex_action.setFont(a0)
-        self.word_action.setFont(a0)
-        self.case_action.setFont(a0)
-
     def setQuery(self, query: TextFilterQuery):
         self.setText(query.text)
         with QtCore.QSignalBlocker(self.regex_action) as _, QtCore.QSignalBlocker(
@@ -1163,7 +1166,7 @@ class NoWrapDelegate(QtWidgets.QStyledItemDelegate):
 
     def refresh_settings(self):
         self.settings.sync()
-        self.doc.setDefaultFont(self.settings.font)
+        # self.doc.setDefaultFont(self.settings.font)
 
     def sizeHint(
         self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex
@@ -1249,7 +1252,7 @@ class HighlightDelegate(QtWidgets.QStyledItemDelegate):
 
     def refresh_settings(self):
         self.settings.sync()
-        self.doc.setDefaultFont(self.settings.font)
+        # self.doc.setDefaultFont(self.settings.font)
 
     def sizeHint(
         self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex
@@ -1384,13 +1387,13 @@ class HeaderView(QtWidgets.QHeaderView):
                 a.setChecked(True)
             a.triggered.connect(self.showHideColumn)
             menu.addAction(a)
-        menu.setStyleSheet(self.settings.menu_style_sheet)
+        # menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.exec_(self.mapToGlobal(location))
 
 
 class IconDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
-        super(IconDelegate, self).__init__(parent)
+        super().__init__(parent)
         from anchor.main import AnchorSettings
 
         self.settings = AnchorSettings()
@@ -1402,19 +1405,55 @@ class IconDelegate(QtWidgets.QStyledItemDelegate):
         self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex
     ) -> QtCore.QSize:
         if index.column() != 0:
-            return super(IconDelegate, self).sizeHint(option, index)
+            return super().sizeHint(option, index)
         size = int(self.settings.icon_size / 2)
         return QtCore.QSize(size, size)
 
     def paint(self, painter: QtGui.QPainter, option, index) -> None:
         if index.column() != 0:
-            return super(IconDelegate, self).paint(painter, option, index)
+            return super().paint(painter, option, index)
         painter.save()
         options = QtWidgets.QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
         if options.checkState == QtCore.Qt.CheckState.Checked:
             icon = QtGui.QIcon(":disabled/oov-check.svg")
             icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        painter.restore()
+
+
+class ModelIconDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from anchor.main import AnchorSettings
+
+        self.settings = AnchorSettings()
+        self.icon_mapping = {
+            "available": QtGui.QIcon(":file-circle-check-solid.svg"),
+            "unavailable": QtGui.QIcon(":file-circle-xmark-solid.svg"),
+            "remote": QtGui.QIcon(":file-arrow-down-solid.svg"),
+            "unknown": QtGui.QIcon(":file-circle-question-solid.svg"),
+        }
+
+    def refresh_settings(self):
+        self.settings.sync()
+
+    def sizeHint(
+        self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex
+    ) -> QtCore.QSize:
+        if index.column() != 0:
+            return super().sizeHint(option, index)
+        size = int(self.settings.icon_size / 2)
+        return QtCore.QSize(size, size)
+
+    def paint(self, painter: QtGui.QPainter, option, index) -> None:
+        if index.column() != 0:
+            return super().paint(painter, option, index)
+        painter.save()
+        options = QtWidgets.QStyleOptionViewItem(option)
+        self.initStyleOption(options, index)
+        icon = self.icon_mapping[options.text]
+        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignLeft)
 
         painter.restore()
 
@@ -1653,7 +1692,6 @@ class IpaKeyboard(QtWidgets.QMenu):
         col_index = 0
         row_index = 0
         for b in self.buttons:
-            b.setFont(self.settings.font)
             b.clicked.connect(self.press)
             b.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
             b.installEventFilter(self)
@@ -1785,11 +1823,6 @@ class PronunciationInput(QtWidgets.QToolBar):
         self.addWidget(self.keyboard_widget)
         self.addAction(self.accept_action)
         self.addAction(self.cancel_action)
-
-    def setFont(self, a0: QtGui.QFont) -> None:
-        super().setFont(a0)
-        self.keyboard_widget.setFont(a0)
-        self.input.setFont(a0)
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if (
@@ -1953,8 +1986,8 @@ class EditableDelegate(QtWidgets.QStyledItemDelegate):
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> QtWidgets.QWidget:
         editor = WordInput(parent)
-        editor.setStyleSheet(self.settings.search_box_style_sheet)
-        editor.setFont(self.settings.font)
+        # editor.setStyleSheet(self.settings.search_box_style_sheet)
+        # editor.setFont(self.settings.font)
         return editor
 
     def setEditorData(
@@ -2019,8 +2052,8 @@ class PronunciationDelegate(EditableDelegate):
         m: DictionaryTableModel = index.model()
         self.view = parent.parent()
         editor = PronunciationInput(m.phones, parent)
-        editor.setStyleSheet(self.settings.search_box_style_sheet)
-        editor.setFont(self.settings.font)
+        # editor.setStyleSheet(self.settings.search_box_style_sheet)
+        # editor.setFont(self.settings.font)
         editor.installEventFilter(self)
         editor.returnPressed.connect(self.accept)
         editor.input.setFocus()
@@ -2055,8 +2088,6 @@ class OovTableView(AnchorTableView):
             QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
         )
-        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
-        self.setHorizontalHeader(self.header)
         self.doubleClicked.connect(self.search_word)
         self.count_delegate = CountDelegate(self)
         self.setItemDelegateForColumn(1, self.count_delegate)
@@ -2068,7 +2099,7 @@ class OovTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        menu.setStyleSheet(self.settings.menu_style_sheet)
+        # menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -2107,8 +2138,6 @@ class DictionaryTableView(AnchorTableView):
             QtWidgets.QAbstractItemView.EditTrigger.EditKeyPressed
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
         )
-        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
-        self.setHorizontalHeader(self.header)
         self.doubleClicked.connect(self.search_word)
         self.edit_delegate = EditableDelegate(self)
         self.word_type_delegate = WordTypeDelegate(self)
@@ -2129,7 +2158,7 @@ class DictionaryTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        menu.setStyleSheet(self.settings.menu_style_sheet)
+        # menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.addSeparator()
         menu.addAction(self.delete_words_action)
@@ -2212,8 +2241,6 @@ class SpeakerTableView(AnchorTableView):
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
         )
         self.speaker_model: SpeakerModel = None
-        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
-        self.setHorizontalHeader(self.header)
         self.view_delegate = ButtonDelegate(":magnifying-glass.svg", self)
         self.delete_delegate = ButtonDelegate(":expand.svg", self)
         self.edit_delegate = EditableDelegate(self)
@@ -2255,7 +2282,7 @@ class SpeakerTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu(self)
-        menu.setStyleSheet(self.settings.menu_style_sheet)
+        # menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_speaker_action)
         menu.addSeparator()
         menu.addAction(self.break_up_speaker_action)
@@ -2298,10 +2325,10 @@ class ModelInfoWidget(QtWidgets.QWidget):
         self.setLayout(QtWidgets.QVBoxLayout())
         info_layout = QtWidgets.QFormLayout()
         name_label = QtWidgets.QLabel(model_type.title())
-        name_label.setFont(self.settings.font)
+        # name_label.setFont(self.settings.font)
         info_layout.addRow(name_label, self.label)
         path_label = QtWidgets.QLabel("Path")
-        path_label.setFont(self.settings.font)
+        # path_label.setFont(self.settings.font)
         info_layout.addRow(path_label, self.path_label)
         self.layout().setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.layout().addLayout(info_layout)
@@ -2312,8 +2339,8 @@ class ModelInfoWidget(QtWidgets.QWidget):
         self.header.setDefaultSectionSize(200)
         self.corpus_model = None
         self.model = None
-        self.label.setFont(self.settings.font)
-        self.path_label.setFont(self.settings.font)
+        # self.label.setFont(self.settings.font)
+        # self.path_label.setFont(self.settings.font)
         # self.path_label.setWordWrap(True)
 
     def refresh(self):
@@ -2326,24 +2353,24 @@ class ModelInfoWidget(QtWidgets.QWidget):
                 node = QtWidgets.QTreeWidgetItem(self.tree)
 
                 label = QtWidgets.QLabel(str(k))
-                label.setFont(self.settings.font)
+                # label.setFont(self.settings.font)
                 self.tree.setItemWidget(node, 0, label)
                 if isinstance(v, dict):
                     for k2, v2 in v.items():
                         child_node = QtWidgets.QTreeWidgetItem(node)
 
                         label = QtWidgets.QLabel(str(k2))
-                        label.setFont(self.settings.font)
+                        # label.setFont(self.settings.font)
                         self.tree.setItemWidget(child_node, 0, label)
 
                         label = QtWidgets.QLabel(str(v2))
                         label.setWordWrap(True)
-                        label.setFont(self.settings.font)
+                        # label.setFont(self.settings.font)
                         self.tree.setItemWidget(child_node, 1, label)
                 else:
                     label = QtWidgets.QLabel(str(v))
                     label.setWordWrap(True)
-                    label.setFont(self.settings.font)
+                    # label.setFont(self.settings.font)
                     self.tree.setItemWidget(node, 1, label)
         else:
             self.label.setText(f"No {self.model_type} loaded")
@@ -2603,8 +2630,6 @@ class DiarizationTable(AnchorTableView):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.header = HeaderView(QtCore.Qt.Orientation.Horizontal, self)
-        self.setHorizontalHeader(self.header)
         self.setSortingEnabled(False)
         self.speaker_delegate = SpeakerViewDelegate(self)
         self.button_delegate = ButtonDelegate(":compress.svg", self)
@@ -2624,7 +2649,7 @@ class DiarizationTable(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        menu.setStyleSheet(self.settings.menu_style_sheet)
+        # menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.set_reference_utterance_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -3003,11 +3028,10 @@ class OovWidget(QtWidgets.QWidget):
 
     def refresh_settings(self):
         self.settings.sync()
-        font = self.settings.font
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
-        self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        # self.search_box.setFont(font)
+        # self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
 
     def search(self):
         if self.oov_model.text_filter != self.search_box.query():
@@ -3072,11 +3096,10 @@ class DictionaryWidget(QtWidgets.QWidget):
 
     def refresh_settings(self):
         self.settings.sync()
-        font = self.settings.font
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
-        self.search_box.setFont(font)
-        self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
+        # self.search_box.setFont(font)
+        # self.search_box.setStyleSheet(self.settings.search_box_style_sheet)
 
     def search(self):
         if self.dictionary_model.text_filter != self.search_box.query():
@@ -3149,11 +3172,10 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
         self.setLayout(layout)
-        font = self.settings.font
-        self.speaker_dropdown.setFont(font)
-        self.button_box.setFont(font)
-        self.setStyleSheet(self.settings.style_sheet)
-        self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+        # self.speaker_dropdown.setFont(font)
+        # self.button_box.setFont(font)
+        # self.setStyleSheet(self.settings.style_sheet)
+        # self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
 
 
 class ConfirmationDialog(QtWidgets.QDialog):
@@ -3174,11 +3196,11 @@ class ConfirmationDialog(QtWidgets.QDialog):
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
         self.setLayout(layout)
-        font = self.settings.font
-        self.setFont(font)
-        self.label.setFont(font)
-        self.button_box.setFont(font)
-        self.setStyleSheet(self.settings.style_sheet)
+        # font = self.settings.font
+        # self.setFont(font)
+        # self.label.setFont(font)
+        # self.button_box.setFont(font)
+        # self.setStyleSheet(self.settings.style_sheet)
 
 
 class SpeakerWidget(QtWidgets.QWidget):
@@ -3280,10 +3302,10 @@ class SpeakerWidget(QtWidgets.QWidget):
 
     def refresh_settings(self):
         self.settings.sync()
-        font = self.settings.font
-        self.speaker_edit.setFont(font)
-        self.speaker_dropdown.setFont(font)
-        self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+        # font = self.settings.font
+        # self.speaker_edit.setFont(font)
+        # self.speaker_dropdown.setFont(font)
+        # self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
         self.table.refresh_settings()
         self.pagination_toolbar.set_limit(
             self.table.settings.value(self.table.settings.RESULTS_PER_PAGE)
@@ -3343,3 +3365,563 @@ class FontEdit(QtWidgets.QPushButton):  # pragma: no cover
         if ok:
             self.font = font
             self.update_icon()
+
+
+class MfaModelListWidget(QtWidgets.QWidget):
+    modelDetailsRequested = QtCore.Signal(object)
+    downloadRequested = QtCore.Signal(object)
+    model_type = "MFA model"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        layout = QtWidgets.QVBoxLayout()
+
+        self.table_widget = BaseTableView()
+        self.table_widget.setSortingEnabled(False)
+        self.icon_delegate = ModelIconDelegate(self.table_widget)
+        self.table_widget.setItemDelegateForColumn(0, self.icon_delegate)
+
+        layout.addWidget(self.table_widget)
+        button_layout = QtWidgets.QHBoxLayout()
+        self.delete_button = QtWidgets.QPushButton(f"Delete {self.model_type.lower()}")
+        self.download_button = QtWidgets.QPushButton(f"Download {self.model_type.lower()}")
+        self.delete_button.clicked.connect(self.delete_model)
+        self.download_button.clicked.connect(self.download_model)
+        button_layout.addWidget(self.delete_button)
+        button_layout.addWidget(self.download_button)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+        self.model = None
+
+    def delete_model(self):
+        row = self.table_widget.selectionModel().currentIndex().row()
+        self.model.remove_model(row)
+
+    def download_model(self):
+        row = self.table_widget.selectionModel().currentIndex().row()
+        self.model.download_model(row)
+
+    def set_model(self, model: MfaModelTableModel):
+        self.table_widget.setModel(model)
+        self.model = model
+        self.table_widget.resizeColumnsToContents()
+        self.table_widget.selectionModel().selectionChanged.connect(self.update_select)
+
+    def update_select(self):
+        row = self.table_widget.selectionModel().selectedRows(0)
+        if not row:
+            return
+        row = row[0].row()
+        self.modelDetailsRequested.emit(row)
+
+
+class AcousticModelListWidget(MfaModelListWidget):
+    model_type = "Acoustic model"
+
+
+class DictionaryModelListWidget(MfaModelListWidget):
+    model_type = "Dictionary"
+
+
+class G2PModelListWidget(MfaModelListWidget):
+    model_type = "G2P model"
+
+
+class LanguageModelListWidget(MfaModelListWidget):
+    model_type = "Language model"
+
+
+class IvectorExtractorListWidget(MfaModelListWidget):
+    model_type = "Ivector extractor"
+
+
+class CorpusListWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        layout = QtWidgets.QVBoxLayout()
+
+        self.table_widget = BaseTableView()
+        self.table_widget.setSortingEnabled(False)
+        self.icon_delegate = ModelIconDelegate(self.table_widget)
+        self.table_widget.setItemDelegateForColumn(0, self.icon_delegate)
+
+        layout.addWidget(self.table_widget)
+        button_layout = QtWidgets.QHBoxLayout()
+        self.reset_button = QtWidgets.QPushButton("Reset corpus")
+        self.delete_button = QtWidgets.QPushButton("Remove corpus")
+        self.delete_button.clicked.connect(self.delete_corpus)
+        self.reset_button.clicked.connect(self.reset_corpus)
+        button_layout.addWidget(self.reset_button)
+        button_layout.addWidget(self.delete_button)
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+        self.model: CorpusTableModel = None
+
+    def set_model(self, model: CorpusTableModel):
+        self.table_widget.setModel(model)
+        self.model = model
+        self.table_widget.resizeColumnsToContents()
+
+    def delete_corpus(self):
+        row = self.table_widget.selectionModel().currentIndex().row()
+        self.model.remove_corpus(row)
+
+    def reset_corpus(self):
+        row = self.table_widget.selectionModel().currentIndex().row()
+        self.model.reset_corpus(row)
+
+
+class PathSelectWidget(QtWidgets.QWidget):
+    def __init__(self, *args, caption="Select a directory", file_filter=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.default_directory_key = AnchorSettings.DEFAULT_DIRECTORY
+        self.caption = caption
+        self.file_filter = file_filter
+        self.settings = AnchorSettings()
+        layout = QtWidgets.QHBoxLayout()
+        self.path_edit = QtWidgets.QLineEdit()
+        self.path_edit.textChanged.connect(self.check_existence)
+        layout.addWidget(self.path_edit)
+        self.select_button = QtWidgets.QPushButton("...")
+        layout.addWidget(self.select_button)
+        self.exists_label = QtWidgets.QLabel()
+        layout.addWidget(self.exists_label)
+        self.setLayout(layout)
+
+        self.select_button.clicked.connect(self.select_path)
+        self.exists_icon = QtGui.QIcon(":check-circle.svg")
+        self.not_exists_icon = QtGui.QIcon(":disabled/exclamation-triangle.svg")
+
+    def value(self):
+        if not self.path_edit.text():
+            return None
+        if not os.path.exists(self.path_edit.text()):
+            return None
+        return self.path_edit.text()
+
+    def select_path(self):
+        if self.file_filter is not None:
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                parent=self,
+                caption=self.caption,
+                dir=self.settings.value(self.default_directory_key),
+                filter=self.file_filter,
+            )
+        else:
+            path = QtWidgets.QFileDialog.getExistingDirectory(
+                parent=self,
+                caption=self.caption,
+                dir=self.settings.value(self.default_directory_key),
+            )
+        if not path:
+            return
+        self.set_path(path)
+
+    def set_path(self, path):
+        self.path_edit.setText(str(path))
+        self.check_existence()
+
+    def check_existence(self):
+        if not self.path_edit.text():
+            return
+        if os.path.exists(self.path_edit.text()):
+            self.exists_label.setPixmap(self.exists_icon.pixmap(QtCore.QSize(25, 25)))
+        else:
+            self.exists_label.setPixmap(self.not_exists_icon.pixmap(QtCore.QSize(25, 25)))
+
+
+class CorpusSelectWidget(PathSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, caption="Select a corpus directory", **kwargs)
+        self.default_directory_key = AnchorSettings.DEFAULT_CORPUS_DIRECTORY
+
+
+class ModelSelectWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.session = None
+        self.default_directory_key = AnchorSettings.DEFAULT_DIRECTORY
+        self.caption = "Select a model"
+        self.model_type = None
+        self.file_filter = "Model files (*.zip)"
+        self.settings = AnchorSettings()
+        layout = QtWidgets.QHBoxLayout()
+        self.model_select = QtWidgets.QComboBox()
+        layout.addWidget(self.model_select)
+        self.select_button = QtWidgets.QPushButton("New model")
+        layout.addWidget(self.select_button)
+        self.exists_label = QtWidgets.QLabel()
+        layout.addWidget(self.exists_label)
+        self.setLayout(layout)
+        self.model: MfaModelTableModel = None
+
+        self.select_button.clicked.connect(self.select_path)
+
+    def value(self):
+        return self.model_select.currentData()
+
+    def set_model(self, model: MfaModelTableModel):
+        self.model = model
+        self.model_select.clear()
+        for m in model.models:
+            if not m.available_locally:
+                continue
+            self.model_select.addItem(m.name, userData=m.id)
+        self.model_select.setCurrentIndex(-1)
+        self.model.layoutChanged.connect(self.refresh_combobox)
+
+    def refresh_combobox(self):
+        current_model = self.model_select.currentData()
+        index = -1
+        self.model_select.clear()
+        for i, m in enumerate(self.model.models):
+            if not m.available_locally or not os.path.exists(m.path):
+                continue
+            print(m.name, m.path, os.path.exists(m.path))
+            self.model_select.addItem(m.name, userData=m.id)
+            if m.id == current_model:
+                index = i
+        self.model_select.setCurrentIndex(index)
+
+    def select_path(self):
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            parent=self,
+            caption=self.caption,
+            dir=self.settings.value(self.default_directory_key),
+            filter=self.file_filter,
+        )
+        if not path:
+            return
+        self.settings.setValue(self.default_directory_key, os.path.dirname(path))
+        self.model.add_model(path)
+
+
+class DictionarySelectWidget(ModelSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_type = anchor.db.Dictionary
+        self.default_directory_key = AnchorSettings.DEFAULT_DICTIONARY_DIRECTORY
+        self.caption = "Select a dictionary"
+        self.file_filter = "Dictionary files (*.dict *.txt *.yaml)"
+        self.select_button.setText("New dictionary")
+
+
+class AcousticModelSelectWidget(ModelSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_type = anchor.db.AcousticModel
+        self.default_directory_key = AnchorSettings.DEFAULT_ACOUSTIC_DIRECTORY
+        self.caption = "Select an acoustic model"
+
+
+class G2PModelSelectWidget(ModelSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_type = anchor.db.G2PModel
+        self.default_directory_key = AnchorSettings.DEFAULT_G2P_DIRECTORY
+        self.caption = "Select a G2P model"
+
+
+class LanguageModelSelectWidget(ModelSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_type = anchor.db.LanguageModel
+        self.default_directory_key = AnchorSettings.DEFAULT_LM_DIRECTORY
+        self.caption = "Select a language model"
+
+
+class IvectorExtractorSelectWidget(ModelSelectWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.model_type = anchor.db.IvectorExtractor
+        self.default_directory_key = AnchorSettings.DEFAULT_IVECTOR_DIRECTORY
+        self.caption = "Select an ivector extractor"
+
+
+class CorpusDetailWidget(QtWidgets.QWidget):
+    corpusLoadRequested = QtCore.Signal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+        self.corpus_model = None
+        self.dictionary_model = None
+        self.acoustic_model_model = None
+        self.g2p_model_model = None
+        self.language_model_model = None
+        self.ivector_extractor_model = None
+        self.corpus_directory_widget = CorpusSelectWidget()
+        self.dictionary_widget = DictionarySelectWidget()
+        self.acoustic_model_widget = AcousticModelSelectWidget()
+        self.g2p_model_widget = G2PModelSelectWidget()
+        self.language_model_widget = LanguageModelSelectWidget()
+        self.ivector_extractor_widget = IvectorExtractorSelectWidget()
+        form_layout.addRow("Corpus directory", self.corpus_directory_widget)
+        form_layout.addRow("Dictionary", self.dictionary_widget)
+        form_layout.addRow("Acoustic model", self.acoustic_model_widget)
+        form_layout.addRow("G2P model", self.g2p_model_widget)
+        form_layout.addRow("Language model", self.language_model_widget)
+        form_layout.addRow("Ivector extractor", self.ivector_extractor_widget)
+        self.language_combobox = QtWidgets.QComboBox()
+        for lang in Language:
+            self.language_combobox.addItem(lang.value)
+        form_layout.addRow("Language", self.language_combobox)
+        self.config_path_widget = PathSelectWidget(
+            caption="Select a configuration file", file_filter="Config files (*.yaml)"
+        )
+        form_layout.addRow("Config path", self.config_path_widget)
+
+        self.language_combobox.setEnabled(False)
+        self.config_path_widget.setEnabled(False)
+        self.load_button = QtWidgets.QPushButton("Load corpus")
+        self.load_button.clicked.connect(self.load_corpus)
+        form_layout.addWidget(self.load_button)
+        self.setLayout(form_layout)
+
+    def set_models(
+        self,
+        corpus_model: CorpusTableModel,
+        dictionary_model: DictionaryModelTableModel,
+        acoustic_model_model: AcousticModelTableModel,
+        g2p_model_model: G2PModelTableModel,
+        language_model_model: LanguageModelTableModel,
+        ivector_extractor_model: IvectorExtractorTableModel,
+    ):
+        self.corpus_model = corpus_model
+        self.dictionary_model = dictionary_model
+        self.acoustic_model_model = acoustic_model_model
+        self.g2p_model_model = g2p_model_model
+        self.language_model_model = language_model_model
+        self.ivector_extractor_model = ivector_extractor_model
+        self.dictionary_widget.set_model(self.dictionary_model)
+        self.acoustic_model_widget.set_model(self.acoustic_model_model)
+        self.g2p_model_widget.set_model(self.g2p_model_model)
+        self.language_model_widget.set_model(self.language_model_model)
+        self.ivector_extractor_widget.set_model(self.ivector_extractor_model)
+
+    def load_corpus(self):
+        corpus_directory = self.corpus_directory_widget.value()
+        if not corpus_directory:
+            return
+        dictionary_id = self.dictionary_widget.value()
+        acoustic_model_id = self.acoustic_model_widget.value()
+        g2p_model_id = self.g2p_model_widget.value()
+        language_model_id = self.language_model_widget.value()
+        ivector_extractor_id = self.ivector_extractor_widget.value()
+        self.corpus_model.add_corpus(
+            corpus_directory,
+            dictionary_id=dictionary_id,
+            acoustic_model_id=acoustic_model_id,
+            g2p_model_id=g2p_model_id,
+            language_model_id=language_model_id,
+            ivector_extractor_id=ivector_extractor_id,
+        )
+        self.corpusLoadRequested.emit()
+
+
+class DictionaryModelDetailWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+
+        self.path_widget = PathSelectWidget(
+            caption="Select a dictionary", file_filter="Dictionary files (*.dict *.txt *.yaml)"
+        )
+        self.version_edit = QtWidgets.QLineEdit()
+        self.version_edit.setReadOnly(True)
+        self.last_used_edit = QtWidgets.QLineEdit()
+        self.last_used_edit.setReadOnly(True)
+        self.local_checkbox = QtWidgets.QCheckBox()
+        self.phones_text_edit = QtWidgets.QTextEdit()
+        self.phones_text_edit.setReadOnly(True)
+        self.preview_text_edit = QtWidgets.QTextEdit()
+        self.preview_text_edit.setReadOnly(True)
+        form_layout.addRow("Model path", self.path_widget)
+        form_layout.addRow("Version", self.version_edit)
+        form_layout.addRow("Available locally", self.local_checkbox)
+        form_layout.addRow("Last used", self.last_used_edit)
+        form_layout.addRow("Phones", self.phones_text_edit)
+        form_layout.addRow("File preview", self.preview_text_edit)
+
+        self.setLayout(form_layout)
+        self.model = None
+
+    def set_model(self, model):
+        self.model = model
+
+    def update_details(self, row):
+        dictionary = self.model.models[row]
+        self.path_widget.set_path(dictionary.path)
+        self.last_used_edit.setText(str(dictionary.last_used))
+        self.local_checkbox.setChecked(
+            dictionary.available_locally and os.path.exists(dictionary.path)
+        )
+        if os.path.exists(dictionary.path):
+            with mfa_open(dictionary.path) as f:
+                lines = []
+                for line in f:
+                    lines.append(line)
+                    if len(lines) >= 50:
+                        break
+            self.preview_text_edit.setText("".join(lines))
+
+
+class AcousticModelDetailWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+
+        self.path_widget = PathSelectWidget(
+            caption="Select an acoustic model", file_filter="Model files (*.zip)"
+        )
+        self.version_edit = QtWidgets.QLineEdit()
+        self.version_edit.setReadOnly(True)
+        self.local_checkbox = QtWidgets.QCheckBox()
+        self.last_used_edit = QtWidgets.QLineEdit()
+        self.last_used_edit.setReadOnly(True)
+        self.phones_text_edit = QtWidgets.QTextEdit()
+        self.phones_text_edit.setReadOnly(True)
+        form_layout.addRow("Model path", self.path_widget)
+        form_layout.addRow("Version", self.version_edit)
+        form_layout.addRow("Available locally", self.local_checkbox)
+        form_layout.addRow("Last used", self.last_used_edit)
+        form_layout.addRow("Phones", self.phones_text_edit)
+
+        self.setLayout(form_layout)
+        self.model = None
+
+    def set_model(self, model):
+        self.model = model
+
+    def update_details(self, row):
+        model = self.model.models[row]
+        self.path_widget.set_path(model.path)
+        self.last_used_edit.setText(str(model.last_used))
+        self.local_checkbox.setChecked(model.available_locally and os.path.exists(model.path))
+        if os.path.exists(model.path):
+            from montreal_forced_aligner.models import AcousticModel
+
+            am = AcousticModel(model.path)
+            phones = am.meta["phones"]
+            self.version_edit.setText(am.meta["version"])
+            self.phones_text_edit.setText("\n".join(sorted(phones)))
+
+
+class G2PModelDetailWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+
+        self.path_widget = PathSelectWidget(
+            caption="Select a G2P model", file_filter="Model files (*.zip)"
+        )
+        self.version_edit = QtWidgets.QLineEdit()
+        self.version_edit.setReadOnly(True)
+        self.local_checkbox = QtWidgets.QCheckBox()
+        self.last_used_edit = QtWidgets.QLineEdit()
+        self.last_used_edit.setReadOnly(True)
+        self.phones_text_edit = QtWidgets.QTextEdit()
+        self.phones_text_edit.setReadOnly(True)
+        self.graphemes_text_edit = QtWidgets.QTextEdit()
+        self.graphemes_text_edit.setReadOnly(True)
+        form_layout.addRow("Model path", self.path_widget)
+        form_layout.addRow("Version", self.version_edit)
+        form_layout.addRow("Available locally", self.local_checkbox)
+        form_layout.addRow("Last used", self.last_used_edit)
+        form_layout.addRow("Phones", self.phones_text_edit)
+        form_layout.addRow("Graphemes", self.graphemes_text_edit)
+
+        self.setLayout(form_layout)
+        self.model = None
+
+    def set_model(self, model):
+        self.model = model
+
+    def update_details(self, row):
+        model = self.model.models[row]
+        self.path_widget.set_path(model.path)
+        self.last_used_edit.setText(str(model.last_used))
+        self.local_checkbox.setChecked(model.available_locally and os.path.exists(model.path))
+        if os.path.exists(model.path):
+            from montreal_forced_aligner.models import G2PModel
+
+            m = G2PModel(model.path)
+            self.version_edit.setText(m.meta["version"])
+            phones = m.meta["phones"]
+            self.phones_text_edit.setText("\n".join(sorted(phones)))
+            graphemes = m.meta["graphemes"]
+            self.graphemes_text_edit.setText("\n".join(sorted(graphemes)))
+
+
+class LanguageModelDetailWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+
+        self.path_widget = PathSelectWidget(
+            caption="Select a language model", file_filter="Model files (*.zip)"
+        )
+        self.version_edit = QtWidgets.QLineEdit()
+        self.version_edit.setReadOnly(True)
+        self.local_checkbox = QtWidgets.QCheckBox()
+        self.last_used_edit = QtWidgets.QLineEdit()
+        self.last_used_edit.setReadOnly(True)
+        form_layout.addRow("Model path", self.path_widget)
+        form_layout.addRow("Version", self.version_edit)
+        form_layout.addRow("Available locally", self.local_checkbox)
+        form_layout.addRow("Last used", self.last_used_edit)
+
+        self.setLayout(form_layout)
+        self.model = None
+
+    def set_model(self, model):
+        self.model = model
+
+    def update_details(self, row):
+        model = self.model.models[row]
+        self.path_widget.set_path(model.path)
+        self.last_used_edit.setText(str(model.last_used))
+        self.local_checkbox.setChecked(model.available_locally and os.path.exists(model.path))
+        if os.path.exists(model.path):
+            from montreal_forced_aligner.models import LanguageModel
+
+            m = LanguageModel(model.path)
+            self.version_edit.setText(m.meta["version"])
+
+
+class IvectorExtractorDetailWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        form_layout = QtWidgets.QFormLayout()
+
+        self.path_widget = PathSelectWidget(
+            caption="Select an ivector extractor", file_filter="Model files (*.zip)"
+        )
+        self.version_edit = QtWidgets.QLineEdit()
+        self.version_edit.setReadOnly(True)
+        self.last_used_edit = QtWidgets.QLineEdit()
+        self.last_used_edit.setReadOnly(True)
+        self.local_checkbox = QtWidgets.QCheckBox()
+        form_layout.addRow("Model path", self.path_widget)
+        form_layout.addRow("Version", self.version_edit)
+        form_layout.addRow("Available locally", self.local_checkbox)
+        form_layout.addRow("Last used", self.last_used_edit)
+
+        self.download_button = QtWidgets.QPushButton("Download ivector extractor")
+        form_layout.addWidget(self.download_button)
+        self.setLayout(form_layout)
+        self.model = None
+
+    def set_model(self, model):
+        self.model = model
+
+    def update_details(self, row):
+        model = self.model.models[row]
+        self.path_widget.set_path(model.path)
+        self.last_used_edit.setText(str(model.last_used))
+        self.local_checkbox.setChecked(model.available_locally and os.path.exists(model.path))
+        if os.path.exists(model.path):
+            from montreal_forced_aligner.models import IvectorExtractorModel
+
+            m = IvectorExtractorModel(model.path)
+            self.version_edit.setText(m.meta["version"])
