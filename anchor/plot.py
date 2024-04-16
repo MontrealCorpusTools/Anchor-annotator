@@ -570,7 +570,7 @@ class UtteranceView(QtWidgets.QWidget):
             self.speaker_tier_layout.addItem(tier_item, i, 0)
             if tier.speaker_id == self.default_speaker_id:
                 scroll_to = i
-        row_height = self.audio_plot_item.height()
+        row_height = self.tier_scroll_area.height()
         self.speaker_tier_layout.setFixedHeight(len(self.speaker_tiers) * row_height)
         if len(self.speaker_tiers) > 1:
             self.tier_scroll_area.verticalScrollBar().setSingleStep(row_height)
@@ -922,9 +922,6 @@ class UtterancePGTextItem(pg.TextItem):
         top_point=None,
         bottom_point=None,
         per_tier_range=None,
-        color=None,
-        font=None,
-        html=None,
         anchor=(0, 0),
         border=None,
         fill=None,
@@ -952,8 +949,6 @@ class UtterancePGTextItem(pg.TextItem):
         self._lastTransform = None
         self._lastScene = None
         self._bounds = QtCore.QRectF()
-        if font:
-            self.text_edit.setFont(font)
         self.text_edit.setPlainText(text)
         self.fill = pg.mkBrush(fill)
         self.border = pg.mkPen(border)
@@ -1033,15 +1028,11 @@ class PhonePGTextItem(pg.TextItem):
         pg.GraphicsObject.__init__(self)
         self.text_edit = PronunciationInput(phones)
 
-        # self.text_edit.setAutoFillBackground(False)
-        # self.text_edit.viewport().setAutoFillBackground(False)
         self.textItem = QtWidgets.QGraphicsProxyWidget(self)
         self.textItem.setWidget(self.text_edit)
         self._lastTransform = None
         self._lastScene = None
         self._bounds = QtCore.QRectF()
-        if font:
-            self.text_edit.setFont(font)
         self.text_edit.setText(text)
         self.fill = pg.mkBrush(fill)
         self.border = pg.mkPen(border)
@@ -1188,8 +1179,6 @@ class IntervalTextRegion(pg.GraphicsObject):
         self.text = TextItem(text, color=color, anchor=(0.5, 0.5))
         self.text.setParentItem(self)
 
-        self.font = font
-        self.text.textItem.setFont(font)
         self.picture = QtGui.QPicture()
         self.interval = interval
         self.top_point = top_point
@@ -1277,12 +1266,9 @@ class TextAttributeRegion(pg.GraphicsObject):
             bottom_point=self.bottom_point,
             per_tier_range=self.height,
             dictionary_model=self.dictionary_model,
-            font=self.parentItem().settings.font,
             speaker_id=self.speaker_id,
-            color=self.parentItem().text_color,
             border=pg.mkPen(self.parentItem().settings.accent_light_color),
         )
-        self.text.setFont(self.parentItem().plot_text_font)
         self.text.setParentItem(self)
         self.text_edit = self.text.text_edit
         self.text_edit.setReadOnly(True)
@@ -1780,12 +1766,9 @@ class UtteranceRegion(MfaRegion):
             bottom_point=self.bottom_point,
             per_tier_range=self.per_tier_range,
             dictionary_model=self.dictionary_model,
-            font=self.settings.font,
             speaker_id=self.item.speaker_id,
-            color=self.text_color,
             border=pg.mkPen(self.settings.accent_light_color),
         )
-        self.text.setFont(self.plot_text_font)
         self.text.setParentItem(self)
 
         self.text_edit = self.text.text_edit
@@ -1904,7 +1887,7 @@ class UtteranceRegion(MfaRegion):
                         border=pg.mkPen(self.settings.accent_light_color, width=3),
                         top_point=tier_top_point,
                         height=self.per_tier_range,
-                        font=self.settings.font,
+                        # font=self.settings.font,
                         background_brush=self.background_brush,
                         selected_brush=pg.mkBrush(self.selected_range_color),
                     )
@@ -2534,55 +2517,6 @@ class SpeakerTier(pg.GraphicsObject):
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
-
-    def mouseClickEvent(self, ev):
-        if ev.button() != QtCore.Qt.MouseButton.RightButton:
-            ev.ignore()
-            return
-        x = ev.pos().x()
-        begin = max(x - 0.5, 0)
-        end = min(x + 0.5, self.selection_model.model().file.duration)
-        for x in self.visible_utterances.values():
-            if begin >= x.item_min and end <= x.item_max:
-                ev.accept()
-                return
-            if begin < x.item_max and begin > x.item_max:
-                begin = x.item_max
-            if end > x.item_min and end < x.item_min:
-                end = x.item_min
-                break
-        if end - begin > 0.001:
-            menu = QtWidgets.QMenu()
-
-            a = QtGui.QAction(menu)
-            a.setText("Create utterance")
-            a.triggered.connect(functools.partial(self.create_utterance, begin=begin, end=end))
-            menu.addAction(a)
-            menu.setStyleSheet(self.settings.menu_style_sheet)
-            menu.exec_(ev.screenPos())
-
-    def contextMenuEvent(self, ev):
-        x = ev.pos().x()
-        begin = max(x - 0.5, 0)
-        end = min(x + 0.5, self.selection_model.model().file.duration)
-        for x in self.visible_utterances.values():
-            if begin >= x.item_min and end <= x.item_max:
-                ev.accept()
-                return
-            if begin < x.item_max and begin > x.item_max:
-                begin = x.item_max
-            if end > x.item_min and end < x.item_min:
-                end = x.item_min
-                break
-        if end - begin > 0.001:
-            menu = QtWidgets.QMenu()
-
-            a = QtGui.QAction(menu)
-            a.setText("Create utterance")
-            a.triggered.connect(functools.partial(self.create_utterance, begin=begin, end=end))
-            menu.addAction(a)
-            menu.setStyleSheet(self.settings.menu_style_sheet)
-            menu.exec_(ev.screenPos())
 
     def create_utterance(self, begin, end):
         self.file_model.create_utterance(self.speaker_id, begin, end)

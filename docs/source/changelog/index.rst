@@ -6,6 +6,16 @@ Changelog
 
    Alpha releases
 
+0.3.0
+-----
+
+- Added a corpus manager dialog to allow for cleaning up previously loaded corpora and more efficient loading with dictionaries and models
+- Enabled volume slider control and mute
+- Removed sync and reset actions on toolbar in favor of export files
+- Fixed a visual bug in size of text grid area
+- Added customizable settings for the maximum duration that pitch tracks and spectrograms will be show (by default 10 seconds is maximum for pitch and 30 seconds for spectrogram)
+- Added setting for disabling audio fade in on playing
+
 0.2.1
 -----
 

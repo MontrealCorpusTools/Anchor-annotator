@@ -11,10 +11,10 @@ def main(debug=False):
     configure_logger("anchor", config.TEMPORARY_DIRECTORY.joinpath("anchor.log"))
 
     app = Application(sys.argv)
-    main = MainWindow(debug=debug)
+    main_window = MainWindow(debug=debug)
 
-    app.setActiveWindow(main)
-    main.show()
+    app.setActiveWindow(main_window)
+    main_window.show()
     sys.exit(app.exec())
 
 

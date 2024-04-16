@@ -566,9 +566,9 @@ QMainWindow::separator:hover {
     </widget>
     <addaction name="loadCorpusAct"/>
     <addaction name="loadRecentCorpusMenu"/>
+    <addaction name="openCorpusManagerAct"/>
     <addaction name="separator"/>
     <addaction name="reloadCorpusAct"/>
-    <addaction name="saveChangesAct"/>
     <addaction name="exportFilesAct"/>
     <addaction name="separator"/>
     <addaction name="closeCurrentCorpusAct"/>
@@ -585,7 +585,6 @@ QMainWindow::separator:hover {
     <addaction name="openPreferencesAct"/>
     <addaction name="separator"/>
     <addaction name="lockEditAct"/>
-    <addaction name="revertChangesAct"/>
    </widget>
    <widget class="QMenu" name="menuDictionary">
     <property name="title">
@@ -831,8 +830,6 @@ QMainWindow::separator:hover {
    <addaction name="alignUtteranceAct"/>
    <addaction name="segmentUtteranceAct"/>
    <addaction name="lockEditAct"/>
-   <addaction name="saveChangesAct"/>
-   <addaction name="revertChangesAct"/>
    <addaction name="exportFilesAct"/>
    <addaction name="separator"/>
    <addaction name="getHelpAct"/>
@@ -1097,25 +1094,6 @@ QMainWindow::separator:hover {
     <string>Add new speaker</string>
    </property>
   </action>
-  <action name="saveChangesAct">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/sync.svg</normaloff>
-     <disabledoff>:/sync.svg</disabledoff>:/sync.svg</iconset>
-   </property>
-   <property name="text">
-    <string>Sync changes</string>
-   </property>
-   <property name="toolTip">
-    <string>Sync changes to the database</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+S</string>
-   </property>
-  </action>
   <action name="getHelpAct">
    <property name="icon">
     <iconset resource="resources.qrc">
@@ -1302,23 +1280,6 @@ QMainWindow::separator:hover {
     <string>Evaluate alignments</string>
    </property>
   </action>
-  <action name="revertChangesAct">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/history.svg</normaloff>
-     <disabledoff>:/history.svg</disabledoff>
-     <disabledon>:/history.svg</disabledon>:/history.svg</iconset>
-   </property>
-   <property name="text">
-    <string>Revert changes</string>
-   </property>
-   <property name="toolTip">
-    <string>Revert current changes to last sync</string>
-   </property>
-  </action>
   <action name="exportFilesAct">
    <property name="enabled">
     <bool>false</bool>
@@ -1437,6 +1398,14 @@ QMainWindow::separator:hover {
    </property>
    <property name="toolTip">
     <string>Split an utterance into VAD-based segments</string>
+   </property>
+  </action>
+  <action name="openCorpusManagerAct">
+   <property name="text">
+    <string>Manage corpora...</string>
+   </property>
+   <property name="toolTip">
+    <string>Manage corpora and models</string>
    </property>
   </action>
  </widget>

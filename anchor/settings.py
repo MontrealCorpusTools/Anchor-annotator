@@ -14,8 +14,6 @@ class AnchorSettings(QtCore.QSettings):
     DEFAULT_LM_DIRECTORY = "anchor/default_lm_directory"
     DEFAULT_IVECTOR_DIRECTORY = "anchor/default_ivector_directory"
     DEFAULT_SAD_DIRECTORY = "anchor/default_sad_directory"
-    CORPORA = "anchor/corpora"
-    CURRENT_CORPUS = "anchor/current_corpus"
 
     CORPUS_PATH = "path"
     DICTIONARY_PATH = "dictionary_path"
@@ -31,6 +29,7 @@ class AnchorSettings(QtCore.QSettings):
 
     VOLUME = "anchor/audio/volume"
     AUDIO_DEVICE = "anchor/audio/device"
+    ENABLE_FADE = "anchor/enable_fade"
 
     GEOMETRY = "anchor/MainWindow/geometry"
     WINDOW_STATE = "anchor/MainWindow/windowState"
@@ -81,6 +80,7 @@ class AnchorSettings(QtCore.QSettings):
     LTR = "Left-to-right"
 
     RESULTS_PER_PAGE = "anchor/results_per_page"
+    SPEC_MAX_TIME = "anchor/spectrogram/max_time"
     SPEC_DYNAMIC_RANGE = "anchor/spectrogram/dynamic_range"
     SPEC_N_FFT = "anchor/spectrogram/n_fft"
     SPEC_N_TIME_STEPS = "anchor/spectrogram/time_steps"
@@ -92,6 +92,7 @@ class AnchorSettings(QtCore.QSettings):
     CLUSTERING_DISTANCE_THRESHOLD = "anchor/clustering/distance_threshold"
     CLUSTERING_METRIC = "anchor/clustering/metric"
 
+    PITCH_MAX_TIME = "anchor/pitch/max_time"
     PITCH_MIN_F0 = "anchor/pitch/min_f0"
     PITCH_MAX_F0 = "anchor/pitch/max_f0"
     PITCH_FRAME_SHIFT = "anchor/pitch/frame_shift"
@@ -147,13 +148,12 @@ class AnchorSettings(QtCore.QSettings):
         }
 
         self.default_values = {
-            AnchorSettings.CORPORA: [],
-            AnchorSettings.CURRENT_CORPUS: "",
             AnchorSettings.DEFAULT_DIRECTORY: str(get_temporary_directory()),
             AnchorSettings.AUTOSAVE: False,
             AnchorSettings.AUTOLOAD: False,
             AnchorSettings.VOLUME: 100,
             AnchorSettings.AUDIO_DEVICE: None,
+            AnchorSettings.ENABLE_FADE: True,
             AnchorSettings.GEOMETRY: None,
             AnchorSettings.WINDOW_STATE: None,
             AnchorSettings.FONT: QtGui.QFont("Noto Sans", 12).toString(),
@@ -171,6 +171,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.UNDO_KEYBIND: "Ctrl+Z",
             AnchorSettings.REDO_KEYBIND: "Ctrl+Shift+Z",
             AnchorSettings.RESULTS_PER_PAGE: 100,
+            AnchorSettings.SPEC_MAX_TIME: 30,
             AnchorSettings.SPEC_DYNAMIC_RANGE: 50,
             AnchorSettings.SPEC_N_FFT: 256,
             AnchorSettings.SPEC_N_TIME_STEPS: 1000,
@@ -182,6 +183,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.CLUSTERING_PERPLEXITY: 30.0,
             AnchorSettings.CLUSTERING_DISTANCE_THRESHOLD: 0.0,
             AnchorSettings.CLUSTERING_METRIC: "cosine",
+            AnchorSettings.PITCH_MAX_TIME: 10,
             AnchorSettings.PITCH_MIN_F0: 50,
             AnchorSettings.PITCH_MAX_F0: 600,
             AnchorSettings.PITCH_FRAME_SHIFT: 10,
@@ -392,6 +394,8 @@ class AnchorSettings(QtCore.QSettings):
         scroll_bar_style = self.scroll_bar_style_sheet
         return f"""
         QWidget{{
+            font-family: {self.font.family()};
+            font-size: {self.font.pointSize()}pt;
             background-color: {background_color};
         }}
         QMenu{{
@@ -418,26 +422,23 @@ class AnchorSettings(QtCore.QSettings):
     @property
     def search_box_style_sheet(self) -> str:
         line_edit_color = self.primary_very_dark_color.name()
-        line_edit_background_color = self.accent_base_color.name()
         error_color = self.error_color.name()
         return f"""
-        QWidget{{
-            background-color: {line_edit_background_color};
-        }}
-         QLineEdit[error="true"] {{
+         SearchBox[error="true"], ReplaceBox[error="true"]{{
             color: {error_color};
             font-weight: bold;
         }}
-        QMenu {{ menu-scrollable: 1; }}
-        QLineEdit QToolButton {{
-                        background-color: {line_edit_background_color};
+        SearchBox QToolButton {{
                         color: {line_edit_color};
                         margin: {self.border_width}px;
         }}
-        QToolButton#clear_search_field, QToolButton#clear_field, QToolButton#clear_new_speaker_field,
-        QToolButton#regex_search_field, QToolButton#word_search_field {{
+        SearchBox QWidget {{
                         background-color: none;
                         border: none;
+        }}
+        QToolButton#clear_search_field, QToolButton#clear_field, QToolButton#clear_new_speaker_field,
+        QToolButton#regex_search_field, QToolButton#word_search_field, QToolButton#case_search_field {{
+                        background-color: none;
                         padding: {self.border_width}px;
         }}
     """
@@ -474,6 +475,8 @@ class AnchorSettings(QtCore.QSettings):
 
         return f"""
         QTextEdit {{
+            font-family: {self.font.family()};
+            font-size: {self.font.pointSize()}pt;
             background-color: rgba(0, 0, 0, 0%);
             color: {text_edit_color};
             border: 5px inset {border_color};
@@ -552,7 +555,7 @@ class AnchorSettings(QtCore.QSettings):
 
         hover_text_color = self.accent_very_light_color.name()
         hover_background_color = self.primary_very_light_color.name()
-        hover_border_color = self.accent_very_light_color.name()
+        hover_border_color = self.primary_very_dark_color.name()
 
         disabled_text_color = self.primary_dark_color.name()
         disabled_background_color = self.accent_very_dark_color.name()
@@ -571,10 +574,11 @@ class AnchorSettings(QtCore.QSettings):
         menu_text_color = self.primary_very_dark_color.name()
         line_edit_color = self.primary_very_dark_color.name()
         line_edit_background_color = self.accent_base_color.name()
-
         sheet = f"""
-        QWidget{{
+        * {{
             background-color: {background_color};
+            font-family: {self.font.family()};
+            font-size: {self.font.pointSize()}pt;
         }}
         QProgressBar {{
             border: {self.border_width}px solid {enabled_border_color};
@@ -910,6 +914,7 @@ class AnchorSettings(QtCore.QSettings):
         sheet += self.scroll_bar_style_sheet
         sheet += self.menu_style_sheet
         sheet += self.tool_tip_style_sheet
+        sheet += self.search_box_style_sheet
         return sheet
 
     @property

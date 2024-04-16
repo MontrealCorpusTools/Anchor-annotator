@@ -3,11 +3,12 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.2.2
+## Created by: Qt User Interface Compiler version 6.3.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
+import resources_rc
 from PySide6.QtCore import (
     QCoreApplication,
     QDate,
@@ -54,7 +55,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import anchor.resources_rc
 from anchor.widgets import (
     AcousticModelWidget,
     AlignmentWidget,
@@ -313,6 +313,11 @@ class Ui_MainWindow(object):
             "                background-color: rgb(255, 195, 0);\n"
             "                color: rgb(0, 8, 20);\n"
             "        }\n"
+            "        QToolTip {\n"
+            "                margin: 2px;\n"
+            "                background-color: rgb(255, 195, 0);\n"
+            "                color: rgb(0, 8, 20);\n"
+            "        }\n"
             "        QMenu::item {\n"
             "                padding: 2px 25px 2px 20px;\n"
             "                border: 1px solid transparent;\n"
@@ -322,12 +327,12 @@ class Ui_MainWindow(object):
             "        QMenu::item:disabled {\n"
             "                border: none;\n"
             "                background-color: rgb(0, 29, 61);\n"
-            "                color: rgb(198, 54, 35);\n"
+            "                c"
+            "olor: rgb(198, 54, 35);\n"
             "        }\n"
             "        QMenu::item:!disabled:selected {\n"
             "            border-color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(14"
-            ", 99, 179);\n"
+            "            background-color: rgb(14, 99, 179);\n"
             "        }\n"
             "        QComboBox {\n"
             "            color: rgb(0, 8, 20);\n"
@@ -350,11 +355,11 @@ class Ui_MainWindow(object):
             "        }\n"
             "\n"
             "        QToolButton#cancel_load:disabled {\n"
-            "            color: rgb(198, 54, 35);\n"
+            "            color: rgb(198, 54, 35);"
+            "\n"
             "            background-color: rgb(0, 29, 61);\n"
             "        }\n"
-            "        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:ho"
-            "ver {\n"
+            "        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {\n"
             "            color: rgb(255, 214, 10);\n"
             "            background-color: rgb(14, 99, 179);\n"
             "        }\n"
@@ -378,11 +383,11 @@ class Ui_MainWindow(object):
             "            selection-background-color: rgb(14, 99, 179);\n"
             "        }\n"
             "        QSlider::handle:horizontal {\n"
+            ""
             "            height: 10px;\n"
             "            background: rgb(255, 195, 0);\n"
             "            border: 1px solid rgb(0, 8, 20);\n"
-            "            margin: 0 -2px; /* expand outs"
-            "ide the groove */\n"
+            "            margin: 0 -2px; /* expand outside the groove */\n"
             "        }\n"
             "        QSlider::handle:horizontal:hover {\n"
             "            height: 10px;\n"
@@ -403,13 +408,13 @@ class Ui_MainWindow(object):
             "        }\n"
             "        QHeaderView::up-arrow {\n"
             "            subcontrol-origin: padding;\n"
-            "            subcontrol-position: center right;\n"
+            "            subcontrol-position: center "
+            "right;\n"
             "            image: url(:hover/sort-up.svg);\n"
             "            height: 20px;\n"
             "            width: 20px;\n"
             "        }\n"
             "        QHeaderView::down-arrow {\n"
-            ""
             "            image: url(:hover/sort-down.svg);\n"
             "            subcontrol-origin: padding;\n"
             "            subcontrol-position: center right;\n"
@@ -434,13 +439,13 @@ class Ui_MainWindow(object):
             "        QScrollBar {\n"
             "            color: rgb(255, 214, 10);\n"
             "            background: rgb(0, 29, 61);\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
+            "            border: 2px solid rg"
+            "b(0, 8, 20);\n"
             "        }\n"
             "        QScrollBar#time_scroll_bar {\n"
             "            color: rgb(255, 214, 10);\n"
             "            background: rgb(0, 29, 61);\n"
-            "            "
-            "border: 2px solid rgb(0, 8, 20);\n"
+            "            border: 2px solid rgb(0, 8, 20);\n"
             "            margin-left: 0px;\n"
             "            margin-right: 0px;\n"
             "        }\n"
@@ -466,14 +471,14 @@ class Ui_MainWindow(object):
             "        }\n"
             "\n"
             "        QScrollBar:left-arrow:horizontal:pressed {\n"
-            "            image: url(:checked/caret-left.svg);\n"
+            "            image: url(:checked/ca"
+            "ret-left.svg);\n"
             "        }\n"
             "\n"
             "        QScrollBar:right-arrow:horizontal {\n"
             "            image: url(:caret-right.svg);\n"
             "            height: 25px;\n"
-            "        "
-            "    width: 25px;\n"
+            "            width: 25px;\n"
             "        }\n"
             "\n"
             "        QScrollBar:right-arrow:horizontal:pressed {\n"
@@ -501,14 +506,14 @@ class Ui_MainWindow(object):
             "\n"
             "        QScrollBar::handle:horizontal {\n"
             "            background: rgb(255, 214, 10);\n"
-            "            min-width: 25px;\n"
+            "            min-width:"
+            " 25px;\n"
             "            border: 2px solid rgb(0, 8, 20);\n"
             "            border-radius: 10px;\n"
             "        }\n"
             "\n"
             "        QScrollBar::handle:vertical {\n"
-            "            "
-            "background: rgb(255, 214, 10);\n"
+            "            background: rgb(255, 214, 10);\n"
             "            min-height: 25px;\n"
             "            border: 2px solid rgb(0, 8, 20);\n"
             "            border-radius: 10px;\n"
@@ -536,13 +541,13 @@ class Ui_MainWindow(object):
             "            subcontrol-position: right;\n"
             "            subcontrol-origin: margin;\n"
             "            width: 25px;\n"
-            "        }\n"
+            "   "
+            "     }\n"
             "\n"
             "        QScrollBar::sub-line:horizontal {\n"
             "            background: none;\n"
             "            subcontrol-position: left;\n"
-            "            subcontrol-origin: "
-            "margin;\n"
+            "            subcontrol-origin: margin;\n"
             "            width: 25px;\n"
             "        }\n"
             "\n"
@@ -570,7 +575,8 @@ class Ui_MainWindow(object):
             "        QScrollBar#time_scroll_bar::sub-line:horizontal {\n"
             "            background: none;\n"
             "            subcontrol-position: none;\n"
-            "            subcontrol-origin: none;\n"
+            "  "
+            "          subcontrol-origin: none;\n"
             "            width: 0px;\n"
             "        }"
         )
@@ -676,31 +682,24 @@ class Ui_MainWindow(object):
         icon10.addFile(":/user-plus.svg", QSize(), QIcon.Normal, QIcon.Off)
         icon10.addFile(":/user-plus.svg", QSize(), QIcon.Disabled, QIcon.Off)
         self.addSpeakerAct.setIcon(icon10)
-        self.saveChangesAct = QAction(MainWindow)
-        self.saveChangesAct.setObjectName("saveChangesAct")
-        self.saveChangesAct.setEnabled(False)
-        icon11 = QIcon()
-        icon11.addFile(":/sync.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon11.addFile(":/sync.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.saveChangesAct.setIcon(icon11)
         self.getHelpAct = QAction(MainWindow)
         self.getHelpAct.setObjectName("getHelpAct")
-        icon12 = QIcon()
-        icon12.addFile(":/help.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.getHelpAct.setIcon(icon12)
+        icon11 = QIcon()
+        icon11.addFile(":/help.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.getHelpAct.setIcon(icon11)
         self.reportBugAct = QAction(MainWindow)
         self.reportBugAct.setObjectName("reportBugAct")
-        icon13 = QIcon()
-        icon13.addFile(":/bug.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.reportBugAct.setIcon(icon13)
+        icon12 = QIcon()
+        icon12.addFile(":/bug.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.reportBugAct.setIcon(icon12)
         self.exitAct = QAction(MainWindow)
         self.exitAct.setObjectName("exitAct")
-        icon14 = QIcon()
-        icon14.addFile(":/times.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.exitAct.setIcon(icon14)
+        icon13 = QIcon()
+        icon13.addFile(":/times.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.exitAct.setIcon(icon13)
         self.cancelCorpusLoadAct = QAction(MainWindow)
         self.cancelCorpusLoadAct.setObjectName("cancelCorpusLoadAct")
-        self.cancelCorpusLoadAct.setIcon(icon14)
+        self.cancelCorpusLoadAct.setIcon(icon13)
         self.loadIvectorExtractorAct = QAction(MainWindow)
         self.loadIvectorExtractorAct.setObjectName("loadIvectorExtractorAct")
         self.loadLanguageModelAct = QAction(MainWindow)
@@ -708,41 +707,41 @@ class Ui_MainWindow(object):
         self.panLeftAct = QAction(MainWindow)
         self.panLeftAct.setObjectName("panLeftAct")
         self.panLeftAct.setEnabled(False)
-        icon15 = QIcon()
-        icon15.addFile(":/caret-left.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.panLeftAct.setIcon(icon15)
+        icon14 = QIcon()
+        icon14.addFile(":/caret-left.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.panLeftAct.setIcon(icon14)
         self.panRightAct = QAction(MainWindow)
         self.panRightAct.setObjectName("panRightAct")
         self.panRightAct.setEnabled(False)
-        icon16 = QIcon()
-        icon16.addFile(":/caret-right.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.panRightAct.setIcon(icon16)
+        icon15 = QIcon()
+        icon15.addFile(":/caret-right.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.panRightAct.setIcon(icon15)
         self.searchAct = QAction(MainWindow)
         self.searchAct.setObjectName("searchAct")
         self.searchAct.setEnabled(False)
-        icon17 = QIcon()
-        icon17.addFile(":/magnifying-glass.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon17.addFile(":/magnifying-glass.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.searchAct.setIcon(icon17)
+        icon16 = QIcon()
+        icon16.addFile(":/magnifying-glass.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon16.addFile(":/magnifying-glass.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.searchAct.setIcon(icon16)
         self.changeVolumeAct = QAction(MainWindow)
         self.changeVolumeAct.setObjectName("changeVolumeAct")
-        icon18 = QIcon()
-        icon18.addFile(":/volume-up.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon18.addFile(":/volume-up.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.changeVolumeAct.setIcon(icon18)
+        icon17 = QIcon()
+        icon17.addFile(":/volume-up.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon17.addFile(":/volume-up.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.changeVolumeAct.setIcon(icon17)
         self.changeSpeakerAct = QAction(MainWindow)
         self.changeSpeakerAct.setObjectName("changeSpeakerAct")
         self.changeSpeakerAct.setEnabled(False)
-        icon19 = QIcon()
-        icon19.addFile(":/speaker.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.changeSpeakerAct.setIcon(icon19)
+        icon18 = QIcon()
+        icon18.addFile(":/speaker.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.changeSpeakerAct.setIcon(icon18)
         self.saveDictionaryAct = QAction(MainWindow)
         self.saveDictionaryAct.setObjectName("saveDictionaryAct")
         self.saveDictionaryAct.setEnabled(False)
-        icon20 = QIcon()
-        icon20.addFile(":/book-save.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon20.addFile(":/book-save.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.saveDictionaryAct.setIcon(icon20)
+        icon19 = QIcon()
+        icon19.addFile(":/book-save.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon19.addFile(":/book-save.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.saveDictionaryAct.setIcon(icon19)
         self.closeDictionaryAct = QAction(MainWindow)
         self.closeDictionaryAct.setObjectName("closeDictionaryAct")
         self.closeDictionaryAct.setEnabled(False)
@@ -769,61 +768,53 @@ class Ui_MainWindow(object):
         self.selectMappingFileAct.setObjectName("selectMappingFileAct")
         self.evaluateAlignmentsAct = QAction(MainWindow)
         self.evaluateAlignmentsAct.setObjectName("evaluateAlignmentsAct")
-        self.revertChangesAct = QAction(MainWindow)
-        self.revertChangesAct.setObjectName("revertChangesAct")
-        self.revertChangesAct.setEnabled(False)
-        icon21 = QIcon()
-        icon21.addFile(":/history.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon21.addFile(":/history.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon21.addFile(":/history.svg", QSize(), QIcon.Disabled, QIcon.On)
-        self.revertChangesAct.setIcon(icon21)
         self.exportFilesAct = QAction(MainWindow)
         self.exportFilesAct.setObjectName("exportFilesAct")
         self.exportFilesAct.setEnabled(False)
-        icon22 = QIcon()
-        icon22.addFile(":/file-export.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon22.addFile(":/file-export.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.exportFilesAct.setIcon(icon22)
+        icon20 = QIcon()
+        icon20.addFile(":/file-export.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon20.addFile(":/file-export.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.exportFilesAct.setIcon(icon20)
         self.lockEditAct = QAction(MainWindow)
         self.lockEditAct.setObjectName("lockEditAct")
         self.lockEditAct.setCheckable(True)
         self.lockEditAct.setEnabled(False)
-        icon23 = QIcon()
-        icon23.addFile(":/lock-open.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon23.addFile(":/checked/lock.svg", QSize(), QIcon.Normal, QIcon.On)
-        icon23.addFile(":/lock-open.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon23.addFile(":/lock.svg", QSize(), QIcon.Disabled, QIcon.On)
-        icon23.addFile(":/checked/lock-open.svg", QSize(), QIcon.Active, QIcon.Off)
-        icon23.addFile(":/checked/lock.svg", QSize(), QIcon.Active, QIcon.On)
-        icon23.addFile(":/checked/lock-open.svg", QSize(), QIcon.Selected, QIcon.Off)
-        icon23.addFile(":/checked/lock.svg", QSize(), QIcon.Selected, QIcon.On)
-        self.lockEditAct.setIcon(icon23)
+        icon21 = QIcon()
+        icon21.addFile(":/lock-open.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Normal, QIcon.On)
+        icon21.addFile(":/lock-open.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon21.addFile(":/lock.svg", QSize(), QIcon.Disabled, QIcon.On)
+        icon21.addFile(":/checked/lock-open.svg", QSize(), QIcon.Active, QIcon.Off)
+        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Active, QIcon.On)
+        icon21.addFile(":/checked/lock-open.svg", QSize(), QIcon.Selected, QIcon.Off)
+        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Selected, QIcon.On)
+        self.lockEditAct.setIcon(icon21)
         self.alignUtteranceAct = QAction(MainWindow)
         self.alignUtteranceAct.setObjectName("alignUtteranceAct")
         self.alignUtteranceAct.setEnabled(False)
-        icon24 = QIcon()
-        icon24.addFile(":/magic.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon24.addFile(":/magic.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.alignUtteranceAct.setIcon(icon24)
+        icon22 = QIcon()
+        icon22.addFile(":/magic.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon22.addFile(":/magic.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.alignUtteranceAct.setIcon(icon22)
         self.reloadCorpusAct = QAction(MainWindow)
         self.reloadCorpusAct.setObjectName("reloadCorpusAct")
         self.zoomToSelectionAct = QAction(MainWindow)
         self.zoomToSelectionAct.setObjectName("zoomToSelectionAct")
         self.zoomToSelectionAct.setEnabled(False)
-        icon25 = QIcon()
-        icon25.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon25.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.zoomToSelectionAct.setIcon(icon25)
+        icon23 = QIcon()
+        icon23.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon23.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        self.zoomToSelectionAct.setIcon(icon23)
         self.oovsOnlyAct = QAction(MainWindow)
         self.oovsOnlyAct.setObjectName("oovsOnlyAct")
         self.oovsOnlyAct.setCheckable(True)
-        icon26 = QIcon()
-        icon26.addFile(":/oov-check.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon26.addFile(":/oov-check.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon26.addFile(":/checked/oov-check.svg", QSize(), QIcon.Disabled, QIcon.On)
-        icon26.addFile(":/checked/oov-check.svg", QSize(), QIcon.Active, QIcon.On)
-        icon26.addFile(":/oov-check.svg", QSize(), QIcon.Selected, QIcon.Off)
-        self.oovsOnlyAct.setIcon(icon26)
+        icon24 = QIcon()
+        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon24.addFile(":/checked/oov-check.svg", QSize(), QIcon.Disabled, QIcon.On)
+        icon24.addFile(":/checked/oov-check.svg", QSize(), QIcon.Active, QIcon.On)
+        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Selected, QIcon.Off)
+        self.oovsOnlyAct.setIcon(icon24)
         self.diarizeSpeakersAct = QAction(MainWindow)
         self.diarizeSpeakersAct.setObjectName("diarizeSpeakersAct")
         self.find_duplicates_action = QAction(MainWindow)
@@ -834,9 +825,11 @@ class Ui_MainWindow(object):
         self.classify_speakers_action.setObjectName("classify_speakers_action")
         self.segmentUtteranceAct = QAction(MainWindow)
         self.segmentUtteranceAct.setObjectName("segmentUtteranceAct")
-        icon27 = QIcon()
-        icon27.addFile(":/expand.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.segmentUtteranceAct.setIcon(icon27)
+        icon25 = QIcon()
+        icon25.addFile(":/expand.svg", QSize(), QIcon.Normal, QIcon.Off)
+        self.segmentUtteranceAct.setIcon(icon25)
+        self.openCorpusManagerAct = QAction(MainWindow)
+        self.openCorpusManagerAct.setObjectName("openCorpusManagerAct")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -996,9 +989,9 @@ class Ui_MainWindow(object):
         self.menubar.addAction(self.menuWindow.menuAction())
         self.menuCorpus.addAction(self.loadCorpusAct)
         self.menuCorpus.addAction(self.loadRecentCorpusMenu.menuAction())
+        self.menuCorpus.addAction(self.openCorpusManagerAct)
         self.menuCorpus.addSeparator()
         self.menuCorpus.addAction(self.reloadCorpusAct)
-        self.menuCorpus.addAction(self.saveChangesAct)
         self.menuCorpus.addAction(self.exportFilesAct)
         self.menuCorpus.addSeparator()
         self.menuCorpus.addAction(self.closeCurrentCorpusAct)
@@ -1011,7 +1004,6 @@ class Ui_MainWindow(object):
         self.menuEdit.addAction(self.openPreferencesAct)
         self.menuEdit.addSeparator()
         self.menuEdit.addAction(self.lockEditAct)
-        self.menuEdit.addAction(self.revertChangesAct)
         self.menuDictionary.addAction(self.loadDictionaryAct)
         self.menuDictionary.addAction(self.mfaDictionaryMenu.menuAction())
         self.menuDictionary.addAction(self.menuDownload_dictionary.menuAction())
@@ -1069,8 +1061,6 @@ class Ui_MainWindow(object):
         self.toolBar.addAction(self.alignUtteranceAct)
         self.toolBar.addAction(self.segmentUtteranceAct)
         self.toolBar.addAction(self.lockEditAct)
-        self.toolBar.addAction(self.saveChangesAct)
-        self.toolBar.addAction(self.revertChangesAct)
         self.toolBar.addAction(self.exportFilesAct)
         self.toolBar.addSeparator()
         self.toolBar.addAction(self.getHelpAct)
@@ -1141,15 +1131,6 @@ class Ui_MainWindow(object):
         self.addSpeakerAct.setText(
             QCoreApplication.translate("MainWindow", "Add new speaker", None)
         )
-        self.saveChangesAct.setText(QCoreApplication.translate("MainWindow", "Sync changes", None))
-        # if QT_CONFIG(tooltip)
-        self.saveChangesAct.setToolTip(
-            QCoreApplication.translate("MainWindow", "Sync changes to the database", None)
-        )
-        # endif // QT_CONFIG(tooltip)
-        # if QT_CONFIG(shortcut)
-        self.saveChangesAct.setShortcut(QCoreApplication.translate("MainWindow", "Ctrl+S", None))
-        # endif // QT_CONFIG(shortcut)
         self.getHelpAct.setText(QCoreApplication.translate("MainWindow", "Help", None))
         self.reportBugAct.setText(QCoreApplication.translate("MainWindow", "Report bug", None))
         self.exitAct.setText(QCoreApplication.translate("MainWindow", "Exit", None))
@@ -1200,14 +1181,6 @@ class Ui_MainWindow(object):
         self.evaluateAlignmentsAct.setText(
             QCoreApplication.translate("MainWindow", "Evaluate alignments", None)
         )
-        self.revertChangesAct.setText(
-            QCoreApplication.translate("MainWindow", "Revert changes", None)
-        )
-        # if QT_CONFIG(tooltip)
-        self.revertChangesAct.setToolTip(
-            QCoreApplication.translate("MainWindow", "Revert current changes to last sync", None)
-        )
-        # endif // QT_CONFIG(tooltip)
         self.exportFilesAct.setText(
             QCoreApplication.translate("MainWindow", "Export changes", None)
         )
@@ -1252,6 +1225,14 @@ class Ui_MainWindow(object):
             QCoreApplication.translate(
                 "MainWindow", "Split an utterance into VAD-based segments", None
             )
+        )
+        # endif // QT_CONFIG(tooltip)
+        self.openCorpusManagerAct.setText(
+            QCoreApplication.translate("MainWindow", "Manage corpora...", None)
+        )
+        # if QT_CONFIG(tooltip)
+        self.openCorpusManagerAct.setToolTip(
+            QCoreApplication.translate("MainWindow", "Manage corpora and models", None)
         )
         # endif // QT_CONFIG(tooltip)
         self.menuCorpus.setTitle(QCoreApplication.translate("MainWindow", "Corpus", None))

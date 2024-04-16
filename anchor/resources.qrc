@@ -9,6 +9,10 @@
         <file alias="regex.svg">resources/base_tool_buttons/regex.svg</file>
         <file alias="case.svg">resources/base_tool_buttons/case.svg</file>
         <file alias="word.svg">resources/base_tool_buttons/word.svg</file>
+        <file alias="file-arrow-down-solid.svg">resources/base_tool_buttons/file-arrow-down-solid.svg</file>
+        <file alias="file-circle-check-solid.svg">resources/base_tool_buttons/file-circle-check-solid.svg</file>
+        <file alias="file-circle-question-solid.svg">resources/base_tool_buttons/file-circle-question-solid.svg</file>
+        <file alias="file-circle-xmark-solid.svg">resources/base_tool_buttons/file-circle-xmark-solid.svg</file>
         <file alias="caret-down.svg">resources/base_tool_buttons/caret-down-solid.svg</file>
         <file alias="caret-up.svg">resources/base_tool_buttons/caret-up-solid.svg</file>
         <file alias="caret-left.svg">resources/base_tool_buttons/caret-left-solid.svg</file>

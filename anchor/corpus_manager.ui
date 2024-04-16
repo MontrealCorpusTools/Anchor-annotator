@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>CorpusManagerDialog</class>
+ <widget class="QDialog" name="CorpusManagerDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1560</width>
+    <height>973</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QTabWidget" name="tabWidget">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="corpusTab">
+        <attribute name="title">
+         <string>Corpora</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <widget class="CorpusListWidget" name="corpusListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="CorpusDetailWidget" name="corpusDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="dictionaryTab">
+        <attribute name="title">
+         <string>Dictionaries</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <item>
+          <widget class="DictionaryModelListWidget" name="dictionaryListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="DictionaryModelDetailWidget" name="dictionaryDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="acousticModelTab">
+        <attribute name="title">
+         <string>Acoustic models</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_7">
+         <item>
+          <widget class="AcousticModelListWidget" name="acousticModelListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="AcousticModelDetailWidget" name="acousticModelDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="g2pModelTab">
+        <attribute name="title">
+         <string>G2P models</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <item>
+          <widget class="G2PModelListWidget" name="g2pModelListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="G2PModelDetailWidget" name="g2pModelDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="languageModelTab">
+        <attribute name="title">
+         <string>Language models</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <item>
+          <widget class="LanguageModelListWidget" name="languageModelListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="LanguageModelDetailWidget" name="languageModelDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="ivectorExtractorTab">
+        <attribute name="title">
+         <string>Ivector extractors</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout_6">
+         <item>
+          <widget class="IvectorExtractorListWidget" name="ivectorExtractorListWidget" native="true"/>
+         </item>
+         <item>
+          <widget class="IvectorExtractorDetailWidget" name="ivectorExtractorDetailWidget" native="true"/>
+         </item>
+        </layout>
+       </widget>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>CorpusListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>DictionaryModelListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AcousticModelListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>G2PModelListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>LanguageModelListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>IvectorExtractorListWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>CorpusDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AcousticModelDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>G2PModelDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>LanguageModelDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>IvectorExtractorDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>DictionaryModelDetailWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>CorpusManagerDialog</receiver>
+   <slot>accept()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>248</x>
+     <y>254</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>157</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>CorpusManagerDialog</receiver>
+   <slot>reject()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>316</x>
+     <y>260</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>286</x>
+     <y>274</y>
+    </hint>
+   </hints>
+  </connection>
+ </connections>
+</ui>

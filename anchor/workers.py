@@ -3161,9 +3161,11 @@ class SpectrogramWorker(FunctionWorker):  # pragma: no cover
         pre_emph_coeff = self.settings.value(self.settings.SPEC_PREEMPH)
         max_freq = self.settings.value(self.settings.SPEC_MAX_FREQ)
         if self.y.shape[0] == 0:
+            self.signals.result.emit(None)
             return
         duration = self.y.shape[0] / self.sample_rate
-        if duration > 30:
+        if duration > self.settings.value(self.settings.SPEC_MAX_TIME):
+            self.signals.result.emit(None)
             return
         with self.lock:
             max_sr = 2 * max_freq
@@ -3256,7 +3258,12 @@ class PitchWorker(FunctionWorker):  # pragma: no cover
         with self.lock:
             if self.y.shape[0] == 0:
                 return
-            if self.end - self.begin < 0.1:
+            duration = self.end - self.begin
+            if duration < 0.1:
+                self.signals.result.emit(None)
+                return
+            if duration > self.settings.value(self.settings.PITCH_MAX_TIME):
+                self.signals.result.emit(None)
                 return
             pitch_track = compute_pitch(
                 self.y, self.pitch_computer.extraction_opts, self.pitch_computer.process_opts

@@ -74,7 +74,7 @@ html_theme = "pydata_sphinx_theme"
 html_static_path = ["_static"]
 html_css_files = [
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.3.0/css/all.min.css",
-    "css/style.css",
+    "https://montreal-forced-aligner.readthedocs.io/en/latest/_static/css/mfa.css",
 ]
 
 html_logo = "_static/anchor-yellow.svg"
