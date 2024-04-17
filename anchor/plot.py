@@ -11,7 +11,6 @@ import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
 from Bio import pairwise2
-from line_profiler_pycharm import profile
 from montreal_forced_aligner.data import CtmInterval
 from montreal_forced_aligner.db import Speaker, Utterance
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -1457,7 +1456,6 @@ class MfaRegion(pg.LinearRegionItem):
 
     settings = AnchorSettings()
 
-    @profile
     def __init__(
         self,
         item: CtmInterval,
@@ -1566,7 +1564,6 @@ class MfaRegion(pg.LinearRegionItem):
 
 
 class AlignmentRegion(MfaRegion):
-    @profile
     def __init__(
         self,
         phone_interval: CtmInterval,
@@ -1681,7 +1678,6 @@ class WordRegion(AlignmentRegion):
 
 
 class UtteranceRegion(MfaRegion):
-    @profile
     def __init__(
         self,
         utterance: workers.UtteranceData,
@@ -2573,7 +2569,6 @@ class SpeakerTier(pg.GraphicsObject):
                 reg.scene().removeItem(reg)
         self.visible_utterances = {}
 
-    @profile
     def refresh(self, *args):
         self.hide()
         if self.selection_model.plot_min is None:
