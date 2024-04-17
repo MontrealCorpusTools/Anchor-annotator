@@ -29,7 +29,6 @@ from _kalpy.feat import compute_pitch
 from _kalpy.ivector import Plda, ivector_normalize_length
 from _kalpy.matrix import DoubleVector, FloatVector
 from kalpy.feat.pitch import PitchComputer
-from line_profiler_pycharm import profile
 from montreal_forced_aligner import config
 from montreal_forced_aligner.alignment import PretrainedAligner
 from montreal_forced_aligner.config import IVECTOR_DIMENSION, XVECTOR_DIMENSION
@@ -3151,7 +3150,6 @@ class SpectrogramWorker(FunctionWorker):  # pragma: no cover
             self.end = end
             self.channel = channel
 
-    @profile
     def run(self):
         self.stopped.clear()
         dynamic_range = self.settings.value(self.settings.SPEC_DYNAMIC_RANGE)

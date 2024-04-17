@@ -8,7 +8,6 @@
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
-import resources_rc
 from PySide6.QtCore import (
     QCoreApplication,
     QDate,
@@ -55,6 +54,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import anchor.resources_rc
 from anchor.widgets import (
     AcousticModelWidget,
     AlignmentWidget,

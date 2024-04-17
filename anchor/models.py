@@ -68,18 +68,20 @@ class TextFilterQuery:
         if not self.regex:
             text = re.escape(text)
         word_break_set = r"\b"
-        if posix:
-            word_break_set = r"\y"
-            text = text.replace(r"\b", word_break_set)
         if self.word:
             if not text.startswith(word_break_set):
                 text = word_break_set + text
             if not text.endswith(word_break_set):
                 text += word_break_set
+        if posix:
+            text = text.replace(r"\b", word_break_set)
+            if text.startswith(r"\b"):
+                text = r"((?<=\s)|(?<=^))" + text[2:]
+            if text.endswith(r"\b"):
+                text = text[:-2] + r"((?=\s)|(?=$))"
         if self.regex or self.word:
             if not self.case_sensitive:
                 text = "(?i)" + text
-
         return text
 
 
