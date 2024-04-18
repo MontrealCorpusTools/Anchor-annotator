@@ -6,6 +6,11 @@ Changelog
 
    Alpha releases
 
+0.3.3
+-----
+
+- Fixed a bug in loading saved dictionaries and models
+
 0.3.2
 -----
 
