@@ -1087,8 +1087,8 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             for m in (
                 session.query(anchor.db.AcousticModel)
-                .order_by(anchor.db.AcousticModel.last_used.desc())
                 .filter_by(available_locally=True)
+                .order_by(anchor.db.AcousticModel.last_used.desc())
             ):
                 a = QtGui.QAction(f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
@@ -1105,8 +1105,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
             for m in (
                 session.query(anchor.db.Dictionary)
-                .order_by(anchor.db.Dictionary.last_used.desc())
                 .filter_by(available_locally=True)
+                .order_by(anchor.db.Dictionary.last_used.desc())
             ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
@@ -1122,8 +1122,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
             for m in (
                 session.query(anchor.db.LanguageModel)
-                .order_by(anchor.db.LanguageModel.last_used.desc())
                 .filter_by(available_locally=True)
+                .order_by(anchor.db.LanguageModel.last_used.desc())
             ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
@@ -1139,8 +1139,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
             for m in (
                 session.query(anchor.db.G2PModel)
-                .order_by(anchor.db.G2PModel.last_used.desc())
                 .filter_by(available_locally=True)
+                .order_by(anchor.db.G2PModel.last_used.desc())
             ):
                 a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
                 a.setData(m.id)
@@ -1932,7 +1932,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.acoustic_model_id: m_id}
                 )
-                session.query(anchor.db.AcousticModel).filter_by(
+                session.query(anchor.db.AcousticModel).filter(
                     anchor.db.AcousticModel.id == m_id
                 ).update(
                     {
@@ -2003,9 +2003,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.dictionary_id: m_id}
                 )
-                session.query(anchor.db.Dictionary).filter_by(
-                    anchor.db.Dictionary.id == m_id
-                ).update(
+                session.query(anchor.db.Dictionary).filter(anchor.db.Dictionary.id == m_id).update(
                     {
                         anchor.db.Dictionary.last_used: datetime.datetime.now(),
                     }
@@ -2060,7 +2058,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.language_model_id: m_id}
                 )
-                session.query(anchor.db.LanguageModel).filter_by(
+                session.query(anchor.db.LanguageModel).filter(
                     anchor.db.LanguageModel.id == m_id
                 ).update(
                     {
@@ -2139,7 +2137,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         anchor.db.AnchorCorpus.g2p_model_id: m_id,
                     }
                 )
-                session.query(anchor.db.G2PModel).filter_by(anchor.db.G2PModel.id == m_id).update(
+                session.query(anchor.db.G2PModel).filter(anchor.db.G2PModel.id == m_id).update(
                     {
                         anchor.db.G2PModel.last_used: datetime.datetime.now(),
                     }
@@ -2182,7 +2180,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 session.query(anchor.db.AnchorCorpus).filter_by(current=True).update(
                     {anchor.db.AnchorCorpus.ivector_extractor_id: m_id}
                 )
-                session.query(anchor.db.IvectorExtractor).filter_by(
+                session.query(anchor.db.IvectorExtractor).filter(
                     anchor.db.IvectorExtractor.id == m_id
                 ).update(
                     {
