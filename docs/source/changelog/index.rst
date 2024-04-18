@@ -6,6 +6,16 @@ Changelog
 
    Alpha releases
 
+0.3.2
+-----
+
+- Fixed compatibility with Qt 6.7
+
+0.3.1
+-----
+
+- Fixed a crash on launch
+
 0.3.0
 -----
 

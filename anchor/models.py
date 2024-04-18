@@ -166,6 +166,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
 
     waveformReady = QtCore.Signal()
     utterancesReady = QtCore.Signal()
+    speakersChanged = QtCore.Signal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -325,6 +326,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             if utterance.speaker_id not in self.speakers:
                 self.speakers.append(utterance.speaker_id)
                 self.speaker_channel_mapping[utterance.speaker_id] = utterance.channel
+                self.speakersChanged.emit()
             self._speaker_indices[index] = utterance.speaker_id
 
     def merge_table_utterances(
@@ -848,6 +850,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         except sqlalchemy.orm.exc.DetachedInstanceError:
             new_file = True
         self.requested_utterance_id = utterance_id
+        self.selected_min_time = None
+        self.selected_max_time = None
         if new_file:
             self.fileAboutToChange.emit()
             self.model().set_file(file_id)
@@ -943,8 +947,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.currentRowChanged.connect(self.switch_utterance)
         # self.selectionChanged.connect(self.update_selection_audio)
         # self.selectionChanged.connect(self.update_selection_audio)
-        # self.model().changeCommandFired.connect(self.expire_current)
-        self.model().layoutChanged.connect(self.check_selection)
+        self.model().newResults.connect(self.check_selection)
         self.model().unlockCorpus.connect(self.fileChanged.emit)
 
     def set_current_utterance(self, utterance_id):
@@ -2275,32 +2278,6 @@ class CorpusModel(TableModel):
             self._speaker_indices[row],
         )
 
-    def fileAt(self, index) -> int:
-        if not isinstance(index, int):
-            if not index.isValid():
-                return None
-            index = index.row()
-        return self._file_indices[index]
-
-    def indexForUtterance(self, utterance_id: int, column: int = 1):
-        return self.createIndex(self.reversed_indices[utterance_id], column)
-
-    def rollback_changes(self):
-        self.unsaved_files = set()
-        self.session.rollback()
-        # self.query_session.expire_all()
-        self.databaseSynced.emit(False)
-        self.update_data()
-
-    def commit_changes(self):
-        self.session.bulk_update_mappings(
-            File, [{"id": x, "modified": True} for x in self.unsaved_files]
-        )
-
-        self.unsaved_files = set()
-        self.session.commit()
-        self.databaseSynced.emit(True)
-
     def finish_export_files(self):
         self.filesSaved.emit()
 
@@ -2586,7 +2563,6 @@ class CorpusTableModel(QtCore.QAbstractTableModel):
         self.session.commit()
         corpus_name = os.path.basename(corpus_directory)
         c = anchor.db.AnchorCorpus(name=corpus_name, path=corpus_directory, current=True, **kwargs)
-        print(c.current)
         self.session.add(c)
         self.session.commit()
         self.corpora.append(c)

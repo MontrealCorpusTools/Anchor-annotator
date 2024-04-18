@@ -3171,7 +3171,6 @@ class SpectrogramWorker(FunctionWorker):  # pragma: no cover
                 self.y = scipy.signal.resample(
                     self.y, int(self.y.shape[0] * max_sr / self.sample_rate)
                 )
-                # self.y = resampy.resample(self.y, self.sample_rate, max_sr, filter='kaiser_fast')
                 self.sample_rate = max_sr
             self.y = librosa.effects.preemphasis(self.y, coef=pre_emph_coeff)
             if self.stopped.is_set():
