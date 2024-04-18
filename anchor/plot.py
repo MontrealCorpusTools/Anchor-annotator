@@ -2510,6 +2510,16 @@ class SpeakerTier(pg.GraphicsObject):
         self.corpus_model.refreshUtteranceText.connect(self.refreshTexts)
         self.selection_model.selectionChanged.connect(self.update_select)
         self.selection_model.model().utterancesReady.connect(self.refresh)
+        self.file_model.speakersChanged.connect(self.update_available_speakers)
+        self.available_speakers = {}
+
+    def update_available_speakers(self):
+        self.available_speakers = {}
+        for speaker_id in self.file_model.speakers:
+            speaker_name = self.corpus_model.get_speaker_name(speaker_id)
+            self.available_speakers[speaker_name] = speaker_id
+        for reg in self.visible_utterances.values():
+            reg.available_speakers = self.available_speakers
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)

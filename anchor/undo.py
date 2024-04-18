@@ -6,7 +6,7 @@ import typing
 import pynini.lib
 import sqlalchemy
 from montreal_forced_aligner.data import WordType
-from montreal_forced_aligner.db import File, Pronunciation, Speaker, Utterance, Word
+from montreal_forced_aligner.db import File, Pronunciation, Speaker, Utterance, Word, bulk_update
 from PySide6 import QtCore, QtGui
 from sqlalchemy.orm import make_transient
 
@@ -643,18 +643,18 @@ class UpdateUtteranceSpeakerCommand(FileCommand):
                 )
             )
             session.flush()
+        mappings = []
         for u in self.utterances:
             u.speaker_id = self.new_speaker_id
-        session.query(Speaker).filter(
-            Speaker.id.in_(self.old_speaker_ids + [self.new_speaker_id])
-        ).update({Speaker.modified: True})
+            mappings.append({"id": u.id, "speaker_id": self.new_speaker_id})
+        bulk_update(self.corpus_model.session, Utterance, mappings)
 
     def _undo(self, session) -> None:
+        mappings = []
         for i, u in enumerate(self.utterances):
             u.speaker_id = self.old_speaker_ids[i]
-        session.query(Speaker).filter(
-            Speaker.id.in_(self.old_speaker_ids + [self.new_speaker_id])
-        ).update({Speaker.modified: True})
+            mappings.append({"id": u.id, "speaker_id": self.old_speaker_ids[i]})
+        bulk_update(self.corpus_model.session, Utterance, mappings)
 
     def update_data(self):
         super().update_data()

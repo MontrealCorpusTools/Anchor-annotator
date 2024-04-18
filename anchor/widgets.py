@@ -125,6 +125,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             or self.currentTime() >= self.maxTime()
         ):
             self.setCurrentTime(self.startTime())
+        self.timer.start()
         super(MediaPlayer, self).play()
         if fade_in:
             self.fade_in_anim.start()
@@ -155,8 +156,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             self.timer.stop()
             self.setCurrentTime(self.startTime())
             self.timeChanged.emit(self.currentTime())
-        elif state == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
-            self.timer.start()
         elif state == QtMultimedia.QMediaPlayer.PlaybackState.PausedState:
             self.timer.stop()
 
@@ -183,10 +182,10 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
     def set_volume(self, volume: int):
         if self.audioOutput() is None:
             return
-        linearVolume = QtMultimedia.QAudio.convertVolume(
+        linearVolume = QtMultimedia.QtAudio.convertVolume(
             volume / 100.0,
-            QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
-            QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
+            QtMultimedia.QtAudio.VolumeScale.LogarithmicVolumeScale,
+            QtMultimedia.QtAudio.VolumeScale.LinearVolumeScale,
         )
         self.audioOutput().setVolume(linearVolume)
 
@@ -195,10 +194,10 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             return 100
         volume = self.audioOutput().volume()
         volume = int(
-            QtMultimedia.QAudio.convertVolume(
+            QtMultimedia.QtAudio.convertVolume(
                 volume,
-                QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
-                QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
+                QtMultimedia.QtAudio.VolumeScale.LinearVolumeScale,
+                QtMultimedia.QtAudio.VolumeScale.LogarithmicVolumeScale,
             )
             * 100
         )
