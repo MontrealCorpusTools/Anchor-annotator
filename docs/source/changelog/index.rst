@@ -6,6 +6,16 @@ Changelog
 
    Alpha releases
 
+0.4.0
+-----
+
+- Fixed an issue when adding pronunciation for OOV item from normalized text window
+- Fixed an issue where volume bar would not save volume properly
+- Fixed an issue where punctuation would incorrectly label items as OOVs
+- Fixed a display issue on tables in Windows
+- Updated diarization code to be compatible with file optimizations in 0.2.0
+- Improved regex search to not rely as much on postgres character classes (which are not unicode aware)
+
 0.3.3
 -----
 

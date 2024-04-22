@@ -855,12 +855,27 @@ class AnchorSettings(QtCore.QSettings):
             margin: 0 -2px; /* expand outside the groove */
         }}
         QTableWidget, QTableView, QTreeView, QTreeWidget {{
-            alternate-background-color: {table_even_color};
-            selection-background-color: {selection_color};
-            selection-color: {text_edit_color};
+            border: 4px solid {enabled_color};
+        }}
+        QTableView::item, QTreeWidget::item {{
             background-color: {table_odd_color};
             color: {table_text_color};
-            border: 4px solid {enabled_color};
+            selection-background-color: {selection_color};
+            selection-color: {text_edit_color};
+        }}
+        QTableView::item:selected, QTreeWidget::item:selected {{
+            background-color: {selection_color};
+            color: {text_edit_color};
+        }}
+        QTableView::item:alternate, QTreeWidget::item:alternate {{
+            background-color: {table_even_color};
+            color: {table_text_color};
+            selection-background-color: {selection_color};
+            selection-color: {text_edit_color};
+        }}
+        QTableView::item:alternate:selected, QTreeWidget::item:alternate:selected {{
+            background-color: {selection_color};
+            color: {text_edit_color};
         }}
        QTreeView QLabel, QTreeWidget QLabel{{
             color: {table_text_color};

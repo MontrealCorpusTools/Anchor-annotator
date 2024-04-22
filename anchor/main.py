@@ -540,14 +540,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.dictionary_model,
         )
         self.ui.speakerWidget.set_models(
-            self.corpus_model, self.selection_model, self.speaker_model
+            self.corpus_model, self.file_selection_model, self.speaker_model
         )
         self.ui.transcriptionWidget.set_models(self.corpus_model, self.dictionary_model)
         self.ui.alignmentWidget.set_models(self.corpus_model)
         self.ui.acousticModelWidget.set_models(self.corpus_model)
         self.ui.languageModelWidget.set_models(self.corpus_model)
         self.ui.dictionaryWidget.set_models(self.dictionary_model)
-        self.ui.diarizationWidget.set_models(self.diarization_model, self.selection_model)
+        self.ui.diarizationWidget.set_models(self.diarization_model, self.file_selection_model)
         self.ui.oovWidget.set_models(self.oov_model)
         self.file_selection_model.currentUtteranceChanged.connect(self.change_utterance)
         self.selection_model.fileViewRequested.connect(self.file_selection_model.set_current_file)
@@ -1385,6 +1385,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.languageModelMenu.setEnabled(True)
 
     def finalize_load_g2p_model(self, generator: PyniniValidator):
+        if generator is None:
+            return
         self.dictionary_model.set_g2p_generator(generator)
         self.corpus_model.g2p_model = generator.g2p_model
         self.check_actions()

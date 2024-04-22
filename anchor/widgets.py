@@ -74,10 +74,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.start_load_time = None
         self.min_time = None
         self.selection_model = None
-        self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(1)
-        self.timer.timeout.connect(self.checkStop)
-        # self.positionChanged.connect(self.checkStop)
+        self.positionChanged.connect(self.checkStop)
         # self.positionChanged.connect(self.positionDebug)
         self.errorOccurred.connect(self.handle_error)
         o = None
@@ -89,7 +86,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self._audio_output.setDevice(self.devices.defaultAudioOutput())
         self.setAudioOutput(self._audio_output)
         self.playbackStateChanged.connect(self.reset_position)
-        self.set_volume(self.settings.value(self.settings.VOLUME))
         self.fade_in_anim = QtCore.QPropertyAnimation(self._audio_output, b"volume")
         self.fade_in_anim.setDuration(10)
         self.fade_in_anim.setStartValue(0.1)
@@ -105,6 +101,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.fade_out_anim.setKeyValueAt(0.1, self._audio_output.volume())
         self.fade_out_anim.finished.connect(super().pause)
         self.file_path = None
+        self.set_volume(self.settings.value(self.settings.VOLUME))
 
     def setMuted(self, muted: bool):
         self.audioOutput().setMuted(muted)
@@ -125,7 +122,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             or self.currentTime() >= self.maxTime()
         ):
             self.setCurrentTime(self.startTime())
-        self.timer.start()
         super(MediaPlayer, self).play()
         if fade_in:
             self.fade_in_anim.start()
@@ -153,14 +149,11 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
     def reset_position(self):
         state = self.playbackState()
         if state == QtMultimedia.QMediaPlayer.PlaybackState.StoppedState:
-            self.timer.stop()
             self.setCurrentTime(self.startTime())
-            self.timeChanged.emit(self.currentTime())
-        elif state == QtMultimedia.QMediaPlayer.PlaybackState.PausedState:
-            self.timer.stop()
 
     def update_audio_device(self):
         self._audio_output.setDevice(self.devices.defaultAudioOutput())
+        self.setAudioOutput(self._audio_output)
 
     def refresh_settings(self):
         self.settings.sync()
@@ -177,9 +170,9 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.selection_model.fileChanged.connect(self.loadNewFile)
         self.selection_model.viewChanged.connect(self.update_times)
         self.selection_model.selectionAudioChanged.connect(self.update_selection_times)
-        self.selection_model.currentTimeChanged.connect(self.update_selection_times)
 
     def set_volume(self, volume: int):
+        self.settings.setValue(self.settings.VOLUME, volume)
         if self.audioOutput() is None:
             return
         linearVolume = QtMultimedia.QtAudio.convertVolume(
@@ -188,6 +181,8 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             QtMultimedia.QtAudio.VolumeScale.LinearVolumeScale,
         )
         self.audioOutput().setVolume(linearVolume)
+        self.fade_in_anim.setEndValue(linearVolume)
+        self.fade_out_anim.setStartValue(linearVolume)
 
     def volume(self) -> int:
         if self.audioOutput() is None:
@@ -207,9 +202,12 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.setCurrentTime(self.startTime())
 
     def update_times(self):
+        if self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
+            return
         if self.currentTime() < self.startTime() or self.currentTime() > self.maxTime():
             self.stop()
         if self.playbackState() != QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
+            self.stop()
             self.setCurrentTime(self.startTime())
 
     def loadNewFile(self, *args):
@@ -238,27 +236,14 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
     def setCurrentTime(self, time):
         if time is None:
             time = 0
-        if self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
-            return
         pos = int(time * 1000)
         self.setPosition(pos)
-        self.timeChanged.emit(self.currentTime())
 
     def checkStop(self):
-        if not self.hasAudio():
-            self.stop()
-            self.setSource(
-                QtCore.QUrl.fromLocalFile(
-                    self.selection_model.model().file.sound_file.sound_file_path
-                )
-            )
-            self.play()
-            return
+        self.timeChanged.emit(self.currentTime())
         if self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
             if self.maxTime() is None or self.currentTime() > self.maxTime():
                 self.stop()
-                self.reset_position()
-        self.timeChanged.emit(self.currentTime())
 
 
 class NewSpeakerField(QtWidgets.QLineEdit):
@@ -2546,6 +2531,7 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.speaker_model = None
         self.settings = AnchorSettings()
         self.settings.sync()
         form_layout = QtWidgets.QHBoxLayout()
@@ -2640,7 +2626,7 @@ class DiarizationTable(AnchorTableView):
         self.doubleClicked.connect(self.search_utterance)
         self.clicked.connect(self.reassign_utterance)
         self.diarization_model: Optional[DiarizationModel] = None
-        self.selection_model: Optional[CorpusSelectionModel] = None
+        self.selection_model: Optional[FileSelectionModel] = None
         self.set_reference_utterance_action = QtGui.QAction("Use utterance as reference", self)
         self.set_reference_utterance_action.triggered.connect(self.set_reference_utterance)
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -2648,7 +2634,7 @@ class DiarizationTable(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        # menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.set_reference_utterance_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -2656,7 +2642,7 @@ class DiarizationTable(AnchorTableView):
         rows = self.selectionModel().selectedRows()
         if not rows:
             return
-        utterance_id = self.diarization_model._utterance_ids[rows[0].row()]
+        utterance_id = self.diarization_model.utterance_ids[rows[0].row()]
         self.diarization_model.set_utterance_filter(utterance_id)
         self.referenceUtteranceSelected.emit(
             self.diarization_model.data(
@@ -2665,7 +2651,7 @@ class DiarizationTable(AnchorTableView):
             )
         )
 
-    def set_models(self, model: DiarizationModel, selection_model: CorpusSelectionModel):
+    def set_models(self, model: DiarizationModel, selection_model: FileSelectionModel):
         self.diarization_model = model
         self.selection_model = selection_model
         self.setModel(model)
@@ -2684,14 +2670,14 @@ class DiarizationTable(AnchorTableView):
             return
         if index.column() == 0:
             row = index.row()
-            utterance_id = self.diarization_model._utterance_ids[row]
+            utterance_id = self.diarization_model.utterance_ids[row]
             if utterance_id is None:
                 return
             with self.diarization_model.corpus_model.corpus.session() as session:
                 try:
-                    file_id, begin, end, channel = (
+                    file_id, begin, end, speaker_id = (
                         session.query(
-                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.channel
+                            Utterance.file_id, Utterance.begin, Utterance.end, Utterance.speaker_id
                         )
                         .filter(Utterance.id == utterance_id)
                         .first()
@@ -2701,19 +2687,18 @@ class DiarizationTable(AnchorTableView):
                     return
         else:
             if index.column() == 1:
-                speaker_id = self.diarization_model._suggested_indices[index.row()]
+                speaker_id = self.diarization_model.suggested_indices[index.row()]
             else:
-                speaker_id = self.diarization_model._speaker_indices[index.row()]
+                speaker_id = self.diarization_model.speaker_indices[index.row()]
             with self.diarization_model.corpus_model.corpus.session() as session:
                 c = session.query(Corpus).first()
                 try:
-                    utterance_id, file_id, begin, end, channel = (
+                    utterance_id, file_id, begin, end = (
                         session.query(
                             Utterance.id,
                             Utterance.file_id,
                             Utterance.begin,
                             Utterance.end,
-                            Utterance.channel,
                         )
                         .join(Utterance.speaker)
                         .filter(Utterance.speaker_id == speaker_id)
@@ -2725,12 +2710,12 @@ class DiarizationTable(AnchorTableView):
                 except TypeError:
                     self.selection_model.clearSelection()
                     return
-        self.selection_model.set_current_utterance(utterance_id)
         self.selection_model.set_current_file(
             file_id,
             begin,
             end,
-            channel,
+            utterance_id,
+            speaker_id,
             force_update=True,
         )
 
@@ -3280,7 +3265,7 @@ class SpeakerWidget(QtWidgets.QWidget):
     def set_models(
         self,
         corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
+        selection_model: FileSelectionModel,
         speaker_model: SpeakerModel,
     ):
         self.speaker_model = speaker_model
@@ -3576,7 +3561,6 @@ class ModelSelectWidget(QtWidgets.QWidget):
         for i, m in enumerate(self.model.models):
             if not m.available_locally or not os.path.exists(m.path):
                 continue
-            print(m.name, m.path, os.path.exists(m.path))
             self.model_select.addItem(m.name, userData=m.id)
             if m.id == current_model:
                 index = i

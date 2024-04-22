@@ -24,6 +24,12 @@ from montreal_forced_aligner.corpus.acoustic_corpus import (
 )
 from montreal_forced_aligner.data import PhoneType, WordType
 from montreal_forced_aligner.db import File, Phone, Speaker, Utterance
+from montreal_forced_aligner.dictionary.mixins import (
+    DEFAULT_CLITIC_MARKERS,
+    DEFAULT_COMPOUND_MARKERS,
+    DEFAULT_PUNCTUATION,
+    DEFAULT_WORD_BREAK_MARKERS,
+)
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
     AcousticModel,
@@ -43,6 +49,23 @@ if typing.TYPE_CHECKING:
     from montreal_forced_aligner.models import ModelManager
 
 logger = logging.getLogger("anchor")
+
+
+WORD_BREAK_SET = "".join(
+    sorted(
+        set(
+            DEFAULT_WORD_BREAK_MARKERS
+            + DEFAULT_PUNCTUATION
+            + DEFAULT_CLITIC_MARKERS
+            + DEFAULT_COMPOUND_MARKERS
+        )
+    )
+)
+
+if "-" in WORD_BREAK_SET:
+    WORD_BREAK_SET = "" + WORD_BREAK_SET.replace("-", "")
+
+WORD_BREAK_REGEX_SET = rf"[\s{WORD_BREAK_SET}]"
 
 
 # noinspection PyUnresolvedReferences
@@ -76,9 +99,9 @@ class TextFilterQuery:
         if posix:
             text = text.replace(r"\b", word_break_set)
             if text.startswith(r"\b"):
-                text = r"((?<=\s)|(?<=^))" + text[2:]
+                text = rf"((?<={WORD_BREAK_REGEX_SET})|(?<=^))" + text[2:]
             if text.endswith(r"\b"):
-                text = text[:-2] + r"((?=\s)|(?=$))"
+                text = text[:-2] + rf"((?={WORD_BREAK_REGEX_SET})|(?=$))"
         if self.regex or self.word:
             if not self.case_sensitive:
                 text = "(?i)" + text
@@ -545,7 +568,6 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
     resetView = QtCore.Signal()
     viewChanged = QtCore.Signal(object, object)
     selectionAudioChanged = QtCore.Signal()
-    currentTimeChanged = QtCore.Signal(object)
     currentUtteranceChanged = QtCore.Signal()
     speakerRequested = QtCore.Signal(object)
 
@@ -710,7 +732,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             end = None
         self.selected_min_time = begin
         self.selected_max_time = end
-        self.selectionAudioChanged.emit()
+        if self.selected_min_time != self.min_time:
+            self.selectionAudioChanged.emit()
 
     def request_start_time(self, start_time):
         if start_time >= self.max_time:
@@ -719,7 +742,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             return
         self.selected_min_time = start_time
         self.selected_max_time = None
-        self.selectionAudioChanged.emit()
+        if self.selected_min_time != self.min_time:
+            self.selectionAudioChanged.emit()
 
     def set_current_channel(self, channel):
         if channel == self.selected_channel:
@@ -804,7 +828,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             end = self.max_time
         self.selected_min_time = begin
         self.selected_max_time = end
-        self.selectionAudioChanged.emit()
+        if self.selected_min_time != self.min_time:
+            self.selectionAudioChanged.emit()
 
     def visible_utterances(self) -> typing.List[Utterance]:
         file_utts = []
@@ -843,8 +868,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             self.selected_max_time = None
         self.viewChanged.emit(self.min_time, self.max_time)
 
-    def set_current_file(self, info, force_update=False):
-        file_id, begin, end, utterance_id, speaker_id = info
+    def set_current_file(self, file_id, begin, end, utterance_id, speaker_id, force_update=False):
         try:
             new_file = self.model().file is None or self.model().file.id != file_id
         except sqlalchemy.orm.exc.DetachedInstanceError:
@@ -926,7 +950,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
     channelChanged = QtCore.Signal()
     resetView = QtCore.Signal()
     fileAboutToChange = QtCore.Signal()
-    fileViewRequested = QtCore.Signal(object)
+    fileViewRequested = QtCore.Signal(object, object, object, object, object)
     selectionAudioChanged = QtCore.Signal()
     currentTimeChanged = QtCore.Signal(object)
     currentUtteranceChanged = QtCore.Signal()
@@ -1023,7 +1047,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if focus:
             flags |= QtCore.QItemSelectionModel.SelectionFlag.Current
             if row == self.currentIndex().row():
-                self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
+                self.fileViewRequested.emit(*self.model().audio_info_for_utterance(row))
 
         index = self.model().index(row, 0)
         if not index.isValid():
@@ -1082,7 +1106,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
             return
         self.current_utterance_id = utt
         self.currentUtteranceChanged.emit()
-        self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
+        self.fileViewRequested.emit(*self.model().audio_info_for_utterance(row))
 
     def model(self) -> CorpusModel:
         return super().model()
@@ -1099,7 +1123,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
             return
         self.current_utterance_id = utt_id
         self.currentUtteranceChanged.emit()
-        self.fileViewRequested.emit(self.model().audio_info_for_utterance(row))
+        self.fileViewRequested.emit(*self.model().audio_info_for_utterance(row))
 
 
 class OovModel(TableModel):
@@ -1266,7 +1290,7 @@ class DictionaryTableModel(TableModel):
             return True
         return False
 
-    def add_word(self, word, word_id):
+    def add_word(self, word, word_id=None):
         self.requestLookup.emit(word)
         self.add_pronunciation(word, word_id)
 
@@ -1697,10 +1721,10 @@ class DiarizationModel(TableModel):
         super().__init__(columns, parent=parent)
         self.settings = AnchorSettings()
         self.speaker_count = None
-        self._utterance_ids = []
-        self._file_ids = []
-        self._speaker_indices = []
-        self._suggested_indices = []
+        self.utterance_ids = []
+        self.file_ids = []
+        self.speaker_indices = []
+        self.suggested_indices = []
         self.corpus_model: Optional[CorpusModel] = None
         self.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.speaker_filter = None
@@ -1727,11 +1751,6 @@ class DiarizationModel(TableModel):
                     return "N/A"
             return self._data[index.row()][index.column()]
         return super().data(index, role)
-
-    def utterance_id_at(self, row: int):
-        if row is None:
-            return None
-        return self._utterance_ids[row]
 
     def set_threshold(self, threshold: float):
         if threshold != self.threshold:
@@ -1792,32 +1811,32 @@ class DiarizationModel(TableModel):
                 self.alternate_speaker_filter = current_speaker.id
 
     def reassign_utterance(self, row: int):
-        utterance_id = self.utterance_id_at(row)
+        utterance_id = self.utterance_ids[row]
         if utterance_id is None:
             return
-        self.changeUtteranceSpeakerRequested.emit(utterance_id, self._suggested_indices[row])
+        self.changeUtteranceSpeakerRequested.emit(utterance_id, self.suggested_indices[row])
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
-        self._utterance_ids.pop(row)
-        self._suggested_indices.pop(row)
-        self._speaker_indices.pop(row)
+        self.utterance_ids.pop(row)
+        self.suggested_indices.pop(row)
+        self.speaker_indices.pop(row)
 
         self.layoutChanged.emit()
 
     def merge_speakers(self, row: int):
-        speaker_id = self._speaker_indices[row]
+        speaker_id = self.speaker_indices[row]
         if self.inverted:
-            utterance_id = self._utterance_ids[row]
+            utterance_id = self.utterance_ids[row]
             self.corpus_model.addCommand.emit(
                 undo.ChangeSpeakerCommand([utterance_id], speaker_id, 0, self)
             )
         else:
-            self.corpus_model.merge_speakers([self._suggested_indices[row], speaker_id])
+            self.corpus_model.merge_speakers([self.suggested_indices[row], speaker_id])
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
-        self._utterance_ids.pop(row)
-        self._suggested_indices.pop(row)
-        self._speaker_indices.pop(row)
+        self.utterance_ids.pop(row)
+        self.suggested_indices.pop(row)
+        self.speaker_indices.pop(row)
 
         self.layoutChanged.emit()
 
@@ -1828,17 +1847,16 @@ class DiarizationModel(TableModel):
     def finish_update_data(self, result, *args, **kwargs):
         self.layoutAboutToBeChanged.emit()
         if result is None:
-            self._data, self._utterance_ids, self._suggested_indices, self._speaker_indices = (
-                [],
-                [],
-                [],
-            )
+            self._data = []
+            self.utterance_ids = []
+            self.suggested_indices = []
+            self.speaker_indices = []
         else:
             (
                 self._data,
-                self._utterance_ids,
-                self._suggested_indices,
-                self._speaker_indices,
+                self.utterance_ids,
+                self.suggested_indices,
+                self.speaker_indices,
             ) = result
         self.layoutChanged.emit()
         self.newResults.emit()

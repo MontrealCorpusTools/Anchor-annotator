@@ -3650,6 +3650,8 @@ class ImportG2PModelWorker(FunctionWorker):  # pragma: no cover
         try:
             generator = Generator(g2p_model_path=self.model_path, num_pronunciations=5)
             generator.setup()
+        except shutil.ReadError:
+            self.signals.result.emit(None)
         except Exception:
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
