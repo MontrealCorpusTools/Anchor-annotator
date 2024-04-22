@@ -6,14 +6,20 @@ dependencies:
   - python>=3.10
   - pip
   - montreal-forced-aligner
-  - kalpy
+  - kalpy =*=cpu*
   - pyside6
   - pyqtgraph
   - pytorch
   - torchaudio
   - setuptools_scm
   - librosa
-  - resampy
+  - scipy
+  - pytest
+  - pytest-qt
+  - mock
+  - coverage
+  - coveralls
+  - interrogate
   - pip:
       - build
       - twine

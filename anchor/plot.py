@@ -13,6 +13,11 @@ import sqlalchemy
 from Bio import pairwise2
 from montreal_forced_aligner.data import CtmInterval
 from montreal_forced_aligner.db import Speaker, Utterance
+from montreal_forced_aligner.dictionary.mixins import (
+    DEFAULT_PUNCTUATION,
+    DEFAULT_WORD_BREAK_MARKERS,
+)
+from montreal_forced_aligner.tokenization.simple import SimpleTokenizer
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from anchor import workers
@@ -161,7 +166,7 @@ class UtteranceClusterView(pg.PlotWidget):
         self.setBackground(self.settings.value(self.settings.PRIMARY_VERY_DARK_COLOR))
         self.corpus_model = None
         self.speaker_model: SpeakerModel = None
-        self.selection_model: CorpusSelectionModel = None
+        self.selection_model: FileSelectionModel = None
         self.updated_indices = set()
         self.brushes = {-1: pg.mkBrush(0.5)}
         self.scatter_item = ScatterPlot()
@@ -226,7 +231,7 @@ class UtteranceClusterView(pg.PlotWidget):
     def set_models(
         self,
         corpus_model: CorpusModel,
-        selection_model: CorpusSelectionModel,
+        selection_model: FileSelectionModel,
         speaker_model: SpeakerModel,
     ):
         self.corpus_model = corpus_model
@@ -248,13 +253,12 @@ class UtteranceClusterView(pg.PlotWidget):
         if ev.button() == QtCore.Qt.MouseButton.LeftButton:
             utterance_id = int(self.speaker_model.utterance_ids[index])
             utterance = self.corpus_model.session.query(Utterance).get(utterance_id)
-            self.selection_model.set_current_utterance(utterance_id)
-            self.selection_model.current_utterance_id = utterance_id
             self.selection_model.set_current_file(
                 utterance.file_id,
                 utterance.begin,
                 utterance.end,
-                utterance.channel,
+                utterance.id,
+                utterance.speaker_id,
                 force_update=True,
             )
         else:
@@ -1395,7 +1399,7 @@ class NormalizedTextRegion(TextAttributeRegion):
 
 
 class Highlighter(QtGui.QSyntaxHighlighter):
-    WORDS = r"\S+"
+    WORDS = rf"[^\s{''.join(DEFAULT_WORD_BREAK_MARKERS)+''.join(DEFAULT_PUNCTUATION)}]+"
 
     def __init__(self, *args):
         super(Highlighter, self).__init__(*args)
@@ -1424,8 +1428,20 @@ class Highlighter(QtGui.QSyntaxHighlighter):
     def highlightBlock(self, text):
         self.settings.sync()
         self.spellcheck_format.setUnderlineColor(self.settings.error_color)
+        tokenizers = self.dictionary_model.corpus_model.corpus.get_tokenizers()
+        dictionary_id = self.dictionary_model.corpus_model.corpus.get_dict_id_for_speaker(
+            self.speaker_id
+        )
+        words = self.WORDS
+        if isinstance(tokenizers, dict) and dictionary_id is not None:
+            tokenizer = self.dictionary_model.corpus_model.corpus.get_tokenizer(dictionary_id)
+        else:
+            tokenizer = tokenizers
+        if isinstance(tokenizer, SimpleTokenizer):
+            extra_symbols = "".join(tokenizer.punctuation) + "".join(tokenizer.word_break_markers)
+            words = rf"[^\s{extra_symbols}]+"
         if self.dictionary_model is not None and self.dictionary_model.word_sets:
-            for word_object in re.finditer(self.WORDS, text):
+            for word_object in re.finditer(words, text):
                 if not self.dictionary_model.check_word(word_object.group(), self.speaker_id):
                     self.setFormat(
                         word_object.start(),

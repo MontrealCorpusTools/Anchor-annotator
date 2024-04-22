@@ -39,8 +39,11 @@ class CorpusCommand(QtGui.QUndoCommand):
 
     def redo(self) -> None:
         with self.corpus_model.edit_lock:
-            self._redo(self.corpus_model.session)
-            self.corpus_model.session.commit()
+            try:
+                self._redo(self.corpus_model.session)
+                self.corpus_model.session.commit()
+            except Exception:
+                self.corpus_model.session.rollback()
             # while True:
             #    try:
             #        with self.corpus_model.session.begin_nested():
@@ -53,8 +56,11 @@ class CorpusCommand(QtGui.QUndoCommand):
 
     def undo(self) -> None:
         with self.corpus_model.edit_lock:
-            self._undo(self.corpus_model.session)
-            self.corpus_model.session.commit()
+            try:
+                self._undo(self.corpus_model.session)
+                self.corpus_model.session.commit()
+            except Exception:
+                self.corpus_model.session.rollback()
             # while True:
             #    try:
             #        with self.corpus_model.session.begin_nested():
@@ -452,6 +458,11 @@ class UpdateUtteranceTextCommand(FileCommand):
             return False
         self.new_text = other.new_text
         return True
+
+    def update_data(self):
+        super().update_data()
+        self.corpus_model.changeCommandFired.emit()
+        self.corpus_model.update_utterance_table_row(self.utterance)
 
 
 class ReplaceAllCommand(CorpusCommand):
