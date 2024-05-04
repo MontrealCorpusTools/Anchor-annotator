@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.3.1
+## Created by: Qt User Interface Compiler version 6.2.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -79,507 +79,7 @@ class Ui_MainWindow(object):
         icon = QIcon()
         icon.addFile(":/anchor-yellow.svg", QSize(), QIcon.Normal, QIcon.Off)
         MainWindow.setWindowIcon(icon)
-        MainWindow.setStyleSheet(
-            "QMainWindow, QDialog{\n"
-            "            background-color: rgb(0, 53, 102);\n"
-            "        }\n"
-            "        QMenuBar {\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            spacing: 2px;\n"
-            "        }\n"
-            "        QMenuBar::item {\n"
-            "            padding: 4px 4px;\n"
-            "                        color: rgb(0, 8, 20);\n"
-            "                        background-color: rgb(255, 195, 0);\n"
-            "        }\n"
-            "        QMenuBar::item:selected {\n"
-            "                        color: rgb(255, 214, 10);\n"
-            "                        background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QMenuBar::item:disabled {\n"
-            "                        color: rgb(198, 54, 35);\n"
-            "                        background-color: rgb(255, 195, 0);\n"
-            "                        }\n"
-            "        ButtonWidget {\n"
-            "            background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QDockWidget {\n"
-            "            background-color: rgb(0, 29, 61);\n"
-            "            color: rgb(255, 214, 10);\n"
-            "\n"
-            "            titlebar-close-icon: url(:checked/times.s"
-            "vg);\n"
-            "            titlebar-normal-icon: url(:checked/external-link.svg);\n"
-            "        }\n"
-            "        QDockWidget::title {\n"
-            "            text-align: center;\n"
-            "        }\n"
-            "\n"
-            "        QMainWindow::separator {\n"
-            "    background: rgb(0, 53, 102);\n"
-            "    width: 10px; /* when vertical */\n"
-            "    height: 10px; /* when horizontal */\n"
-            "}\n"
-            "\n"
-            "QMainWindow::separator:hover {\n"
-            "    background: rgb(255, 195, 0);\n"
-            "}\n"
-            "        #utteranceListWidget, #dictionaryWidget, #speakerWidget {\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "            color: rgb(14, 99, 179);\n"
-            "            padding: 0px;\n"
-            "            padding-top: 20px;\n"
-            "            margin-top: 0ex; /* leave space at the top for the title */\n"
-            "            }\n"
-            "\n"
-            "        #utteranceDetailWidget {\n"
-            "            background-color: rgb(0, 53, 102);\n"
-            "            padding: 0px;\n"
-            "            border: none;\n"
-            "            margin: 0;\n"
-            "        }\n"
-            "        InformationWidge"
-            "t {\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "            border-top-right-radius: 5px;\n"
-            "            border-bottom-right-radius: 5px;\n"
-            "\n"
-            "        }\n"
-            "\n"
-            "        QGroupBox::title {\n"
-            "            color: rgb(237, 221, 212);\n"
-            "            background-color: transparent;\n"
-            "            subcontrol-origin: margin;\n"
-            "            subcontrol-position: top center; /* position at the top center */\n"
-            "            padding-top: 5px;\n"
-            "        }\n"
-            "        QLabel {\n"
-            "                        color: rgb(237, 221, 212);\n"
-            "            }\n"
-            "        QStatusBar {\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "                        color: rgb(237, 221, 212);\n"
-            "            }\n"
-            "        WarningLabel {\n"
-            "                        color: rgb(198, 54, 35);\n"
-            "            }\n"
-            "        QCheckBox {\n"
-            "            color: rgb(237, 221, 212);\n"
-            "        }\n"
-            "        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget { /* The ta"
-            "b widget frame */\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "\n"
-            "        }\n"
-            "        QTabWidget::pane  { /* The tab widget frame */\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "            border-top-color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "\n"
-            "        }\n"
-            "\n"
-            "\n"
-            "        QTabBar::tab {\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            border-color: rgb(0, 8, 20);\n"
-            "            border: 1px solid rgb(0, 8, 20);\n"
-            "            border-top-color: rgb(14, 99, 179);\n"
-            "            border-bottom: none;\n"
-            "\n"
-            "            min-width: 8ex;\n"
-            "            padding: 5px;\n"
-            "            margin: 0px;\n"
-            "        }\n"
-            "\n"
-            "        QTabBar::scroller{\n"
-            "            width: 50px;\n"
-            "        }\n"
-            "        QTabBar QToolButton  {\n"
-            "            border-radius: 0px;\n"
-            "        }\n"
-            "\n"
-            "        QTabBar QToolButton::right-arrow  {\n"
-            "            image: url(:caret-right.svg);\n"
-            "            height: 25px"
-            ";\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "        QTabBar QToolButton::right-arrow :pressed {\n"
-            "            image: url(:checked/caret-right.svg);\n"
-            "        }\n"
-            "        QTabBar QToolButton::right-arrow :disabled {\n"
-            "            image: url(:disabled/caret-right.svg);\n"
-            "        }\n"
-            "\n"
-            "        QTabBar QToolButton::left-arrow  {\n"
-            "            image: url(:caret-left.svg);\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "        QTabBar QToolButton::left-arrow:pressed {\n"
-            "            image: url(:checked/caret-left.svg);\n"
-            "        }\n"
-            "        QTabBar QToolButton::left-arrow:disabled {\n"
-            "            image: url(:disabled/caret-left.svg);\n"
-            "        }\n"
-            "\n"
-            "        QTabBar::tab-bar {\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "        }\n"
-            "\n"
-            "        QTabBar::tab:hover {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background-color: rgb(14, 99"
-            ", 179);\n"
-            "            border-bottom-color:  rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QTabBar::tab:selected {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background-color: rgb(0, 29, 61);\n"
-            "            margin-left: -2px;\n"
-            "            margin-right: -2px;\n"
-            "            border-color: rgb(14, 99, 179);\n"
-            "            border-bottom-color:  rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QTabBar::tab:first {\n"
-            "            border-left-width: 2px;\n"
-            "            margin-left: 0px;\n"
-            "        }\n"
-            "        QTabBar::tab:last {\n"
-            "            border-right-width: 2px;\n"
-            "            margin-right: 0px;\n"
-            "        }\n"
-            "        QToolBar {\n"
-            "            spacing: 3px;\n"
-            "			border: none;s\n"
-            "        }\n"
-            "        #toolBar {\n"
-            "            background: rgb(0, 8, 20);\n"
-            "        }\n"
-            "\n"
-            "        QToolBar::separator {\n"
-            "            margin-left: 5px;\n"
-            "            margin-right: 5px;\n"
-            "            width: 3px;\n"
-            "            height: 3px;\n"
-            "            background: rgb(14, 99, 179);\n"
-            "   "
-            "     }\n"
-            "\n"
-            "\n"
-            "\n"
-            "        QPushButton, QToolButton {\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            padding: 2px;\n"
-            "            border-width: 2px;\n"
-            "            border-style: solid;\n"
-            "            border-color: rgb(0, 8, 20);\n"
-            "            border-radius: 5px;\n"
-            "        }\n"
-            '        QToolButton[popupMode="1"] { /* only for MenuButtonPopup */\n'
-            "            padding-right: 20px; /* make way for the popup button */\n"
-            "        }\n"
-            "        QToolButton::menu-button {\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            border-top-right-radius: 5px;\n"
-            "            border-bottom-right-radius: 5px;\n"
-            "\n"
-            "            width: 16px;\n"
-            "        }\n"
-            "        QMenuBar QToolButton{\n"
-            "            padding: 0px;\n"
-            "        }\n"
-            "        QLineEdit QToolButton {\n"
-            "                        background-color: rgb(255, 195, 0);\n"
-            "                        color: rgb(237, 221, 212);\n"
-            "                        border: none;\n"
-            "      "
-            "  }\n"
-            "        QToolButton#clear_search_field, QToolButton#clear_new_speaker_field,\n"
-            "        QToolButton#regex_search_field, QToolButton#word_search_field {\n"
-            "                        background-color: none;\n"
-            "                        border: none;\n"
-            "                        padding: 2px;\n"
-            "        }\n"
-            "        QMenu {\n"
-            "                margin: 2px;\n"
-            "                background-color: rgb(255, 195, 0);\n"
-            "                color: rgb(0, 8, 20);\n"
-            "        }\n"
-            "        QToolTip {\n"
-            "                margin: 2px;\n"
-            "                background-color: rgb(255, 195, 0);\n"
-            "                color: rgb(0, 8, 20);\n"
-            "        }\n"
-            "        QMenu::item {\n"
-            "                padding: 2px 25px 2px 20px;\n"
-            "                border: 1px solid transparent;\n"
-            "                background-color: rgb(255, 195, 0);\n"
-            "                color: rgb(0, 8, 20);\n"
-            "        }\n"
-            "        QMenu::item:disabled {\n"
-            "                border: none;\n"
-            "                background-color: rgb(0, 29, 61);\n"
-            "                c"
-            "olor: rgb(198, 54, 35);\n"
-            "        }\n"
-            "        QMenu::item:!disabled:selected {\n"
-            "            border-color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QComboBox {\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            selection-background-color: none;\n"
-            "        }\n"
-            "        QComboBox QAbstractItemView {\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "            selection-background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QToolButton:checked  {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background-color: rgb(0, 29, 61);\n"
-            "            border-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QPushButton:disabled, QToolButton:disabled {\n"
-            "            color: rgb(198, 54, 35);\n"
-            "            background-color: rgb(160, 122, 0);\n"
-            "        }\n"
-            "\n"
-            "        QToolButton#cancel_load:disabled {\n"
-            "            color: rgb(198, 54, 35);"
-            "\n"
-            "            background-color: rgb(0, 29, 61);\n"
-            "        }\n"
-            "        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "\n"
-            "        QToolButton#cancel_load:focus:hover {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QPlainTextEdit {\n"
-            "            color: rgb(237, 221, 212);\n"
-            "            background-color: rgb(0, 8, 20);\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "            selection-background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QGraphicsView {\n"
-            "            border: 2px solid rgb(14, 99, 179);\n"
-            "        }\n"
-            "         QLineEdit {\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            background-color: rgb(237, 221, 212);\n"
-            "            selection-background-color: rgb(14, 99, 179);\n"
-            "        }\n"
-            "        QSlider::handle:horizontal {\n"
-            ""
-            "            height: 10px;\n"
-            "            background: rgb(255, 195, 0);\n"
-            "            border: 1px solid rgb(0, 8, 20);\n"
-            "            margin: 0 -2px; /* expand outside the groove */\n"
-            "        }\n"
-            "        QSlider::handle:horizontal:hover {\n"
-            "            height: 10px;\n"
-            "            background: rgb(14, 99, 179);\n"
-            "            margin: 0 -2px; /* expand outside the groove */\n"
-            "        }\n"
-            "        QTableWidget, QTableView {\n"
-            "            alternate-background-color: rgb(242, 205, 73);\n"
-            "            selection-background-color: rgb(14, 99, 179);\n"
-            "            selection-color: rgb(237, 221, 212);\n"
-            "            background-color: rgb(122, 181, 230);\n"
-            "            color: rgb(0, 8, 20);\n"
-            "            border: 4px solid rgb(0, 8, 20);\n"
-            "        }\n"
-            "        QScrollArea {\n"
-            "            border: 4px solid rgb(0, 8, 20);\n"
-            "		background-color: rgb(0, 29, 61);\n"
-            "        }\n"
-            "        QHeaderView::up-arrow {\n"
-            "            subcontrol-origin: padding;\n"
-            "            subcontrol-position: center "
-            "right;\n"
-            "            image: url(:hover/sort-up.svg);\n"
-            "            height: 20px;\n"
-            "            width: 20px;\n"
-            "        }\n"
-            "        QHeaderView::down-arrow {\n"
-            "            image: url(:hover/sort-down.svg);\n"
-            "            subcontrol-origin: padding;\n"
-            "            subcontrol-position: center right;\n"
-            "            height: 20px;\n"
-            "            width: 20px;\n"
-            "        }\n"
-            "        QTableView QTableCornerButton::section {\n"
-            "            background-color: rgb(255, 195, 0);\n"
-            "        }\n"
-            "        QHeaderView {\n"
-            "            background-color: rgb(122, 181, 230);\n"
-            "        }\n"
-            "        QHeaderView::section {\n"
-            "            color: rgb(237, 221, 212);\n"
-            "            background-color: rgb(14, 99, 179);\n"
-            "            padding-left: 5px;\n"
-            "        }\n"
-            "        QHeaderView::section:horizontal {\n"
-            "            padding-right: 15px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background: rgb(0, 29, 61);\n"
-            "            border: 2px solid rg"
-            "b(0, 8, 20);\n"
-            "        }\n"
-            "        QScrollBar#time_scroll_bar {\n"
-            "            color: rgb(255, 214, 10);\n"
-            "            background: rgb(0, 29, 61);\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            margin-left: 0px;\n"
-            "            margin-right: 0px;\n"
-            "        }\n"
-            "        QScrollBar:horizontal {\n"
-            "            height: 25px;\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            border-radius: 12px;\n"
-            "            margin-left: 25px;\n"
-            "            margin-right: 25px;\n"
-            "        }\n"
-            "        QScrollBar:vertical {\n"
-            "            width: 25px;\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            border-radius: 12px;\n"
-            "            margin-top: 25px;\n"
-            "            margin-bottom: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:left-arrow:horizontal {\n"
-            "            image: url(:caret-left.svg);\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:left-arrow:horizontal:pressed {\n"
-            "            image: url(:checked/ca"
-            "ret-left.svg);\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:right-arrow:horizontal {\n"
-            "            image: url(:caret-right.svg);\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:right-arrow:horizontal:pressed {\n"
-            "            image: url(:checked/caret-right.svg);\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:up-arrow:vertical {\n"
-            "            image: url(:caret-up.svg);\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:up-arrow:vertical:pressed {\n"
-            "            image: url(:checked/caret-up.svg);\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar:down-arrow:vertical {\n"
-            "            image: url(:caret-down.svg);\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "        QScrollBar:down-arrow:vertical:pressed {\n"
-            "            image: url(:checked/caret-down.svg);\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::handle:horizontal {\n"
-            "            background: rgb(255, 214, 10);\n"
-            "            min-width:"
-            " 25px;\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            border-radius: 10px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::handle:vertical {\n"
-            "            background: rgb(255, 214, 10);\n"
-            "            min-height: 25px;\n"
-            "            border: 2px solid rgb(0, 8, 20);\n"
-            "            border-radius: 10px;\n"
-            "        }\n"
-            "\n"
-            "        QToolButton#pan_left_button, QToolButton#pan_right_button {\n"
-            "\n"
-            "            color: none;\n"
-            "            background-color: none;\n"
-            "            border: none;\n"
-            "            margin: 0px;\n"
-            "            padding: 0px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::add-page, QScrollBar::sub-page {\n"
-            "            background: none;\n"
-            "            height: 25px;\n"
-            "            width: 25px;\n"
-            "            padding: 0px;\n"
-            "            margin: 0px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::add-line:horizontal {\n"
-            "            background: none;\n"
-            "            subcontrol-position: right;\n"
-            "            subcontrol-origin: margin;\n"
-            "            width: 25px;\n"
-            "   "
-            "     }\n"
-            "\n"
-            "        QScrollBar::sub-line:horizontal {\n"
-            "            background: none;\n"
-            "            subcontrol-position: left;\n"
-            "            subcontrol-origin: margin;\n"
-            "            width: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::add-line:vertical {\n"
-            "            background: none;\n"
-            "            subcontrol-position: bottom;\n"
-            "            subcontrol-origin: margin;\n"
-            "            height: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar::sub-line:vertical {\n"
-            "            background: none;\n"
-            "            subcontrol-position: top;\n"
-            "            subcontrol-origin: margin;\n"
-            "            height: 25px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar#time_scroll_bar::add-line:horizontal {\n"
-            "            background: none;\n"
-            "            subcontrol-position: none;\n"
-            "            subcontrol-origin: none;\n"
-            "            width: 0px;\n"
-            "        }\n"
-            "\n"
-            "        QScrollBar#time_scroll_bar::sub-line:horizontal {\n"
-            "            background: none;\n"
-            "            subcontrol-position: none;\n"
-            "  "
-            "          subcontrol-origin: none;\n"
-            "            width: 0px;\n"
-            "        }"
-        )
+        MainWindow.setStyleSheet("")
         MainWindow.setAnimated(True)
         MainWindow.setDocumentMode(False)
         MainWindow.setDockOptions(
@@ -607,99 +107,65 @@ class Ui_MainWindow(object):
         self.playAct.setObjectName("playAct")
         self.playAct.setCheckable(True)
         self.playAct.setEnabled(False)
-        icon1 = QIcon()
-        icon1.addFile(":/play.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon1.addFile(":/checked/pause.svg", QSize(), QIcon.Normal, QIcon.On)
-        icon1.addFile(":/play.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon1.addFile(":/checked/play.svg", QSize(), QIcon.Active, QIcon.Off)
-        icon1.addFile(":/checked/pause.svg", QSize(), QIcon.Active, QIcon.On)
-        icon1.addFile(":/checked/play.svg", QSize(), QIcon.Selected, QIcon.Off)
-        icon1.addFile(":/checked/pause.svg", QSize(), QIcon.Selected, QIcon.On)
+        icon1 = QIcon(QIcon.fromTheme("media-playback-start"))
         self.playAct.setIcon(icon1)
         self.playAct.setAutoRepeat(False)
         self.muteAct = QAction(MainWindow)
         self.muteAct.setObjectName("muteAct")
         self.muteAct.setCheckable(True)
         self.muteAct.setEnabled(False)
-        icon2 = QIcon()
-        icon2.addFile(":/volume-mute.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon2.addFile(":/volume-mute.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon2 = QIcon(QIcon.fromTheme("audio-volume-muted"))
         self.muteAct.setIcon(icon2)
         self.zoomInAct = QAction(MainWindow)
         self.zoomInAct.setObjectName("zoomInAct")
         self.zoomInAct.setEnabled(False)
-        icon3 = QIcon()
-        icon3.addFile(":/magnifying-glass-plus.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon3.addFile(":/magnifying-glass-plus.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon3 = QIcon(QIcon.fromTheme("zoom-in"))
         self.zoomInAct.setIcon(icon3)
         self.zoomOutAct = QAction(MainWindow)
         self.zoomOutAct.setObjectName("zoomOutAct")
         self.zoomOutAct.setEnabled(False)
-        icon4 = QIcon()
-        icon4.addFile(":/magnifying-glass-minus.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon4.addFile(":/magnifying-glass-minus.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon4 = QIcon(QIcon.fromTheme("zoom-out"))
         self.zoomOutAct.setIcon(icon4)
         self.mergeUtterancesAct = QAction(MainWindow)
         self.mergeUtterancesAct.setObjectName("mergeUtterancesAct")
         self.mergeUtterancesAct.setEnabled(False)
-        icon5 = QIcon()
-        icon5.addFile(":/compress.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon5.addFile(":/compress.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon5 = QIcon(QIcon.fromTheme("format-justify-center"))
         self.mergeUtterancesAct.setIcon(icon5)
         self.splitUtterancesAct = QAction(MainWindow)
         self.splitUtterancesAct.setObjectName("splitUtterancesAct")
         self.splitUtterancesAct.setEnabled(False)
-        icon6 = QIcon()
-        icon6.addFile(":/expand.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon6.addFile(":/expand.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon6 = QIcon(QIcon.fromTheme("format-justify-fill"))
         self.splitUtterancesAct.setIcon(icon6)
         self.deleteUtterancesAct = QAction(MainWindow)
         self.deleteUtterancesAct.setObjectName("deleteUtterancesAct")
         self.deleteUtterancesAct.setEnabled(False)
-        icon7 = QIcon()
-        icon7.addFile(":/disabled/trash.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon7.addFile(":/trash.svg", QSize(), QIcon.Disabled, QIcon.Off)
+        icon7 = QIcon(QIcon.fromTheme("edit-delete"))
         self.deleteUtterancesAct.setIcon(icon7)
-        self.showAllSpeakersAct = QAction(MainWindow)
-        self.showAllSpeakersAct.setObjectName("showAllSpeakersAct")
-        self.showAllSpeakersAct.setCheckable(True)
-        self.showAllSpeakersAct.setEnabled(False)
-        icon8 = QIcon()
-        icon8.addFile(":/users.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon8.addFile(":/users.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.showAllSpeakersAct.setIcon(icon8)
         self.revertDictionaryAct = QAction(MainWindow)
         self.revertDictionaryAct.setObjectName("revertDictionaryAct")
         self.revertDictionaryAct.setEnabled(False)
-        icon9 = QIcon()
-        icon9.addFile(":/disabled/book-undo.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon9.addFile(":/book-undo.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.revertDictionaryAct.setIcon(icon9)
+        icon8 = QIcon(QIcon.fromTheme("edit-book-undo"))
+        self.revertDictionaryAct.setIcon(icon8)
         self.addSpeakerAct = QAction(MainWindow)
         self.addSpeakerAct.setObjectName("addSpeakerAct")
         self.addSpeakerAct.setEnabled(False)
-        icon10 = QIcon()
-        icon10.addFile(":/user-plus.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon10.addFile(":/user-plus.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.addSpeakerAct.setIcon(icon10)
+        icon9 = QIcon(QIcon.fromTheme("contact-new"))
+        self.addSpeakerAct.setIcon(icon9)
         self.getHelpAct = QAction(MainWindow)
         self.getHelpAct.setObjectName("getHelpAct")
-        icon11 = QIcon()
-        icon11.addFile(":/help.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.getHelpAct.setIcon(icon11)
+        icon10 = QIcon(QIcon.fromTheme("help-about"))
+        self.getHelpAct.setIcon(icon10)
         self.reportBugAct = QAction(MainWindow)
         self.reportBugAct.setObjectName("reportBugAct")
-        icon12 = QIcon()
-        icon12.addFile(":/bug.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.reportBugAct.setIcon(icon12)
+        icon11 = QIcon(QIcon.fromTheme("mail-forward"))
+        self.reportBugAct.setIcon(icon11)
         self.exitAct = QAction(MainWindow)
         self.exitAct.setObjectName("exitAct")
-        icon13 = QIcon()
-        icon13.addFile(":/times.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.exitAct.setIcon(icon13)
+        icon12 = QIcon(QIcon.fromTheme("process-stop"))
+        self.exitAct.setIcon(icon12)
         self.cancelCorpusLoadAct = QAction(MainWindow)
         self.cancelCorpusLoadAct.setObjectName("cancelCorpusLoadAct")
-        self.cancelCorpusLoadAct.setIcon(icon13)
+        self.cancelCorpusLoadAct.setIcon(icon12)
         self.loadIvectorExtractorAct = QAction(MainWindow)
         self.loadIvectorExtractorAct.setObjectName("loadIvectorExtractorAct")
         self.loadLanguageModelAct = QAction(MainWindow)
@@ -707,41 +173,28 @@ class Ui_MainWindow(object):
         self.panLeftAct = QAction(MainWindow)
         self.panLeftAct.setObjectName("panLeftAct")
         self.panLeftAct.setEnabled(False)
-        icon14 = QIcon()
-        icon14.addFile(":/caret-left.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.panLeftAct.setIcon(icon14)
+        icon13 = QIcon(QIcon.fromTheme("media-seek-backward"))
+        self.panLeftAct.setIcon(icon13)
         self.panRightAct = QAction(MainWindow)
         self.panRightAct.setObjectName("panRightAct")
         self.panRightAct.setEnabled(False)
-        icon15 = QIcon()
-        icon15.addFile(":/caret-right.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.panRightAct.setIcon(icon15)
+        icon14 = QIcon(QIcon.fromTheme("media-seek-forward"))
+        self.panRightAct.setIcon(icon14)
         self.searchAct = QAction(MainWindow)
         self.searchAct.setObjectName("searchAct")
         self.searchAct.setEnabled(False)
-        icon16 = QIcon()
-        icon16.addFile(":/magnifying-glass.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon16.addFile(":/magnifying-glass.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.searchAct.setIcon(icon16)
+        icon15 = QIcon(QIcon.fromTheme("edit-find"))
+        self.searchAct.setIcon(icon15)
         self.changeVolumeAct = QAction(MainWindow)
         self.changeVolumeAct.setObjectName("changeVolumeAct")
-        icon17 = QIcon()
-        icon17.addFile(":/volume-up.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon17.addFile(":/volume-up.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.changeVolumeAct.setIcon(icon17)
         self.changeSpeakerAct = QAction(MainWindow)
         self.changeSpeakerAct.setObjectName("changeSpeakerAct")
         self.changeSpeakerAct.setEnabled(False)
-        icon18 = QIcon()
-        icon18.addFile(":/speaker.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.changeSpeakerAct.setIcon(icon18)
         self.saveDictionaryAct = QAction(MainWindow)
         self.saveDictionaryAct.setObjectName("saveDictionaryAct")
         self.saveDictionaryAct.setEnabled(False)
-        icon19 = QIcon()
-        icon19.addFile(":/book-save.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon19.addFile(":/book-save.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.saveDictionaryAct.setIcon(icon19)
+        icon16 = QIcon(QIcon.fromTheme("edit-book-save"))
+        self.saveDictionaryAct.setIcon(icon16)
         self.closeDictionaryAct = QAction(MainWindow)
         self.closeDictionaryAct.setObjectName("closeDictionaryAct")
         self.closeDictionaryAct.setEnabled(False)
@@ -771,50 +224,31 @@ class Ui_MainWindow(object):
         self.exportFilesAct = QAction(MainWindow)
         self.exportFilesAct.setObjectName("exportFilesAct")
         self.exportFilesAct.setEnabled(False)
-        icon20 = QIcon()
-        icon20.addFile(":/file-export.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon20.addFile(":/file-export.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.exportFilesAct.setIcon(icon20)
+        icon17 = QIcon(QIcon.fromTheme("document-save"))
+        self.exportFilesAct.setIcon(icon17)
         self.lockEditAct = QAction(MainWindow)
         self.lockEditAct.setObjectName("lockEditAct")
         self.lockEditAct.setCheckable(True)
         self.lockEditAct.setEnabled(False)
-        icon21 = QIcon()
-        icon21.addFile(":/lock-open.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Normal, QIcon.On)
-        icon21.addFile(":/lock-open.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon21.addFile(":/lock.svg", QSize(), QIcon.Disabled, QIcon.On)
-        icon21.addFile(":/checked/lock-open.svg", QSize(), QIcon.Active, QIcon.Off)
-        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Active, QIcon.On)
-        icon21.addFile(":/checked/lock-open.svg", QSize(), QIcon.Selected, QIcon.Off)
-        icon21.addFile(":/checked/lock.svg", QSize(), QIcon.Selected, QIcon.On)
-        self.lockEditAct.setIcon(icon21)
+        icon18 = QIcon(QIcon.fromTheme("edit-lock"))
+        self.lockEditAct.setIcon(icon18)
         self.alignUtteranceAct = QAction(MainWindow)
         self.alignUtteranceAct.setObjectName("alignUtteranceAct")
         self.alignUtteranceAct.setEnabled(False)
-        icon22 = QIcon()
-        icon22.addFile(":/magic.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon22.addFile(":/magic.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.alignUtteranceAct.setIcon(icon22)
+        icon19 = QIcon(QIcon.fromTheme("edit-magic"))
+        self.alignUtteranceAct.setIcon(icon19)
         self.reloadCorpusAct = QAction(MainWindow)
         self.reloadCorpusAct.setObjectName("reloadCorpusAct")
         self.zoomToSelectionAct = QAction(MainWindow)
         self.zoomToSelectionAct.setObjectName("zoomToSelectionAct")
         self.zoomToSelectionAct.setEnabled(False)
-        icon23 = QIcon()
-        icon23.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon23.addFile(":/magnifying-glass-location.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        self.zoomToSelectionAct.setIcon(icon23)
+        icon20 = QIcon(QIcon.fromTheme("zoom-fit-best"))
+        self.zoomToSelectionAct.setIcon(icon20)
         self.oovsOnlyAct = QAction(MainWindow)
         self.oovsOnlyAct.setObjectName("oovsOnlyAct")
         self.oovsOnlyAct.setCheckable(True)
-        icon24 = QIcon()
-        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Normal, QIcon.Off)
-        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Disabled, QIcon.Off)
-        icon24.addFile(":/checked/oov-check.svg", QSize(), QIcon.Disabled, QIcon.On)
-        icon24.addFile(":/checked/oov-check.svg", QSize(), QIcon.Active, QIcon.On)
-        icon24.addFile(":/oov-check.svg", QSize(), QIcon.Selected, QIcon.Off)
-        self.oovsOnlyAct.setIcon(icon24)
+        icon21 = QIcon(QIcon.fromTheme("tools-check-spelling"))
+        self.oovsOnlyAct.setIcon(icon21)
         self.diarizeSpeakersAct = QAction(MainWindow)
         self.diarizeSpeakersAct.setObjectName("diarizeSpeakersAct")
         self.find_duplicates_action = QAction(MainWindow)
@@ -825,9 +259,7 @@ class Ui_MainWindow(object):
         self.classify_speakers_action.setObjectName("classify_speakers_action")
         self.segmentUtteranceAct = QAction(MainWindow)
         self.segmentUtteranceAct.setObjectName("segmentUtteranceAct")
-        icon25 = QIcon()
-        icon25.addFile(":/expand.svg", QSize(), QIcon.Normal, QIcon.Off)
-        self.segmentUtteranceAct.setIcon(icon25)
+        self.segmentUtteranceAct.setIcon(icon6)
         self.openCorpusManagerAct = QAction(MainWindow)
         self.openCorpusManagerAct.setObjectName("openCorpusManagerAct")
         self.centralwidget = QWidget(MainWindow)
@@ -854,7 +286,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName("menubar")
-        self.menubar.setGeometry(QRect(0, 0, 1448, 24))
+        self.menubar.setGeometry(QRect(0, 0, 1448, 21))
         self.menuCorpus = QMenu(self.menubar)
         self.menuCorpus.setObjectName("menuCorpus")
         self.loadRecentCorpusMenu = QMenu(self.menuCorpus)
@@ -1048,7 +480,6 @@ class Ui_MainWindow(object):
         self.menuExperimental.addAction(self.cluster_utterances_action)
         self.menuExperimental.addAction(self.classify_speakers_action)
         self.toolBar.addAction(self.playAct)
-        self.toolBar.addAction(self.showAllSpeakersAct)
         self.toolBar.addSeparator()
         self.toolBar.addAction(self.zoomInAct)
         self.toolBar.addAction(self.zoomOutAct)
@@ -1122,9 +553,6 @@ class Ui_MainWindow(object):
         # if QT_CONFIG(shortcut)
         self.deleteUtterancesAct.setShortcut(QCoreApplication.translate("MainWindow", "Del", None))
         # endif // QT_CONFIG(shortcut)
-        self.showAllSpeakersAct.setText(
-            QCoreApplication.translate("MainWindow", "Show all speakers", None)
-        )
         self.revertDictionaryAct.setText(
             QCoreApplication.translate("MainWindow", "Revert dictionary changes", None)
         )

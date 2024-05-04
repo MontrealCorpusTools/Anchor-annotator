@@ -57,7 +57,7 @@ class ErrorButtonBox(QtWidgets.QDialogButtonBox):
         super().__init__(*args, **kwargs)
         self.setStandardButtons(QtWidgets.QDialogButtonBox.StandardButton.Close)
         self.report_bug_button = QtWidgets.QPushButton("Report bug")
-        self.report_bug_button.setIcon(QtGui.QIcon(":external-link.svg"))
+        self.report_bug_button.setIcon(QtGui.QIcon.fromTheme("folder-open"))
         self.addButton(self.report_bug_button, QtWidgets.QDialogButtonBox.ButtonRole.ActionRole)
 
 
@@ -198,8 +198,9 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         )
         return volume
 
-    def update_selection_times(self):
-        self.setCurrentTime(self.startTime())
+    def update_selection_times(self, update=False):
+        if update or self.playbackState() != QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
+            self.setCurrentTime(self.startTime())
 
     def update_times(self):
         if self.playbackState() == QtMultimedia.QMediaPlayer.PlaybackState.PlayingState:
@@ -271,9 +272,7 @@ class NewSpeakerField(QtWidgets.QLineEdit):
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Preferred
         )
-        clear_icon = QtGui.QIcon()
-        clear_icon.addFile(":clear.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        clear_icon.addFile(":disabled/clear.svg", mode=QtGui.QIcon.Mode.Active)
+        clear_icon = QtGui.QIcon.fromTheme("edit-clear")
 
         self.clear_action = QtGui.QAction(icon=clear_icon, parent=self)
         self.clear_action.triggered.connect(self.clear)
@@ -454,9 +453,7 @@ class CompleterLineEdit(QtWidgets.QWidget):
         # self.model = QtCore.QStringListModel(self)
         # self.completer.setModel(self.model)
         layout.addWidget(self.line_edit)
-        clear_icon = QtGui.QIcon()
-        clear_icon.addFile(":clear.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        clear_icon.addFile(":disabled/clear.svg", mode=QtGui.QIcon.Mode.Active)
+        clear_icon = QtGui.QIcon.fromTheme("edit-clear")
         self.button = QtWidgets.QToolButton(self)
         self.button.clicked.connect(self.clear_text)
         self.line_edit.textChanged.connect(self.check_actions)
@@ -515,9 +512,7 @@ class ClearableDropDown(QtWidgets.QWidget):
         self.combo_box = QtWidgets.QComboBox(self)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.combo_box)
-        clear_icon = QtGui.QIcon()
-        clear_icon.addFile(":clear.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        clear_icon.addFile(":disabled/clear.svg", mode=QtGui.QIcon.Mode.Active)
+        clear_icon = QtGui.QIcon.fromTheme("edit-clear")
         self.combo_box.currentIndexChanged.connect(self.check_actions)
         self.button = QtWidgets.QToolButton(self)
         self.button.clicked.connect(self.clear_index)
@@ -568,10 +563,10 @@ class PaginationWidget(QtWidgets.QToolBar):
         self.num_pages = 1
         self.result_count = 0
         self.next_page_action = QtGui.QAction(
-            icon=QtGui.QIcon(":caret-right.svg"), text="Next page"
+            icon=QtGui.QIcon.fromTheme("media-seek-forward"), text="Next page"
         )
         self.previous_page_action = QtGui.QAction(
-            icon=QtGui.QIcon(":caret-left.svg"), text="Previous page"
+            icon=QtGui.QIcon.fromTheme("media-seek-backward"), text="Previous page"
         )
         self.addWidget(w)
         self.page_label = QtWidgets.QLabel("Page 1 of 1")
@@ -1019,9 +1014,7 @@ class ClearableField(InternalToolButtonEdit):
     def __init__(self, *args):
         super().__init__(*args)
 
-        clear_icon = QtGui.QIcon()
-        clear_icon.addFile(":clear.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        clear_icon.addFile(":disabled/clear.svg", mode=QtGui.QIcon.Mode.Active)
+        clear_icon = QtGui.QIcon.fromTheme("edit-clear")
         self.clear_action = QtGui.QAction(icon=clear_icon, parent=self)
         self.clear_action.triggered.connect(self.clear)
         self.clear_action.setVisible(False)
@@ -1075,28 +1068,16 @@ class SearchBox(ClearableField):
 
         self.clear_action.triggered.connect(self.returnPressed.emit)
 
-        regex_icon = QtGui.QIcon()
-        regex_icon.addFile(":regex.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        regex_icon.addFile(
-            ":highlighted/regex.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.On
-        )
+        regex_icon = QtGui.QIcon.fromTheme("edit-regex")
 
         self.regex_action = QtGui.QAction(icon=regex_icon, parent=self)
         self.regex_action.setCheckable(True)
 
-        word_icon = QtGui.QIcon()
-        word_icon.addFile(":word.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        word_icon.addFile(
-            ":highlighted/word.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.On
-        )
+        word_icon = QtGui.QIcon.fromTheme("edit-word")
         self.word_action = QtGui.QAction(icon=word_icon, parent=self)
         self.word_action.setCheckable(True)
 
-        case_icon = QtGui.QIcon()
-        case_icon.addFile(":case.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        case_icon.addFile(
-            ":highlighted/case.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.On
-        )
+        case_icon = QtGui.QIcon.fromTheme("edit-case")
         self.case_action = QtGui.QAction(icon=case_icon, parent=self)
         self.case_action.setCheckable(True)
 
@@ -1400,7 +1381,7 @@ class IconDelegate(QtWidgets.QStyledItemDelegate):
         options = QtWidgets.QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
         if options.checkState == QtCore.Qt.CheckState.Checked:
-            icon = QtGui.QIcon(":disabled/oov-check.svg")
+            icon = QtGui.QIcon(":oov-check.svg")
             icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
 
         painter.restore()
@@ -1413,10 +1394,10 @@ class ModelIconDelegate(QtWidgets.QStyledItemDelegate):
 
         self.settings = AnchorSettings()
         self.icon_mapping = {
-            "available": QtGui.QIcon(":file-circle-check-solid.svg"),
-            "unavailable": QtGui.QIcon(":file-circle-xmark-solid.svg"),
-            "remote": QtGui.QIcon(":file-arrow-down-solid.svg"),
-            "unknown": QtGui.QIcon(":file-circle-question-solid.svg"),
+            "available": QtGui.QIcon.fromTheme("emblem-default"),
+            "unavailable": QtGui.QIcon.fromTheme("emblem-important"),
+            "remote": QtGui.QIcon.fromTheme("sync-synchronizing"),
+            "unknown": QtGui.QIcon.fromTheme("emblem-unknown"),
         }
 
     def refresh_settings(self):
@@ -1437,7 +1418,16 @@ class ModelIconDelegate(QtWidgets.QStyledItemDelegate):
         options = QtWidgets.QStyleOptionViewItem(option)
         self.initStyleOption(options, index)
         icon = self.icon_mapping[options.text]
-        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignLeft)
+        r = option.rect
+        half_size = int(self.settings.icon_size / 2)
+        x = r.left() + (r.width() / 2) - half_size
+        y = r.top() + (r.height() / 2) - half_size
+        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
+        icon.paint(
+            painter,
+            options.rect,
+            QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
+        )
 
         painter.restore()
 
@@ -1459,7 +1449,7 @@ class StoppableProgressBar(QtWidgets.QWidget):
         layout.addWidget(self.progress_bar)
         self.cancel_button = QtWidgets.QToolButton()
         self.cancel_action = QtGui.QAction("select", self)
-        self.cancel_action.setIcon(QtGui.QIcon(":clear.svg"))
+        self.cancel_action.setIcon(QtGui.QIcon.fromTheme("edit-clear"))
         self.cancel_action.triggered.connect(worker.cancel)
         self.cancel_button.setDefaultAction(self.cancel_action)
         layout.addWidget(self.cancel_button)
@@ -1527,7 +1517,7 @@ class ProgressMenu(QtWidgets.QMenu):
 class ProgressWidget(QtWidgets.QPushButton):
     def __init__(self, *args):
         super().__init__(*args)
-        self.done_icon = QtGui.QIcon(":check-circle.svg")
+        self.done_icon = QtGui.QIcon.fromTheme("emblem-default")
         self.animated = QtGui.QMovie(":spinning_blue.svg")
         self.animated.frameChanged.connect(self.update_animation)
         self.setIcon(self.done_icon)
@@ -1766,34 +1756,16 @@ class PronunciationInput(QtWidgets.QToolBar):
         self.setContentsMargins(0, 0, 0, 0)
         self.setFocusProxy(self.input)
 
-        accept_icon = QtGui.QIcon()
-        accept_icon.addFile(
-            ":check-circle.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off
-        )
-        accept_icon.addFile(
-            ":highlighted/check-circle.svg",
-            mode=QtGui.QIcon.Mode.Normal,
-            state=QtGui.QIcon.State.On,
-        )
+        accept_icon = QtGui.QIcon.fromTheme("emblem-default")
 
         self.accept_action = QtGui.QAction(icon=accept_icon, parent=self)
         self.accept_action.triggered.connect(self.returnPressed.emit)
 
-        cancel_icon = QtGui.QIcon()
-        cancel_icon.addFile(":undo.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off)
-        cancel_icon.addFile(
-            ":highlighted/undo.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.On
-        )
+        cancel_icon = QtGui.QIcon.fromTheme("edit-undo")
 
         self.cancel_action = QtGui.QAction(icon=cancel_icon, parent=self)
         self.cancel_action.triggered.connect(self.cancel)
-        keyboard_icon = QtGui.QIcon()
-        keyboard_icon.addFile(
-            ":keyboard.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.Off
-        )
-        keyboard_icon.addFile(
-            ":highlighted/keyboard.svg", mode=QtGui.QIcon.Mode.Normal, state=QtGui.QIcon.State.On
-        )
+        keyboard_icon = QtGui.QIcon.fromTheme("input-keyboard")
 
         self.keyboard_widget = QtWidgets.QPushButton(self)
         self.keyboard_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
@@ -1819,7 +1791,7 @@ class PronunciationInput(QtWidgets.QToolBar):
                 self.returnPressed.emit()
             return True
         elif (
-            isinstance(watched, (IpaKeyboard))
+            isinstance(watched, IpaKeyboard)
             and event.type() == QtCore.QEvent.Type.KeyPress
             and event.key() not in {QtGui.Qt.Key.Key_Escape}
         ):
@@ -1910,14 +1882,18 @@ class CountDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, index)
         painter.save()
         r = option.rect
-        size = int(self.settings.icon_size / 2)
+        half_size = int(self.settings.icon_size / 2)
         x = r.left() + r.width() - self.settings.icon_size
-        y = r.top()
+        y = r.top() + (r.height() / 2) - half_size
         options = QtWidgets.QStyleOptionViewItem(option)
-        options.rect = QtCore.QRect(x, y, size, r.height())
+        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
         self.initStyleOption(options, index)
-        icon = QtGui.QIcon(":external-link.svg")
-        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
+        icon = QtGui.QIcon.fromTheme("folder-open")
+        icon.paint(
+            painter,
+            options.rect,
+            QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
+        )
 
         painter.restore()
 
@@ -1941,14 +1917,18 @@ class WordTypeDelegate(QtWidgets.QStyledItemDelegate):
         super().paint(painter, option, index)
         painter.save()
         r = option.rect
-        size = int(self.settings.icon_size / 2)
+        half_size = int(self.settings.icon_size / 2)
         x = r.left() + r.width() - self.settings.icon_size
-        y = r.top()
+        y = r.top() + (r.height() / 2) - half_size
         options = QtWidgets.QStyleOptionViewItem(option)
-        options.rect = QtCore.QRect(x, y, size, r.height())
+        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
         self.initStyleOption(options, index)
-        icon = QtGui.QIcon(":rotate.svg")
-        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
+        icon = QtGui.QIcon.fromTheme("sync-synchronizing")
+        icon.paint(
+            painter,
+            options.rect,
+            QtCore.Qt.AlignmentFlag.AlignCenter | QtCore.Qt.AlignmentFlag.AlignVCenter,
+        )
 
         painter.restore()
 
@@ -2483,13 +2463,13 @@ class SpeakerViewDelegate(QtWidgets.QStyledItemDelegate):
         painter.save()
 
         r = option.rect
-        size = int(self.settings.icon_size / 2)
+        half_size = int(self.settings.icon_size / 2)
         x = r.left() + r.width() - self.settings.icon_size
-        y = r.top()
+        y = r.top() + (r.height() / 2) - half_size
         options = QtWidgets.QStyleOptionViewItem(option)
-        options.rect = QtCore.QRect(x, y, size, r.height())
+        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
         self.initStyleOption(options, index)
-        icon = QtGui.QIcon(":external-link.svg")
+        icon = QtGui.QIcon.fromTheme("folder-open")
         icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
 
         painter.restore()
@@ -2514,11 +2494,11 @@ class ButtonDelegate(QtWidgets.QStyledItemDelegate):
     ) -> None:
         painter.save()
         r = option.rect
-        size = int(self.settings.icon_size / 2)
+        half_size = int(self.settings.icon_size / 2)
         x = r.left() + r.width() - self.settings.icon_size
-        y = r.top()
+        y = r.top() + (r.height() / 2) - half_size
         options = QtWidgets.QStyleOptionViewItem(option)
-        options.rect = QtCore.QRect(x, y, size, r.height())
+        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
         self.initStyleOption(options, index)
         icon = QtGui.QIcon(self.icon_path)
         icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -3054,11 +3034,11 @@ class DictionaryWidget(QtWidgets.QWidget):
         self.current_search_query = None
         self.current_search_text = ""
         self.refresh_word_counts_action = QtGui.QAction(self)
-        self.refresh_word_counts_action.setIcon(QtGui.QIcon(":oov-check.svg"))
+        self.refresh_word_counts_action.setIcon(QtGui.QIcon.fromTheme("tools-check-spelling"))
         self.refresh_word_counts_action.setEnabled(True)
         self.toolbar.addAction(self.refresh_word_counts_action)
         self.rebuild_lexicon_action = QtGui.QAction(self)
-        self.rebuild_lexicon_action.setIcon(QtGui.QIcon(":rotate.svg"))
+        self.rebuild_lexicon_action.setIcon(QtGui.QIcon.fromTheme("sync-synchronizing"))
         self.rebuild_lexicon_action.setEnabled(True)
         self.toolbar.addAction(self.rebuild_lexicon_action)
         dict_layout.addWidget(self.toolbar)
@@ -3297,31 +3277,33 @@ class SpeakerWidget(QtWidgets.QWidget):
 
 
 class ColorEdit(QtWidgets.QPushButton):  # pragma: no cover
+    colorChanged = QtCore.Signal()
+
     def __init__(self, parent=None):
         super(ColorEdit, self).__init__(parent=parent)
         self.setText("")
         self.clicked.connect(self.open_dialog)
+        self.color = None
 
-    def set_color(self, color: QtGui.QColor):
-        self._color = color
+    def set_color(self, color: typing.Union[str, QtGui.QColor]):
+        if isinstance(color, str):
+            color = QtGui.QColor(color)
+        self.color = color
         self.update_icon()
 
     def update_icon(self):
         pixmap = QtGui.QPixmap(100, 100)
-        pixmap.fill(self._color)
+        pixmap.fill(self.color)
         icon = QtGui.QIcon(pixmap)
         icon.addPixmap(pixmap, QtGui.QIcon.Mode.Disabled)
         self.setIcon(icon)
 
-    @property
-    def color(self) -> str:
-        return self._color.name()
-
     def open_dialog(self):
         color = QtWidgets.QColorDialog.getColor()
-        if color.isValid():
-            self._color = color
+        if color.isValid() and self.color != color.name():
+            self.color = color.name()
             self.update_icon()
+            self.colorChanged.emit()
 
 
 class FontDialog(QtWidgets.QFontDialog):
@@ -3473,8 +3455,8 @@ class PathSelectWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.select_button.clicked.connect(self.select_path)
-        self.exists_icon = QtGui.QIcon(":check-circle.svg")
-        self.not_exists_icon = QtGui.QIcon(":disabled/exclamation-triangle.svg")
+        self.exists_icon = QtGui.QIcon.fromTheme("emblem-default")
+        self.not_exists_icon = QtGui.QIcon.fromTheme("emblem-important")
 
     def value(self):
         if not self.path_edit.text():

@@ -1,0 +1,10 @@
+[Icon Theme]
+Name=Anchor light
+Comment=Anchor's light icon theme
+
+[actions]
+Size=48
+Context=Actions
+Type=Scalable
+MinSize=1
+MaxSize=256

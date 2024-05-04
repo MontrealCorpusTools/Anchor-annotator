@@ -18,489 +18,7 @@
     <normaloff>:/anchor-yellow.svg</normaloff>:/anchor-yellow.svg</iconset>
   </property>
   <property name="styleSheet">
-   <string notr="true">QMainWindow, QDialog{
-            background-color: rgb(0, 53, 102);
-        }
-        QMenuBar {
-            background-color: rgb(255, 195, 0);
-            spacing: 2px;
-        }
-        QMenuBar::item {
-            padding: 4px 4px;
-                        color: rgb(0, 8, 20);
-                        background-color: rgb(255, 195, 0);
-        }
-        QMenuBar::item:selected {
-                        color: rgb(255, 214, 10);
-                        background-color: rgb(14, 99, 179);
-        }
-        QMenuBar::item:disabled {
-                        color: rgb(198, 54, 35);
-                        background-color: rgb(255, 195, 0);
-                        }
-        ButtonWidget {
-            background-color: rgb(14, 99, 179);
-        }
-        QDockWidget {
-            background-color: rgb(0, 29, 61);
-            color: rgb(255, 214, 10);
-
-            titlebar-close-icon: url(:checked/times.svg);
-            titlebar-normal-icon: url(:checked/external-link.svg);
-        }
-        QDockWidget::title {
-            text-align: center;
-        }
-
-        QMainWindow::separator {
-    background: rgb(0, 53, 102);
-    width: 10px; /* when vertical */
-    height: 10px; /* when horizontal */
-}
-
-QMainWindow::separator:hover {
-    background: rgb(255, 195, 0);
-}
-        #utteranceListWidget, #dictionaryWidget, #speakerWidget {
-            background-color: rgb(0, 8, 20);
-
-            border: 2px solid rgb(14, 99, 179);
-            color: rgb(14, 99, 179);
-            padding: 0px;
-            padding-top: 20px;
-            margin-top: 0ex; /* leave space at the top for the title */
-            }
-
-        #utteranceDetailWidget {
-            background-color: rgb(0, 53, 102);
-            padding: 0px;
-            border: none;
-            margin: 0;
-        }
-        InformationWidget {
-            background-color: rgb(0, 8, 20);
-            border: 2px solid rgb(14, 99, 179);
-            border-top-right-radius: 5px;
-            border-bottom-right-radius: 5px;
-
-        }
-
-        QGroupBox::title {
-            color: rgb(237, 221, 212);
-            background-color: transparent;
-            subcontrol-origin: margin;
-            subcontrol-position: top center; /* position at the top center */
-            padding-top: 5px;
-        }
-        QLabel {
-                        color: rgb(237, 221, 212);
-            }
-        QStatusBar {
-            background-color: rgb(0, 8, 20);
-                        color: rgb(237, 221, 212);
-            }
-        WarningLabel {
-                        color: rgb(198, 54, 35);
-            }
-        QCheckBox {
-            color: rgb(237, 221, 212);
-        }
-        QTabWidget::pane, SearchWidget, DictionaryWidget, SpeakerWidget { /* The tab widget frame */
-            background-color: rgb(0, 8, 20);
-
-        }
-        QTabWidget::pane  { /* The tab widget frame */
-            border: 2px solid rgb(14, 99, 179);
-            border-top-color: rgb(0, 8, 20);
-            background-color: rgb(0, 8, 20);
-
-        }
-
-
-        QTabBar::tab {
-            color: rgb(0, 8, 20);
-            background-color: rgb(255, 195, 0);
-            border-color: rgb(0, 8, 20);
-            border: 1px solid rgb(0, 8, 20);
-            border-top-color: rgb(14, 99, 179);
-            border-bottom: none;
-
-            min-width: 8ex;
-            padding: 5px;
-            margin: 0px;
-        }
-
-        QTabBar::scroller{
-            width: 50px;
-        }
-        QTabBar QToolButton  {
-            border-radius: 0px;
-        }
-
-        QTabBar QToolButton::right-arrow  {
-            image: url(:caret-right.svg);
-            height: 25px;
-            width: 25px;
-        }
-        QTabBar QToolButton::right-arrow :pressed {
-            image: url(:checked/caret-right.svg);
-        }
-        QTabBar QToolButton::right-arrow :disabled {
-            image: url(:disabled/caret-right.svg);
-        }
-
-        QTabBar QToolButton::left-arrow  {
-            image: url(:caret-left.svg);
-            height: 25px;
-            width: 25px;
-        }
-        QTabBar QToolButton::left-arrow:pressed {
-            image: url(:checked/caret-left.svg);
-        }
-        QTabBar QToolButton::left-arrow:disabled {
-            image: url(:disabled/caret-left.svg);
-        }
-
-        QTabBar::tab-bar {
-            color: rgb(0, 8, 20);
-            background-color: rgb(255, 195, 0);
-            border: 2px solid rgb(14, 99, 179);
-        }
-
-        QTabBar::tab:hover {
-            color: rgb(255, 214, 10);
-            background-color: rgb(14, 99, 179);
-            border-bottom-color:  rgb(14, 99, 179);
-        }
-        QTabBar::tab:selected {
-            color: rgb(255, 214, 10);
-            background-color: rgb(0, 29, 61);
-            margin-left: -2px;
-            margin-right: -2px;
-            border-color: rgb(14, 99, 179);
-            border-bottom-color:  rgb(14, 99, 179);
-        }
-        QTabBar::tab:first {
-            border-left-width: 2px;
-            margin-left: 0px;
-        }
-        QTabBar::tab:last {
-            border-right-width: 2px;
-            margin-right: 0px;
-        }
-        QToolBar {
-            spacing: 3px;
-			border: none;s
-        }
-        #toolBar {
-            background: rgb(0, 8, 20);
-        }
-
-        QToolBar::separator {
-            margin-left: 5px;
-            margin-right: 5px;
-            width: 3px;
-            height: 3px;
-            background: rgb(14, 99, 179);
-        }
-
-
-
-        QPushButton, QToolButton {
-            background-color: rgb(255, 195, 0);
-            color: rgb(0, 8, 20);
-            padding: 2px;
-            border-width: 2px;
-            border-style: solid;
-            border-color: rgb(0, 8, 20);
-            border-radius: 5px;
-        }
-        QToolButton[popupMode=&quot;1&quot;] { /* only for MenuButtonPopup */
-            padding-right: 20px; /* make way for the popup button */
-        }
-        QToolButton::menu-button {
-            border: 2px solid rgb(0, 8, 20);
-            border-top-right-radius: 5px;
-            border-bottom-right-radius: 5px;
-
-            width: 16px;
-        }
-        QMenuBar QToolButton{
-            padding: 0px;
-        }
-        QLineEdit QToolButton {
-                        background-color: rgb(255, 195, 0);
-                        color: rgb(237, 221, 212);
-                        border: none;
-        }
-        QToolButton#clear_search_field, QToolButton#clear_new_speaker_field,
-        QToolButton#regex_search_field, QToolButton#word_search_field {
-                        background-color: none;
-                        border: none;
-                        padding: 2px;
-        }
-        QMenu {
-                margin: 2px;
-                background-color: rgb(255, 195, 0);
-                color: rgb(0, 8, 20);
-        }
-        QToolTip {
-                margin: 2px;
-                background-color: rgb(255, 195, 0);
-                color: rgb(0, 8, 20);
-        }
-        QMenu::item {
-                padding: 2px 25px 2px 20px;
-                border: 1px solid transparent;
-                background-color: rgb(255, 195, 0);
-                color: rgb(0, 8, 20);
-        }
-        QMenu::item:disabled {
-                border: none;
-                background-color: rgb(0, 29, 61);
-                color: rgb(198, 54, 35);
-        }
-        QMenu::item:!disabled:selected {
-            border-color: rgb(0, 8, 20);
-            background-color: rgb(14, 99, 179);
-        }
-        QComboBox {
-            color: rgb(0, 8, 20);
-            background-color: rgb(255, 195, 0);
-            selection-background-color: none;
-        }
-        QComboBox QAbstractItemView {
-            color: rgb(0, 8, 20);
-            background-color: rgb(255, 195, 0);
-            selection-background-color: rgb(14, 99, 179);
-        }
-        QToolButton:checked  {
-            color: rgb(255, 214, 10);
-            background-color: rgb(0, 29, 61);
-            border-color: rgb(14, 99, 179);
-        }
-        QPushButton:disabled, QToolButton:disabled {
-            color: rgb(198, 54, 35);
-            background-color: rgb(160, 122, 0);
-        }
-
-        QToolButton#cancel_load:disabled {
-            color: rgb(198, 54, 35);
-            background-color: rgb(0, 29, 61);
-        }
-        QPushButton:hover, QToolButton:hover, QToolButton:focus, QToolButton:pressed, ToolButton:hover {
-            color: rgb(255, 214, 10);
-            background-color: rgb(14, 99, 179);
-        }
-
-        QToolButton#cancel_load:focus:hover {
-            color: rgb(255, 214, 10);
-            background-color: rgb(14, 99, 179);
-        }
-        QPlainTextEdit {
-            color: rgb(237, 221, 212);
-            background-color: rgb(0, 8, 20);
-            border: 2px solid rgb(14, 99, 179);
-            selection-background-color: rgb(14, 99, 179);
-        }
-        QGraphicsView {
-            border: 2px solid rgb(14, 99, 179);
-        }
-         QLineEdit {
-            color: rgb(0, 8, 20);
-            background-color: rgb(237, 221, 212);
-            selection-background-color: rgb(14, 99, 179);
-        }
-        QSlider::handle:horizontal {
-            height: 10px;
-            background: rgb(255, 195, 0);
-            border: 1px solid rgb(0, 8, 20);
-            margin: 0 -2px; /* expand outside the groove */
-        }
-        QSlider::handle:horizontal:hover {
-            height: 10px;
-            background: rgb(14, 99, 179);
-            margin: 0 -2px; /* expand outside the groove */
-        }
-        QTableWidget, QTableView {
-            alternate-background-color: rgb(242, 205, 73);
-            selection-background-color: rgb(14, 99, 179);
-            selection-color: rgb(237, 221, 212);
-            background-color: rgb(122, 181, 230);
-            color: rgb(0, 8, 20);
-            border: 4px solid rgb(0, 8, 20);
-        }
-        QScrollArea {
-            border: 4px solid rgb(0, 8, 20);
-		background-color: rgb(0, 29, 61);
-        }
-        QHeaderView::up-arrow {
-            subcontrol-origin: padding;
-            subcontrol-position: center right;
-            image: url(:hover/sort-up.svg);
-            height: 20px;
-            width: 20px;
-        }
-        QHeaderView::down-arrow {
-            image: url(:hover/sort-down.svg);
-            subcontrol-origin: padding;
-            subcontrol-position: center right;
-            height: 20px;
-            width: 20px;
-        }
-        QTableView QTableCornerButton::section {
-            background-color: rgb(255, 195, 0);
-        }
-        QHeaderView {
-            background-color: rgb(122, 181, 230);
-        }
-        QHeaderView::section {
-            color: rgb(237, 221, 212);
-            background-color: rgb(14, 99, 179);
-            padding-left: 5px;
-        }
-        QHeaderView::section:horizontal {
-            padding-right: 15px;
-        }
-
-        QScrollBar {
-            color: rgb(255, 214, 10);
-            background: rgb(0, 29, 61);
-            border: 2px solid rgb(0, 8, 20);
-        }
-        QScrollBar#time_scroll_bar {
-            color: rgb(255, 214, 10);
-            background: rgb(0, 29, 61);
-            border: 2px solid rgb(0, 8, 20);
-            margin-left: 0px;
-            margin-right: 0px;
-        }
-        QScrollBar:horizontal {
-            height: 25px;
-            border: 2px solid rgb(0, 8, 20);
-            border-radius: 12px;
-            margin-left: 25px;
-            margin-right: 25px;
-        }
-        QScrollBar:vertical {
-            width: 25px;
-            border: 2px solid rgb(0, 8, 20);
-            border-radius: 12px;
-            margin-top: 25px;
-            margin-bottom: 25px;
-        }
-
-        QScrollBar:left-arrow:horizontal {
-            image: url(:caret-left.svg);
-            height: 25px;
-            width: 25px;
-        }
-
-        QScrollBar:left-arrow:horizontal:pressed {
-            image: url(:checked/caret-left.svg);
-        }
-
-        QScrollBar:right-arrow:horizontal {
-            image: url(:caret-right.svg);
-            height: 25px;
-            width: 25px;
-        }
-
-        QScrollBar:right-arrow:horizontal:pressed {
-            image: url(:checked/caret-right.svg);
-        }
-
-        QScrollBar:up-arrow:vertical {
-            image: url(:caret-up.svg);
-            height: 25px;
-            width: 25px;
-        }
-
-        QScrollBar:up-arrow:vertical:pressed {
-            image: url(:checked/caret-up.svg);
-        }
-
-        QScrollBar:down-arrow:vertical {
-            image: url(:caret-down.svg);
-            height: 25px;
-            width: 25px;
-        }
-        QScrollBar:down-arrow:vertical:pressed {
-            image: url(:checked/caret-down.svg);
-        }
-
-        QScrollBar::handle:horizontal {
-            background: rgb(255, 214, 10);
-            min-width: 25px;
-            border: 2px solid rgb(0, 8, 20);
-            border-radius: 10px;
-        }
-
-        QScrollBar::handle:vertical {
-            background: rgb(255, 214, 10);
-            min-height: 25px;
-            border: 2px solid rgb(0, 8, 20);
-            border-radius: 10px;
-        }
-
-        QToolButton#pan_left_button, QToolButton#pan_right_button {
-
-            color: none;
-            background-color: none;
-            border: none;
-            margin: 0px;
-            padding: 0px;
-        }
-
-        QScrollBar::add-page, QScrollBar::sub-page {
-            background: none;
-            height: 25px;
-            width: 25px;
-            padding: 0px;
-            margin: 0px;
-        }
-
-        QScrollBar::add-line:horizontal {
-            background: none;
-            subcontrol-position: right;
-            subcontrol-origin: margin;
-            width: 25px;
-        }
-
-        QScrollBar::sub-line:horizontal {
-            background: none;
-            subcontrol-position: left;
-            subcontrol-origin: margin;
-            width: 25px;
-        }
-
-        QScrollBar::add-line:vertical {
-            background: none;
-            subcontrol-position: bottom;
-            subcontrol-origin: margin;
-            height: 25px;
-        }
-
-        QScrollBar::sub-line:vertical {
-            background: none;
-            subcontrol-position: top;
-            subcontrol-origin: margin;
-            height: 25px;
-        }
-
-        QScrollBar#time_scroll_bar::add-line:horizontal {
-            background: none;
-            subcontrol-position: none;
-            subcontrol-origin: none;
-            width: 0px;
-        }
-
-        QScrollBar#time_scroll_bar::sub-line:horizontal {
-            background: none;
-            subcontrol-position: none;
-            subcontrol-origin: none;
-            width: 0px;
-        }</string>
+   <string notr="true"/>
   </property>
   <property name="animated">
    <bool>true</bool>
@@ -545,7 +63,7 @@ QMainWindow::separator:hover {
      <x>0</x>
      <y>0</y>
      <width>1448</width>
-     <height>24</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuCorpus">
@@ -817,7 +335,6 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </attribute>
    <addaction name="playAct"/>
-   <addaction name="showAllSpeakersAct"/>
    <addaction name="separator"/>
    <addaction name="zoomInAct"/>
    <addaction name="zoomOutAct"/>
@@ -943,14 +460,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/play.svg</normaloff>
-     <normalon>:/checked/pause.svg</normalon>
-     <disabledoff>:/play.svg</disabledoff>
-     <activeoff>:/checked/play.svg</activeoff>
-     <activeon>:/checked/pause.svg</activeon>
-     <selectedoff>:/checked/play.svg</selectedoff>
-     <selectedon>:/checked/pause.svg</selectedon>:/play.svg</iconset>
+    <iconset theme="media-playback-start"/>
    </property>
    <property name="text">
     <string>Play</string>
@@ -967,9 +477,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/volume-mute.svg</normaloff>
-     <disabledoff>:/volume-mute.svg</disabledoff>:/volume-mute.svg</iconset>
+    <iconset theme="audio-volume-muted"/>
    </property>
    <property name="text">
     <string>Mute</string>
@@ -980,9 +488,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/magnifying-glass-plus.svg</normaloff>
-     <disabledoff>:/magnifying-glass-plus.svg</disabledoff>:/magnifying-glass-plus.svg</iconset>
+    <iconset theme="zoom-in"/>
    </property>
    <property name="text">
     <string>Zoom in</string>
@@ -996,9 +502,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/magnifying-glass-minus.svg</normaloff>
-     <disabledoff>:/magnifying-glass-minus.svg</disabledoff>:/magnifying-glass-minus.svg</iconset>
+    <iconset theme="zoom-out"/>
    </property>
    <property name="text">
     <string>Zoom out</string>
@@ -1012,9 +516,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/compress.svg</normaloff>
-     <disabledoff>:/compress.svg</disabledoff>:/compress.svg</iconset>
+    <iconset theme="format-justify-center"/>
    </property>
    <property name="text">
     <string>Merge utterances</string>
@@ -1028,9 +530,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/expand.svg</normaloff>
-     <disabledoff>:/expand.svg</disabledoff>:/expand.svg</iconset>
+    <iconset theme="format-justify-fill"/>
    </property>
    <property name="text">
     <string>Split utterances</string>
@@ -1041,9 +541,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/disabled/trash.svg</normaloff>
-     <disabledoff>:/trash.svg</disabledoff>:/disabled/trash.svg</iconset>
+    <iconset theme="edit-delete"/>
    </property>
    <property name="text">
     <string>Delete utterance</string>
@@ -1052,30 +550,12 @@ QMainWindow::separator:hover {
     <string>Del</string>
    </property>
   </action>
-  <action name="showAllSpeakersAct">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/users.svg</normaloff>
-     <disabledoff>:/users.svg</disabledoff>:/users.svg</iconset>
-   </property>
-   <property name="text">
-    <string>Show all speakers</string>
-   </property>
-  </action>
   <action name="revertDictionaryAct">
    <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/disabled/book-undo.svg</normaloff>
-     <disabledoff>:/book-undo.svg</disabledoff>:/disabled/book-undo.svg</iconset>
+    <iconset theme="edit-book-undo"/>
    </property>
    <property name="text">
     <string>Revert dictionary changes</string>
@@ -1086,9 +566,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/user-plus.svg</normaloff>
-     <disabledoff>:/user-plus.svg</disabledoff>:/user-plus.svg</iconset>
+    <iconset theme="contact-new"/>
    </property>
    <property name="text">
     <string>Add new speaker</string>
@@ -1096,8 +574,7 @@ QMainWindow::separator:hover {
   </action>
   <action name="getHelpAct">
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/help.svg</normaloff>:/help.svg</iconset>
+    <iconset theme="help-about"/>
    </property>
    <property name="text">
     <string>Help</string>
@@ -1105,8 +582,7 @@ QMainWindow::separator:hover {
   </action>
   <action name="reportBugAct">
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/bug.svg</normaloff>:/bug.svg</iconset>
+    <iconset theme="mail-forward"/>
    </property>
    <property name="text">
     <string>Report bug</string>
@@ -1114,8 +590,7 @@ QMainWindow::separator:hover {
   </action>
   <action name="exitAct">
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/times.svg</normaloff>:/times.svg</iconset>
+    <iconset theme="process-stop"/>
    </property>
    <property name="text">
     <string>Exit</string>
@@ -1123,8 +598,7 @@ QMainWindow::separator:hover {
   </action>
   <action name="cancelCorpusLoadAct">
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/times.svg</normaloff>:/times.svg</iconset>
+    <iconset theme="process-stop"/>
    </property>
    <property name="text">
     <string>Cancel loading corpus</string>
@@ -1145,8 +619,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/caret-left.svg</normaloff>:/caret-left.svg</iconset>
+    <iconset theme="media-seek-backward"/>
    </property>
    <property name="text">
     <string>Pan left</string>
@@ -1157,8 +630,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/caret-right.svg</normaloff>:/caret-right.svg</iconset>
+    <iconset theme="media-seek-forward"/>
    </property>
    <property name="text">
     <string>Pan right</string>
@@ -1169,20 +641,13 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/magnifying-glass.svg</normaloff>
-     <disabledoff>:/magnifying-glass.svg</disabledoff>:/magnifying-glass.svg</iconset>
+    <iconset theme="edit-find"/>
    </property>
    <property name="text">
     <string>Search corpus</string>
    </property>
   </action>
   <action name="changeVolumeAct">
-   <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/volume-up.svg</normaloff>
-     <disabledoff>:/volume-up.svg</disabledoff>:/volume-up.svg</iconset>
-   </property>
    <property name="text">
     <string>Change volume</string>
    </property>
@@ -1190,10 +655,6 @@ QMainWindow::separator:hover {
   <action name="changeSpeakerAct">
    <property name="enabled">
     <bool>false</bool>
-   </property>
-   <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/speaker.svg</normaloff>:/speaker.svg</iconset>
    </property>
    <property name="text">
     <string>Change speaker</string>
@@ -1204,9 +665,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/book-save.svg</normaloff>
-     <disabledoff>:/book-save.svg</disabledoff>:/book-save.svg</iconset>
+    <iconset theme="edit-book-save"/>
    </property>
    <property name="text">
     <string>Save dictionary</string>
@@ -1285,9 +744,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/file-export.svg</normaloff>
-     <disabledoff>:/file-export.svg</disabledoff>:/file-export.svg</iconset>
+    <iconset theme="document-save"/>
    </property>
    <property name="text">
     <string>Export changes</string>
@@ -1304,15 +761,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/lock-open.svg</normaloff>
-     <normalon>:/checked/lock.svg</normalon>
-     <disabledoff>:/lock-open.svg</disabledoff>
-     <disabledon>:/lock.svg</disabledon>
-     <activeoff>:/checked/lock-open.svg</activeoff>
-     <activeon>:/checked/lock.svg</activeon>
-     <selectedoff>:/checked/lock-open.svg</selectedoff>
-     <selectedon>:/checked/lock.svg</selectedon>:/lock-open.svg</iconset>
+    <iconset theme="edit-lock"/>
    </property>
    <property name="text">
     <string>Lock editing</string>
@@ -1323,9 +772,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/magic.svg</normaloff>
-     <disabledoff>:/magic.svg</disabledoff>:/magic.svg</iconset>
+    <iconset theme="edit-magic"/>
    </property>
    <property name="text">
     <string>Align utterance</string>
@@ -1344,9 +791,7 @@ QMainWindow::separator:hover {
     <bool>false</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/magnifying-glass-location.svg</normaloff>
-     <disabledoff>:/magnifying-glass-location.svg</disabledoff>:/magnifying-glass-location.svg</iconset>
+    <iconset theme="zoom-fit-best"/>
    </property>
    <property name="text">
     <string>Zoom to selection</string>
@@ -1357,12 +802,7 @@ QMainWindow::separator:hover {
     <bool>true</bool>
    </property>
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/oov-check.svg</normaloff>
-     <disabledoff>:/oov-check.svg</disabledoff>
-     <disabledon>:/checked/oov-check.svg</disabledon>
-     <activeon>:/checked/oov-check.svg</activeon>
-     <selectedoff>:/oov-check.svg</selectedoff>:/oov-check.svg</iconset>
+    <iconset theme="tools-check-spelling"/>
    </property>
    <property name="text">
     <string>OOVs Only</string>
@@ -1390,8 +830,7 @@ QMainWindow::separator:hover {
   </action>
   <action name="segmentUtteranceAct">
    <property name="icon">
-    <iconset resource="resources.qrc">
-     <normaloff>:/expand.svg</normaloff>:/expand.svg</iconset>
+    <iconset theme="format-justify-fill"/>
    </property>
    <property name="text">
     <string>Segment utterance</string>
