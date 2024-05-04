@@ -6,6 +6,13 @@ Changelog
 
    Alpha releases
 
+0.5.0
+-----
+
+- Further optimize rendering of intervals for long files
+- Added ability to use native OS theme instead of MFA theme
+- Refactored icons and resources to optimize space
+
 0.4.0
 -----
 

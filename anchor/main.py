@@ -103,6 +103,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_indicator.setFixedWidth(self.ui.statusbar.height())
         self.ui.statusbar.addPermanentWidget(self.status_indicator, 0)
         self.settings = AnchorSettings()
+        self.settings.themeUpdated.connect(self.refresh_style_sheets)
+        self.style_hints = QtGui.QGuiApplication.styleHints()
+        self.style_hints.colorSchemeChanged.connect(self.refresh_style_sheets)
         self.model_manager = ModelManager(
             token=self.settings.value(AnchorSettings.GITHUB_TOKEN), ignore_cache=True
         )
@@ -827,9 +830,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.lockEditAct.toggled.connect(self.toggle_lock)
         self.ui.exportFilesAct.setEnabled(True)
         self.ui.exportFilesAct.triggered.connect(self.export_files)
-        self.ui.showAllSpeakersAct.triggered.connect(
-            self.ui.utteranceDetailWidget.plot_widget.update_show_speakers
-        )
         self.ui.muteAct.triggered.connect(self.update_mute_status)
         self.volume_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
         self.volume_slider.setMaximum(100)
@@ -868,9 +868,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.selectMappingFileAct.triggered.connect(self.change_custom_mapping)
 
         self.undo_act = self.undo_group.createUndoAction(self, "Undo")
-        self.undo_act.setIcon(QtGui.QIcon(":undo.svg"))
+        self.undo_act.setIcon(QtGui.QIcon.fromTheme("edit-undo"))
         self.redo_act = self.undo_group.createRedoAction(self, "Redo")
-        self.redo_act.setIcon(QtGui.QIcon(":redo.svg"))
+        self.redo_act.setIcon(QtGui.QIcon.fromTheme("edit-redo"))
         self.ui.menuEdit.addAction(self.undo_act)
         self.ui.menuEdit.addAction(self.redo_act)
         self.undo_group.setActiveStack(self.corpus_undo_stack)
@@ -1851,6 +1851,54 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def refresh_style_sheets(self):
         self.setStyleSheet(self.settings.style_sheet)
+        self.styleSheetChanged.emit(self.settings.style_sheet)
+        self.ui.utteranceDetailWidget.plot_widget.refresh_theme()
+        QtGui.QIcon.setThemeName("anchor_light")
+        if self.settings.theme_preset == "Native":
+            dark_mode = (
+                QtGui.QGuiApplication.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+            )
+            if dark_mode:
+                QtGui.QIcon.setThemeName("anchor_dark")
+            if False:
+                self.ui.playAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.MediaPlaybackStart)
+                )
+                self.ui.muteAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.AudioVolumeMuted)
+                )
+                self.ui.zoomInAct.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ZoomIn))
+                self.ui.zoomOutAct.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ZoomOut))
+                self.ui.zoomToSelectionAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ZoomFitBest)
+                )
+                self.ui.mergeUtterancesAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.InputGaming)
+                )
+                self.ui.splitUtterancesAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ViewFullscreen)
+                )
+                self.ui.deleteUtterancesAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.EditDelete)
+                )
+                self.ui.exportFilesAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.DocumentSave)
+                )
+                self.ui.lockEditAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.SystemLockScreen)
+                )
+                self.ui.getHelpAct.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.HelpAbout))
+                self.ui.reportBugAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.MailForward)
+                )
+                self.ui.alignUtteranceAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.FormatTextUnderline)
+                )
+                self.ui.cancelCorpusLoadAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ProcessStop)
+                )
+                self.undo_act.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.EditUndo))
+                self.redo_act.setIcon(QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.EditRedo))
 
     def refresh_corpus_history(self):
         self.ui.loadRecentCorpusMenu.clear()
@@ -1869,8 +1917,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.ui.loadRecentCorpusMenu.addAction(a)
 
     def refresh_settings(self):
-        self.setStyleSheet(self.settings.style_sheet)
-        self.styleSheetChanged.emit(self.settings.style_sheet)
+        self.refresh_style_sheets()
         self.refresh_shortcuts()
         self.corpus_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
         self.dictionary_model.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
@@ -1880,6 +1927,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.dictionaryWidget.refresh_settings()
         self.ui.speakerWidget.refresh_settings()
         self.media_player.refresh_settings()
+        self.ui.utteranceDetailWidget.plot_widget.refresh()
 
     def download_language_model(self):
         self.download_worker.set_params(
@@ -2285,6 +2333,10 @@ class DetailedMessageBox(QtWidgets.QDialog):  # pragma: no cover
         self.ui = Ui_ErrorDialog()
         self.ui.setupUi(self)
         self.settings = AnchorSettings()
+        icon = QtGui.QIcon.fromTheme("emblem-important")
+        size = self.ui.iconLabel.size()
+        self.ui.iconLabel.setPixmap(icon.pixmap(size))
+        self.setWindowIcon(icon)
         self.ui.detailed_message.setText(detailed_message)
         self.ui.buttonBox.report_bug_button.clicked.connect(self.reportBug.emit)
         self.ui.buttonBox.rejected.connect(self.reject)
@@ -2300,6 +2352,14 @@ class ManagerDialog(QtWidgets.QDialog):
         self.ui.setupUi(self)
         self.ui.tabWidget.setCurrentIndex(0)
         self.settings = AnchorSettings()
+        QtGui.QIcon.setThemeName("anchor_light")
+        if self.settings.theme_preset == "Native":
+            dark_mode = (
+                QtGui.QGuiApplication.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+            )
+            if dark_mode:
+                QtGui.QIcon.setThemeName("anchor_dark")
+
         self.model_manager = model_manager
 
         self.db_engine = db_engine
@@ -2381,33 +2441,10 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.setupUi(self)
         self.settings = AnchorSettings()
 
+        self.initial_theme = self.settings.current_theme
+
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.ClickFocus)
-
-        self.ui.primaryBaseEdit.set_color(self.settings.value(self.settings.PRIMARY_BASE_COLOR))
-        self.ui.primaryLightEdit.set_color(self.settings.value(self.settings.PRIMARY_LIGHT_COLOR))
-        self.ui.primaryDarkEdit.set_color(self.settings.value(self.settings.PRIMARY_DARK_COLOR))
-        self.ui.primaryVeryLightEdit.set_color(
-            self.settings.value(self.settings.PRIMARY_VERY_LIGHT_COLOR)
-        )
-        self.ui.primaryVeryDarkEdit.set_color(
-            self.settings.value(self.settings.PRIMARY_VERY_DARK_COLOR)
-        )
-
-        self.ui.accentBaseEdit.set_color(self.settings.value(self.settings.ACCENT_BASE_COLOR))
-        self.ui.accentLightEdit.set_color(self.settings.value(self.settings.ACCENT_LIGHT_COLOR))
-        self.ui.accentDarkEdit.set_color(self.settings.value(self.settings.ACCENT_DARK_COLOR))
-        self.ui.accentVeryLightEdit.set_color(
-            self.settings.value(self.settings.ACCENT_VERY_LIGHT_COLOR)
-        )
-        self.ui.accentVeryDarkEdit.set_color(
-            self.settings.value(self.settings.ACCENT_VERY_DARK_COLOR)
-        )
-
-        self.ui.mainTextColorEdit.set_color(self.settings.value(self.settings.MAIN_TEXT_COLOR))
-        self.ui.selectedTextColorEdit.set_color(
-            self.settings.value(self.settings.SELECTED_TEXT_COLOR)
-        )
-        self.ui.errorColorEdit.set_color(self.settings.value(self.settings.ERROR_COLOR))
+        self.ui.errorColorEdit.colorChanged.connect(self.update_theme)
 
         self.ui.fontEdit.set_font(self.settings.font)
 
@@ -2456,6 +2493,11 @@ class OptionsDialog(QtWidgets.QDialog):
                 self.settings.value(self.settings.TIME_DIRECTION)
             )
         )
+        self.ui.visibleSpeakerComboBox.setCurrentIndex(
+            self.ui.visibleSpeakerComboBox.findText(
+                str(self.settings.value(self.settings.TIER_MAX_SPEAKERS))
+            )
+        )
 
         self.ui.dynamicRangeEdit.setValue(self.settings.value(self.settings.SPEC_DYNAMIC_RANGE))
         self.ui.specMaxTimeEdit.setText(str(self.settings.value(self.settings.SPEC_MAX_TIME)))
@@ -2472,6 +2514,11 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.frameLengthEdit.setValue(self.settings.value(self.settings.PITCH_FRAME_LENGTH))
         self.ui.penaltyEdit.setText(str(self.settings.value(self.settings.PITCH_PENALTY_FACTOR)))
         self.ui.pitchDeltaEdit.setText(str(self.settings.value(self.settings.PITCH_DELTA_PITCH)))
+        self.ui.presetThemeEdit.setCurrentIndex(
+            self.ui.presetThemeEdit.findText(str(self.settings.value(self.settings.THEME_PRESET)))
+        )
+        self.ui.presetThemeEdit.currentIndexChanged.connect(self.update_preset_theme)
+        self.ui.presetThemeEdit.currentIndexChanged.connect(self.update_theme)
 
         self.ui.audioDeviceEdit.clear()
         for o in QtMultimedia.QMediaDevices.audioOutputs():
@@ -2485,6 +2532,82 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.tabWidget.setCurrentIndex(0)
         # self.setFont(self.settings.font)
         # self.setStyleSheet(self.settings.style_sheet)
+
+    def set_theme(self, theme):
+        self.ui.primaryBaseEdit.set_color(theme[self.settings.PRIMARY_BASE_COLOR])
+        self.ui.primaryLightEdit.set_color(theme[self.settings.PRIMARY_LIGHT_COLOR])
+        self.ui.primaryDarkEdit.set_color(theme[self.settings.PRIMARY_DARK_COLOR])
+        self.ui.primaryVeryLightEdit.set_color(theme[self.settings.PRIMARY_VERY_LIGHT_COLOR])
+        self.ui.primaryVeryDarkEdit.set_color(theme[self.settings.PRIMARY_VERY_DARK_COLOR])
+
+        self.ui.accentBaseEdit.set_color(theme[self.settings.ACCENT_BASE_COLOR])
+        self.ui.accentLightEdit.set_color(theme[self.settings.ACCENT_LIGHT_COLOR])
+        self.ui.accentDarkEdit.set_color(theme[self.settings.ACCENT_DARK_COLOR])
+        self.ui.accentVeryLightEdit.set_color(theme[self.settings.ACCENT_VERY_LIGHT_COLOR])
+        self.ui.accentVeryDarkEdit.set_color(theme[self.settings.ACCENT_VERY_DARK_COLOR])
+
+        self.ui.mainTextColorEdit.set_color(theme[self.settings.MAIN_TEXT_COLOR])
+        self.ui.selectedTextColorEdit.set_color(theme[self.settings.SELECTED_TEXT_COLOR])
+        self.ui.errorColorEdit.set_color(theme[self.settings.ERROR_COLOR])
+
+    def update_preset_theme(self):
+        theme = self.ui.presetThemeEdit.currentText()
+        self.ui.primaryBaseEdit.setEnabled(False)
+        self.ui.primaryLightEdit.setEnabled(False)
+        self.ui.primaryDarkEdit.setEnabled(False)
+        self.ui.primaryVeryLightEdit.setEnabled(False)
+        self.ui.primaryVeryDarkEdit.setEnabled(False)
+        self.ui.accentBaseEdit.setEnabled(False)
+        self.ui.accentLightEdit.setEnabled(False)
+        self.ui.accentDarkEdit.setEnabled(False)
+        self.ui.accentVeryLightEdit.setEnabled(False)
+        self.ui.accentVeryDarkEdit.setEnabled(False)
+        self.ui.mainTextColorEdit.setEnabled(False)
+        self.ui.selectedTextColorEdit.setEnabled(False)
+        self.ui.errorColorEdit.setEnabled(False)
+        if theme == "MFA":
+            self.set_theme(self.settings.mfa_theme)
+            self.settings.set_mfa_theme()
+        elif theme != "Native":
+            self.ui.primaryBaseEdit.setEnabled(True)
+            self.ui.primaryLightEdit.setEnabled(True)
+            self.ui.primaryDarkEdit.setEnabled(True)
+            self.ui.primaryVeryLightEdit.setEnabled(True)
+            self.ui.primaryVeryDarkEdit.setEnabled(True)
+            self.ui.accentBaseEdit.setEnabled(True)
+            self.ui.accentLightEdit.setEnabled(True)
+            self.ui.accentDarkEdit.setEnabled(True)
+            self.ui.accentVeryLightEdit.setEnabled(True)
+            self.ui.accentVeryDarkEdit.setEnabled(True)
+            self.ui.mainTextColorEdit.setEnabled(True)
+            self.ui.selectedTextColorEdit.setEnabled(True)
+            self.ui.errorColorEdit.setEnabled(True)
+
+    def update_theme(self):
+        preset_theme = self.ui.presetThemeEdit.currentText()
+        self.settings.setValue(self.settings.THEME_PRESET, preset_theme)
+        if preset_theme != "Native":
+            self.settings.set_theme(self.current_theme)
+        else:
+            self.settings.themeUpdated.emit()
+
+    @property
+    def current_theme(self):
+        return {
+            AnchorSettings.MAIN_TEXT_COLOR: self.ui.mainTextColorEdit.color,
+            AnchorSettings.SELECTED_TEXT_COLOR: self.ui.selectedTextColorEdit.color,
+            AnchorSettings.ERROR_COLOR: self.ui.errorColorEdit.color,
+            AnchorSettings.PRIMARY_BASE_COLOR: self.ui.primaryBaseEdit.color,
+            AnchorSettings.PRIMARY_LIGHT_COLOR: self.ui.primaryLightEdit.color,
+            AnchorSettings.PRIMARY_DARK_COLOR: self.ui.primaryDarkEdit.color,
+            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: self.ui.primaryVeryLightEdit.color,
+            AnchorSettings.PRIMARY_VERY_DARK_COLOR: self.ui.primaryVeryDarkEdit.color,
+            AnchorSettings.ACCENT_BASE_COLOR: self.ui.accentBaseEdit.color,
+            AnchorSettings.ACCENT_LIGHT_COLOR: self.ui.accentLightEdit.color,
+            AnchorSettings.ACCENT_DARK_COLOR: self.ui.accentDarkEdit.color,
+            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: self.ui.accentVeryLightEdit.color,
+            AnchorSettings.ACCENT_VERY_DARK_COLOR: self.ui.accentVeryDarkEdit.color,
+        }
 
     def accept(self) -> None:
         config.NUM_JOBS = self.ui.numJobsEdit.value()
@@ -2524,32 +2647,8 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(
             self.settings.PITCH_DELTA_PITCH, float(self.ui.pitchDeltaEdit.text())
         )
-
-        self.settings.setValue(self.settings.PRIMARY_BASE_COLOR, self.ui.primaryBaseEdit.color)
-        self.settings.setValue(self.settings.PRIMARY_LIGHT_COLOR, self.ui.primaryLightEdit.color)
-        self.settings.setValue(self.settings.PRIMARY_DARK_COLOR, self.ui.primaryDarkEdit.color)
-        self.settings.setValue(
-            self.settings.PRIMARY_VERY_LIGHT_COLOR, self.ui.primaryVeryLightEdit.color
-        )
-        self.settings.setValue(
-            self.settings.PRIMARY_VERY_DARK_COLOR, self.ui.primaryVeryDarkEdit.color
-        )
-
-        self.settings.setValue(self.settings.ACCENT_BASE_COLOR, self.ui.accentBaseEdit.color)
-        self.settings.setValue(self.settings.ACCENT_LIGHT_COLOR, self.ui.accentLightEdit.color)
-        self.settings.setValue(self.settings.ACCENT_DARK_COLOR, self.ui.accentDarkEdit.color)
-        self.settings.setValue(
-            self.settings.ACCENT_VERY_LIGHT_COLOR, self.ui.accentVeryLightEdit.color
-        )
-        self.settings.setValue(
-            self.settings.ACCENT_VERY_DARK_COLOR, self.ui.accentVeryDarkEdit.color
-        )
-
-        self.settings.setValue(self.settings.MAIN_TEXT_COLOR, self.ui.mainTextColorEdit.color)
-        self.settings.setValue(
-            self.settings.SELECTED_TEXT_COLOR, self.ui.selectedTextColorEdit.color
-        )
-        self.settings.setValue(self.settings.ERROR_COLOR, self.ui.errorColorEdit.color)
+        preset_theme = self.ui.presetThemeEdit.currentText()
+        self.settings.setValue(self.settings.THEME_PRESET, preset_theme)
 
         self.settings.setValue(self.settings.FONT, self.ui.fontEdit.font.toString())
 
@@ -2605,11 +2704,26 @@ class OptionsDialog(QtWidgets.QDialog):
         self.settings.setValue(
             self.settings.TIME_DIRECTION, self.ui.timeDirectionComboBox.currentText()
         )
+        self.settings.setValue(
+            self.settings.TIER_MAX_SPEAKERS, int(self.ui.visibleSpeakerComboBox.currentText())
+        )
         self.settings.sync()
-        super(OptionsDialog, self).accept()
+        if preset_theme != "Native":
+            self.settings.set_theme(self.current_theme)
+        else:
+            self.settings.themeUpdated.emit()
+        super().accept()
+
+    def reject(self):
+        self.settings.set_theme(self.initial_theme)
+        self.settings.sync()
+        super().reject()
 
 
 class Application(QtWidgets.QApplication):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
     def setActiveWindow(self, act):
         super().setActiveWindow(act)
         act.styleSheetChanged.connect(self.setStyleSheet)

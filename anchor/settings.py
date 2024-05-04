@@ -1,3 +1,4 @@
+import dataclasses
 import pathlib
 from typing import Any, Optional
 
@@ -5,7 +6,29 @@ from montreal_forced_aligner.config import get_temporary_directory
 from PySide6 import QtCore, QtGui
 
 
+@dataclasses.dataclass
+class PlotTheme:
+    background_color: QtGui.QColor
+    error_color: QtGui.QColor
+    error_text_color: QtGui.QColor
+    play_line_color: QtGui.QColor
+    selected_range_color: QtGui.QColor
+    selected_interval_color: QtGui.QColor
+    hover_line_color: QtGui.QColor
+    moving_line_color: QtGui.QColor
+    break_line_color: QtGui.QColor
+    wave_line_color: QtGui.QColor
+    text_color: QtGui.QColor
+    selected_text_color: QtGui.QColor
+    axis_color: QtGui.QColor
+    interval_background_color: QtGui.QColor
+    pitch_color: QtGui.QColor
+    spectrogram_color: QtGui.QColor
+
+
 class AnchorSettings(QtCore.QSettings):
+    themeUpdated = QtCore.Signal()
+
     DEFAULT_DIRECTORY = "anchor/default_directory"
     DEFAULT_CORPUS_DIRECTORY = "anchor/default_corpus_directory"
     DEFAULT_DICTIONARY_DIRECTORY = "anchor/default_dictionary_directory"
@@ -46,6 +69,7 @@ class AnchorSettings(QtCore.QSettings):
 
     FONT = "anchor/theme/font"
     MAIN_TEXT_COLOR = "anchor/theme/text_color"
+    THEME_PRESET = "anchor/theme/theme_preset"
     SELECTED_TEXT_COLOR = "anchor/theme/selected_text_color"
     ERROR_COLOR = "anchor/theme/error_color"
     PRIMARY_BASE_COLOR = "anchor/theme/primary_color/base"
@@ -101,6 +125,7 @@ class AnchorSettings(QtCore.QSettings):
     PITCH_PENALTY_FACTOR = "anchor/pitch/penalty_factor"
 
     TIER_NORMALIZED_VISIBLE = "anchor/tier/normalized_visible"
+    TIER_MAX_SPEAKERS = "anchor/tier/max_speakers"
     TIER_TRANSCRIPTION_VISIBLE = "anchor/tier/transcription_visible"
     TIER_ALIGNED_WORDS_VISIBLE = "anchor/tier/aligned_words_visible"
     TIER_ALIGNED_PHONES_VISIBLE = "anchor/tier/aligned_phones_visible"
@@ -129,22 +154,6 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.ACCENT_DARK_COLOR: "#E3930D",
             AnchorSettings.ACCENT_VERY_LIGHT_COLOR: "#F2CD49",
             AnchorSettings.ACCENT_VERY_DARK_COLOR: "#7A4E03",
-        }
-
-        self.praat_theme = {
-            AnchorSettings.MAIN_TEXT_COLOR: "#000000",
-            AnchorSettings.SELECTED_TEXT_COLOR: "#FFFFFF",
-            AnchorSettings.ERROR_COLOR: "#DC0806",
-            AnchorSettings.PRIMARY_BASE_COLOR: "#FFFFFF",
-            AnchorSettings.PRIMARY_LIGHT_COLOR: "#0078D7",
-            AnchorSettings.PRIMARY_DARK_COLOR: "#A0A0A0",
-            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: "#F0F0F0",
-            AnchorSettings.PRIMARY_VERY_DARK_COLOR: "#FFFFFF",
-            AnchorSettings.ACCENT_BASE_COLOR: "#000000",
-            AnchorSettings.ACCENT_LIGHT_COLOR: "#FAF205",
-            AnchorSettings.ACCENT_DARK_COLOR: "#000000",
-            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: "#000000",
-            AnchorSettings.ACCENT_VERY_DARK_COLOR: "#000000",
         }
 
         self.default_values = {
@@ -200,6 +209,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TRANSCRIPTION_VISIBLE: False,
             AnchorSettings.ALIGNMENT_VISIBLE: False,
             AnchorSettings.DIARIZATION_VISIBLE: False,
+            AnchorSettings.TIER_MAX_SPEAKERS: 2,
             AnchorSettings.TIER_NORMALIZED_VISIBLE: False,
             AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE: True,
             AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE: True,
@@ -207,6 +217,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TIER_TRANSCRIPTION_VISIBLE: True,
             AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE: True,
             AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE: True,
+            AnchorSettings.THEME_PRESET: "MFA",
         }
         self.default_values.update(self.mfa_theme)
         self.border_radius = 5
@@ -306,30 +317,106 @@ class AnchorSettings(QtCore.QSettings):
         font.setPointSize(int(3 * font.pointSize()))
         return font
 
-    def set_mfa_theme(self):
-        for k, v in self.mfa_theme.items():
+    def set_theme(self, theme):
+        for k, v in theme.items():
             self.setValue(k, v)
+        self.sync()
+        self.themeUpdated.emit()
 
-    def set_praat_theme(self):
-        for k, v in self.praat_theme.items():
-            self.setValue(k, v)
+    def set_mfa_theme(self):
+        self.set_theme(self.mfa_theme)
 
     @property
-    def plot_theme(self):
-        return {
-            "background_color": self.value(AnchorSettings.PRIMARY_VERY_DARK_COLOR),
-            "play_line_color": self.value(AnchorSettings.ERROR_COLOR),
-            "selected_range_color": self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
-            "selected_interval_color": self.value(AnchorSettings.PRIMARY_BASE_COLOR),
-            "hover_line_color": self.value(AnchorSettings.PRIMARY_VERY_LIGHT_COLOR),
-            "moving_line_color": self.value(AnchorSettings.ERROR_COLOR),
-            "break_line_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
-            "wave_line_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            "text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            "selected_text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
-            "axis_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
-            "interval_background_color": self.value(AnchorSettings.PRIMARY_DARK_COLOR),
-        }
+    def theme_preset(self):
+        return self.value(AnchorSettings.THEME_PRESET)
+
+    @property
+    def plot_theme(self) -> PlotTheme:
+        if self.theme_preset == "Native":
+            dark_mode = (
+                QtGui.QGuiApplication.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+            )
+            palette = QtGui.QGuiApplication.palette()
+            interval_background_color = palette.color(
+                palette.ColorGroup.Active, palette.ColorRole.Mid
+            )
+            if dark_mode:
+                background_color = palette.color(
+                    palette.ColorGroup.Active, palette.ColorRole.Shadow
+                )
+                spectrogram_color = palette.color(
+                    palette.ColorGroup.Active, palette.ColorRole.BrightText
+                )
+            else:
+                background_color = palette.color(palette.ColorGroup.Active, palette.ColorRole.Base)
+                spectrogram_color = palette.color(
+                    palette.ColorGroup.Active, palette.ColorRole.Shadow
+                )
+            return PlotTheme(
+                **{
+                    "background_color": background_color,
+                    "error_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Accent
+                    ),
+                    "error_text_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Dark
+                    ),
+                    "play_line_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Accent
+                    ),
+                    "selected_range_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Highlight
+                    ),
+                    "selected_interval_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Highlight
+                    ),
+                    "hover_line_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Accent
+                    ),
+                    "moving_line_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Accent
+                    ),
+                    "break_line_color": palette.color(
+                        palette.ColorGroup.Inactive, palette.ColorRole.ButtonText
+                    ),
+                    "wave_line_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.WindowText
+                    ),
+                    "text_color": palette.color(palette.ColorGroup.Active, palette.ColorRole.Text),
+                    "selected_text_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.HighlightedText
+                    ),
+                    "axis_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Accent
+                    ),
+                    "interval_background_color": interval_background_color,
+                    "pitch_color": palette.color(
+                        palette.ColorGroup.Active, palette.ColorRole.Highlight
+                    ),
+                    "spectrogram_color": spectrogram_color,
+                }
+            )
+
+        return PlotTheme(
+            **{
+                "background_color": self.value(AnchorSettings.PRIMARY_VERY_DARK_COLOR),
+                "error_color": self.value(AnchorSettings.ERROR_COLOR),
+                "error_text_color": self.value(AnchorSettings.PRIMARY_VERY_DARK_COLOR),
+                "play_line_color": self.value(AnchorSettings.ERROR_COLOR),
+                "selected_range_color": self.value(self.ERROR_COLOR),
+                "selected_interval_color": self.value(AnchorSettings.PRIMARY_BASE_COLOR),
+                "hover_line_color": self.value(self.ERROR_COLOR),
+                "moving_line_color": self.value(AnchorSettings.ERROR_COLOR),
+                "break_line_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
+                "wave_line_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+                "text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+                "selected_text_color": self.value(AnchorSettings.MAIN_TEXT_COLOR),
+                "axis_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
+                "interval_background_color": self.value(AnchorSettings.PRIMARY_DARK_COLOR),
+                "pitch_color": self.value(AnchorSettings.PRIMARY_LIGHT_COLOR),
+                "spectrogram_color": self.value(AnchorSettings.ACCENT_LIGHT_COLOR),
+            }
+        )
 
     @property
     def error_color(self) -> QtGui.QColor:
@@ -384,14 +471,34 @@ class AnchorSettings(QtCore.QSettings):
         return self.value(AnchorSettings.ACCENT_VERY_DARK_COLOR)
 
     @property
+    def current_theme(self):
+        return {
+            AnchorSettings.MAIN_TEXT_COLOR: self.text_color,
+            AnchorSettings.SELECTED_TEXT_COLOR: self.selected_text_color,
+            AnchorSettings.ERROR_COLOR: self.error_color,
+            AnchorSettings.PRIMARY_BASE_COLOR: self.primary_base_color,
+            AnchorSettings.PRIMARY_LIGHT_COLOR: self.primary_light_color,
+            AnchorSettings.PRIMARY_DARK_COLOR: self.primary_dark_color,
+            AnchorSettings.PRIMARY_VERY_LIGHT_COLOR: self.primary_very_light_color,
+            AnchorSettings.PRIMARY_VERY_DARK_COLOR: self.primary_very_dark_color,
+            AnchorSettings.ACCENT_BASE_COLOR: self.accent_base_color,
+            AnchorSettings.ACCENT_LIGHT_COLOR: self.accent_light_color,
+            AnchorSettings.ACCENT_DARK_COLOR: self.accent_dark_color,
+            AnchorSettings.ACCENT_VERY_LIGHT_COLOR: self.accent_very_light_color,
+            AnchorSettings.ACCENT_VERY_DARK_COLOR: self.accent_very_dark_color,
+        }
+
+    @property
     def keyboard_style_sheet(self) -> str:
+        if self.theme_preset == "Native":
+            return ""
+        scroll_bar_style = self.scroll_bar_style_sheet
         border_color = self.accent_base_color.name()
         background_color = self.primary_light_color.name()
 
         enabled_color = self.primary_very_dark_color.name()
         enabled_background_color = self.accent_base_color.name()
         enabled_border_color = self.primary_very_dark_color.name()
-        scroll_bar_style = self.scroll_bar_style_sheet
         return f"""
         QWidget{{
             font-family: {self.font.family()};
@@ -421,6 +528,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def search_box_style_sheet(self) -> str:
+        if self.theme_preset == "Native":
+            return ""
         line_edit_color = self.primary_very_dark_color.name()
         error_color = self.error_color.name()
         return f"""
@@ -445,6 +554,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def combo_box_style_sheet(self) -> str:
+        if self.theme_preset == "Native":
+            return ""
         enabled_color = self.primary_very_dark_color.name()
         enabled_background_color = self.accent_base_color.name()
 
@@ -464,14 +575,16 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def interval_style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
+        scroll_bar_height = 10
+        scroll_bar_border_radius = int(scroll_bar_height / 2) - 2
         text_edit_color = self.text_color.name()
 
         scroll_bar_background_color = self.primary_dark_color.name()
         scroll_bar_handle_color = self.accent_light_color.name()
         scroll_bar_border_color = self.primary_dark_color.name()
         border_color = self.primary_light_color.name()
-        scroll_bar_height = 10
-        scroll_bar_border_radius = int(scroll_bar_height / 2) - 2
 
         return f"""
         QTextEdit {{
@@ -494,20 +607,14 @@ class AnchorSettings(QtCore.QSettings):
             margin-bottom: {scroll_bar_height}px;
         }}
         QScrollBar:up-arrow:vertical {{
-            image: url(:caret-up.svg);
+            image: url(:/icons/anchor_dark/actions/caret-up.svg);
             height: {scroll_bar_height}px;
             width: {scroll_bar_height}px;
-        }}
-        QScrollBar:up-arrow:vertical:pressed {{
-            image: url(:checked/caret-up.svg);
         }}
         QScrollBar:down-arrow:vertical {{
-            image: url(:caret-down.svg);
+            image: url(:/icons/anchor_dark/actions/caret-down.svg);
             height: {scroll_bar_height}px;
             width: {scroll_bar_height}px;
-        }}
-        QScrollBar:down-arrow:vertical:pressed {{
-            image: url(:checked/caret-down.svg);
         }}
         QScrollBar::handle:vertical {{
             background: {scroll_bar_handle_color};
@@ -537,6 +644,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
         background_color = self.primary_base_color.name()
 
         selection_color = self.primary_light_color.name()
@@ -615,8 +724,8 @@ class AnchorSettings(QtCore.QSettings):
         QDockWidget {{
             background-color: {active_background_color};
             color: {active_color};
-            titlebar-close-icon: url(:checked/times.svg);
-            titlebar-normal-icon: url(:checked/external-link.svg);
+            titlebar-close-icon: url(:/icons/anchor_dark/actions/process-stop.svg);
+            titlebar-normal-icon: url(:/icons/anchor_dark/actions/folder-open.svg);
         }}
         QDockWidget::title {{
             text-align: center;
@@ -663,7 +772,7 @@ class AnchorSettings(QtCore.QSettings):
             border: {self.border_width}px solid {enabled_border_color};
         }}
         QCheckBox::indicator:checked {{
-            image: url(:check.svg);
+            image: url(:/icons/anchor_dark/actions/check.svg);
         }}
         QTextEdit{{
             color: {text_edit_color};
@@ -719,26 +828,12 @@ class AnchorSettings(QtCore.QSettings):
             border-radius: 0px;
         }}
         QTabBar QToolButton::right-arrow  {{
-            image: url(:caret-right.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QTabBar QToolButton::right-arrow :pressed {{
-            image: url(:checked/caret-right.svg);
-        }}
-        QTabBar QToolButton::right-arrow :disabled {{
-            image: url(:disabled/caret-right.svg);
         }}
         QTabBar QToolButton::left-arrow  {{
-            image: url(:caret-left.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QTabBar QToolButton::left-arrow:pressed {{
-            image: url(:checked/caret-left.svg);
-        }}
-        QTabBar QToolButton::left-arrow:disabled {{
-            image: url(:disabled/caret-left.svg);
         }}
         QTabBar::tab-bar {{
             color: {menu_text_color};
@@ -884,13 +979,13 @@ class AnchorSettings(QtCore.QSettings):
             alternate-background-color: {table_even_color};
             selection-background-color: {selection_color};
             border-image: none;
-            image: url(:chevron-right.svg);
+            image: url(:/icons/anchor_light/actions/chevron-right.svg);
         }}
         QTreeView::branch:has-children:!closed{{
             alternate-background-color: {table_even_color};
             selection-background-color: {selection_color};
             border-image: none;
-            image: url(:chevron-down.svg);
+            image: url(:/icons/anchor_light/actions/chevron-down.svg);
         }}
         QScrollArea {{
             border: 4px solid {enabled_color};
@@ -899,12 +994,12 @@ class AnchorSettings(QtCore.QSettings):
         QHeaderView::up-arrow {{
             subcontrol-origin: padding;
             subcontrol-position: center right;
-            image: url(:hover/sort-up.svg);
+            image: url(:/icons/anchor_dark/actions/sort-up.svg);
             height: {self.sort_indicator_size}px;
             width: {self.sort_indicator_size}px;
         }}
         QHeaderView::down-arrow {{
-            image: url(:hover/sort-down.svg);
+            image: url(:/icons/anchor_dark/actions/sort-down.svg);
             subcontrol-origin: padding;
             subcontrol-position: center right;
             height: {self.sort_indicator_size}px;
@@ -934,6 +1029,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def tool_tip_style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
         background_color = self.accent_base_color.name()
         text_color = self.primary_very_dark_color.name()
         return f"""
@@ -945,6 +1042,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def menu_style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
         menu_background_color = self.accent_base_color.name()
         menu_text_color = self.primary_very_dark_color.name()
         disabled_text_color = self.primary_dark_color.name()
@@ -976,6 +1075,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def completer_style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
         menu_background_color = self.accent_base_color.name()
         menu_text_color = self.primary_very_dark_color.name()
         disabled_text_color = self.primary_dark_color.name()
@@ -1023,21 +1124,15 @@ class AnchorSettings(QtCore.QSettings):
         }}
 
         QScrollBar:up-arrow:vertical {{
-            image: url(:caret-up.svg);
+            image: url(:/icons/anchor_light/actions/caret-up.svg);
             height: {scroll_bar_height}px;
             width: {scroll_bar_height}px;
-        }}
-        QScrollBar:up-arrow:vertical:pressed {{
-            image: url(:checked/caret-up.svg);
         }}
 
         QScrollBar:down-arrow:vertical {{
-            image: url(:caret-down.svg);
+            image: url(:/icons/anchor_light/actions/caret-down.svg);
             height: {scroll_bar_height}px;
             width: {scroll_bar_height}px;
-        }}
-        QScrollBar:down-arrow:vertical:pressed {{
-            image: url(:checked/caret-down.svg);
         }}
 
         QScrollBar::handle:vertical {{
@@ -1070,6 +1165,8 @@ class AnchorSettings(QtCore.QSettings):
 
     @property
     def scroll_bar_style_sheet(self):
+        if self.theme_preset == "Native":
+            return ""
         scroll_bar_background_color = self.primary_dark_color.name()
         scroll_bar_handle_color = self.accent_light_color.name()
         scroll_bar_border_color = self.primary_dark_color.name()
@@ -1103,39 +1200,27 @@ class AnchorSettings(QtCore.QSettings):
         }}
 
         QScrollBar:left-arrow:horizontal {{
-            image: url(:caret-left.svg);
+            image: url(:/icons/anchor_dark/actions/media-seek-backward.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QScrollBar:left-arrow:horizontal:pressed {{
-            image: url(:checked/caret-left.svg);
         }}
 
         QScrollBar:right-arrow:horizontal {{
-            image: url(:caret-right.svg);
+            image: url(:/icons/anchor_dark/actions/media-seek-forward.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QScrollBar:right-arrow:horizontal:pressed {{
-            image: url(:checked/caret-right.svg);
         }}
 
         QScrollBar:up-arrow:vertical {{
-            image: url(:caret-up.svg);
+            image: url(:/icons/anchor_dark/actions/caret-up.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QScrollBar:up-arrow:vertical:pressed {{
-            image: url(:checked/caret-up.svg);
         }}
 
         QScrollBar:down-arrow:vertical {{
-            image: url(:caret-down.svg);
+            image: url(:/icons/anchor_dark/actions/caret-down.svg);
             height: {self.scroll_bar_height}px;
             width: {self.scroll_bar_height}px;
-        }}
-        QScrollBar:down-arrow:vertical:pressed {{
-            image: url(:checked/caret-down.svg);
         }}
 
         QScrollBar::handle:horizontal {{

@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'error_dialog.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.3.1
+## Created by: Qt User Interface Compiler version 6.2.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -54,7 +54,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import anchor.resources_rc
 from anchor.widgets import ErrorButtonBox
 
 
@@ -63,11 +62,6 @@ class Ui_ErrorDialog(object):
         if not ErrorDialog.objectName():
             ErrorDialog.setObjectName("ErrorDialog")
         ErrorDialog.resize(400, 300)
-        icon = QIcon()
-        icon.addFile(
-            ":/disabled/exclamation-triangle.svg", QSize(), QIcon.Mode.Normal, QIcon.State.Off
-        )
-        ErrorDialog.setWindowIcon(icon)
         ErrorDialog.setModal(True)
         self.verticalLayout = QVBoxLayout(ErrorDialog)
         self.verticalLayout.setObjectName("verticalLayout")
@@ -75,14 +69,19 @@ class Ui_ErrorDialog(object):
         self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName("horizontalLayout_2")
-        self.label = QLabel(ErrorDialog)
-        self.label.setObjectName("label")
-        self.label.setMaximumSize(QSize(75, 75))
-        self.label.setPixmap(QPixmap(":/checked/bug.svg"))
-        self.label.setScaledContents(True)
-        self.label.setMargin(15)
+        self.iconLabel = QLabel(ErrorDialog)
+        self.iconLabel.setObjectName("iconLabel")
+        sizePolicy = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.iconLabel.sizePolicy().hasHeightForWidth())
+        self.iconLabel.setSizePolicy(sizePolicy)
+        self.iconLabel.setMinimumSize(QSize(75, 75))
+        self.iconLabel.setMaximumSize(QSize(75, 75))
+        self.iconLabel.setScaledContents(True)
+        self.iconLabel.setMargin(15)
 
-        self.horizontalLayout_2.addWidget(self.label)
+        self.horizontalLayout_2.addWidget(self.iconLabel)
 
         self.line = QFrame(ErrorDialog)
         self.line.setObjectName("line")
@@ -123,7 +122,7 @@ class Ui_ErrorDialog(object):
         ErrorDialog.setWindowTitle(
             QCoreApplication.translate("ErrorDialog", "Error encountered", None)
         )
-        self.label.setText("")
+        self.iconLabel.setText("")
         self.label_2.setText(
             QCoreApplication.translate(
                 "ErrorDialog",

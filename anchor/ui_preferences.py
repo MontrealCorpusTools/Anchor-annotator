@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'preferences.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.3.1
+## Created by: Qt User Interface Compiler version 6.2.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -82,10 +82,8 @@ class Ui_PreferencesDialog(object):
         self.scrollArea_3.setWidgetResizable(True)
         self.scrollAreaWidgetContents_3 = QWidget()
         self.scrollAreaWidgetContents_3.setObjectName("scrollAreaWidgetContents_3")
-        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 682, 353))
-        self.verticalLayout_9 = QVBoxLayout(self.scrollAreaWidgetContents_3)
-        self.verticalLayout_9.setObjectName("verticalLayout_9")
-        self.formLayout = QFormLayout()
+        self.scrollAreaWidgetContents_3.setGeometry(QRect(0, 0, 258, 322))
+        self.formLayout = QFormLayout(self.scrollAreaWidgetContents_3)
         self.formLayout.setObjectName("formLayout")
         self.autosaveLabel = QLabel(self.scrollAreaWidgetContents_3)
         self.autosaveLabel.setObjectName("autosaveLabel")
@@ -117,80 +115,93 @@ class Ui_PreferencesDialog(object):
 
         self.formLayout.setWidget(2, QFormLayout.FieldRole, self.audioDeviceEdit)
 
-        self.useMpLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.useMpLabel.setObjectName("useMpLabel")
+        self.fadeInLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.fadeInLabel.setObjectName("fadeInLabel")
 
-        self.formLayout.setWidget(4, QFormLayout.LabelRole, self.useMpLabel)
-
-        self.useMpCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.useMpCheckBox.setObjectName("useMpCheckBox")
-
-        self.formLayout.setWidget(4, QFormLayout.FieldRole, self.useMpCheckBox)
-
-        self.useCudaLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.useCudaLabel.setObjectName("useCudaLabel")
-
-        self.formLayout.setWidget(5, QFormLayout.LabelRole, self.useCudaLabel)
-
-        self.cudaCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
-        self.cudaCheckBox.setObjectName("cudaCheckBox")
-
-        self.formLayout.setWidget(5, QFormLayout.FieldRole, self.cudaCheckBox)
-
-        self.numJobsLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.numJobsLabel.setObjectName("numJobsLabel")
-
-        self.formLayout.setWidget(6, QFormLayout.LabelRole, self.numJobsLabel)
-
-        self.numJobsEdit = QSpinBox(self.scrollAreaWidgetContents_3)
-        self.numJobsEdit.setObjectName("numJobsEdit")
-
-        self.formLayout.setWidget(6, QFormLayout.FieldRole, self.numJobsEdit)
-
-        self.githubTokenLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.githubTokenLabel.setObjectName("githubTokenLabel")
-
-        self.formLayout.setWidget(7, QFormLayout.LabelRole, self.githubTokenLabel)
-
-        self.githubTokenEdit = QLineEdit(self.scrollAreaWidgetContents_3)
-        self.githubTokenEdit.setObjectName("githubTokenEdit")
-
-        self.formLayout.setWidget(7, QFormLayout.FieldRole, self.githubTokenEdit)
-
-        self.resultsPerPageLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.resultsPerPageLabel.setObjectName("resultsPerPageLabel")
-
-        self.formLayout.setWidget(8, QFormLayout.LabelRole, self.resultsPerPageLabel)
-
-        self.resultsPerPageEdit = QSpinBox(self.scrollAreaWidgetContents_3)
-        self.resultsPerPageEdit.setObjectName("resultsPerPageEdit")
-        self.resultsPerPageEdit.setMaximum(1000)
-
-        self.formLayout.setWidget(8, QFormLayout.FieldRole, self.resultsPerPageEdit)
-
-        self.timeDirectionLabel = QLabel(self.scrollAreaWidgetContents_3)
-        self.timeDirectionLabel.setObjectName("timeDirectionLabel")
-
-        self.formLayout.setWidget(9, QFormLayout.LabelRole, self.timeDirectionLabel)
-
-        self.timeDirectionComboBox = QComboBox(self.scrollAreaWidgetContents_3)
-        self.timeDirectionComboBox.addItem("")
-        self.timeDirectionComboBox.addItem("")
-        self.timeDirectionComboBox.setObjectName("timeDirectionComboBox")
-
-        self.formLayout.setWidget(9, QFormLayout.FieldRole, self.timeDirectionComboBox)
+        self.formLayout.setWidget(3, QFormLayout.LabelRole, self.fadeInLabel)
 
         self.enableFadeCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
         self.enableFadeCheckBox.setObjectName("enableFadeCheckBox")
 
         self.formLayout.setWidget(3, QFormLayout.FieldRole, self.enableFadeCheckBox)
 
-        self.label_25 = QLabel(self.scrollAreaWidgetContents_3)
-        self.label_25.setObjectName("label_25")
+        self.useCudaLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.useCudaLabel.setObjectName("useCudaLabel")
 
-        self.formLayout.setWidget(3, QFormLayout.LabelRole, self.label_25)
+        self.formLayout.setWidget(5, QFormLayout.LabelRole, self.useCudaLabel)
 
-        self.verticalLayout_9.addLayout(self.formLayout)
+        self.numJobsLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.numJobsLabel.setObjectName("numJobsLabel")
+
+        self.formLayout.setWidget(7, QFormLayout.LabelRole, self.numJobsLabel)
+
+        self.numJobsEdit = QSpinBox(self.scrollAreaWidgetContents_3)
+        self.numJobsEdit.setObjectName("numJobsEdit")
+
+        self.formLayout.setWidget(7, QFormLayout.FieldRole, self.numJobsEdit)
+
+        self.githubTokenLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.githubTokenLabel.setObjectName("githubTokenLabel")
+
+        self.formLayout.setWidget(8, QFormLayout.LabelRole, self.githubTokenLabel)
+
+        self.githubTokenEdit = QLineEdit(self.scrollAreaWidgetContents_3)
+        self.githubTokenEdit.setObjectName("githubTokenEdit")
+
+        self.formLayout.setWidget(8, QFormLayout.FieldRole, self.githubTokenEdit)
+
+        self.resultsPerPageLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.resultsPerPageLabel.setObjectName("resultsPerPageLabel")
+
+        self.formLayout.setWidget(10, QFormLayout.LabelRole, self.resultsPerPageLabel)
+
+        self.resultsPerPageEdit = QSpinBox(self.scrollAreaWidgetContents_3)
+        self.resultsPerPageEdit.setObjectName("resultsPerPageEdit")
+        self.resultsPerPageEdit.setMaximum(1000)
+
+        self.formLayout.setWidget(10, QFormLayout.FieldRole, self.resultsPerPageEdit)
+
+        self.timeDirectionLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.timeDirectionLabel.setObjectName("timeDirectionLabel")
+
+        self.formLayout.setWidget(12, QFormLayout.LabelRole, self.timeDirectionLabel)
+
+        self.timeDirectionComboBox = QComboBox(self.scrollAreaWidgetContents_3)
+        self.timeDirectionComboBox.addItem("")
+        self.timeDirectionComboBox.addItem("")
+        self.timeDirectionComboBox.setObjectName("timeDirectionComboBox")
+
+        self.formLayout.setWidget(12, QFormLayout.FieldRole, self.timeDirectionComboBox)
+
+        self.visibleSpeakerLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.visibleSpeakerLabel.setObjectName("visibleSpeakerLabel")
+
+        self.formLayout.setWidget(13, QFormLayout.LabelRole, self.visibleSpeakerLabel)
+
+        self.visibleSpeakerComboBox = QComboBox(self.scrollAreaWidgetContents_3)
+        self.visibleSpeakerComboBox.addItem("")
+        self.visibleSpeakerComboBox.addItem("")
+        self.visibleSpeakerComboBox.addItem("")
+        self.visibleSpeakerComboBox.addItem("")
+        self.visibleSpeakerComboBox.addItem("")
+        self.visibleSpeakerComboBox.setObjectName("visibleSpeakerComboBox")
+
+        self.formLayout.setWidget(13, QFormLayout.FieldRole, self.visibleSpeakerComboBox)
+
+        self.cudaCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.cudaCheckBox.setObjectName("cudaCheckBox")
+
+        self.formLayout.setWidget(5, QFormLayout.FieldRole, self.cudaCheckBox)
+
+        self.useMpCheckBox = QCheckBox(self.scrollAreaWidgetContents_3)
+        self.useMpCheckBox.setObjectName("useMpCheckBox")
+
+        self.formLayout.setWidget(6, QFormLayout.FieldRole, self.useMpCheckBox)
+
+        self.useMpLabel = QLabel(self.scrollAreaWidgetContents_3)
+        self.useMpLabel.setObjectName("useMpLabel")
+
+        self.formLayout.setWidget(6, QFormLayout.LabelRole, self.useMpLabel)
 
         self.scrollArea_3.setWidget(self.scrollAreaWidgetContents_3)
 
@@ -425,7 +436,7 @@ class Ui_PreferencesDialog(object):
         self.scrollArea_2.setWidgetResizable(True)
         self.scrollAreaWidgetContents_2 = QWidget()
         self.scrollAreaWidgetContents_2.setObjectName("scrollAreaWidgetContents_2")
-        self.scrollAreaWidgetContents_2.setGeometry(QRect(0, 0, 668, 410))
+        self.scrollAreaWidgetContents_2.setGeometry(QRect(0, 0, 173, 410))
         self.verticalLayout_7 = QVBoxLayout(self.scrollAreaWidgetContents_2)
         self.verticalLayout_7.setObjectName("verticalLayout_7")
         self.formLayout_2 = QFormLayout()
@@ -576,7 +587,7 @@ class Ui_PreferencesDialog(object):
         self.scrollArea_4.setWidgetResizable(True)
         self.scrollAreaWidgetContents_4 = QWidget()
         self.scrollAreaWidgetContents_4.setObjectName("scrollAreaWidgetContents_4")
-        self.scrollAreaWidgetContents_4.setGeometry(QRect(0, 0, 682, 353))
+        self.scrollAreaWidgetContents_4.setGeometry(QRect(0, 0, 231, 228))
         self.verticalLayout_11 = QVBoxLayout(self.scrollAreaWidgetContents_4)
         self.verticalLayout_11.setObjectName("verticalLayout_11")
         self.formLayout_6 = QFormLayout()
@@ -673,7 +684,7 @@ class Ui_PreferencesDialog(object):
         self.scrollArea_5.setWidgetResizable(True)
         self.scrollAreaWidgetContents_5 = QWidget()
         self.scrollAreaWidgetContents_5.setObjectName("scrollAreaWidgetContents_5")
-        self.scrollAreaWidgetContents_5.setGeometry(QRect(0, 0, 682, 353))
+        self.scrollAreaWidgetContents_5.setGeometry(QRect(0, 0, 223, 250))
         self.verticalLayout_13 = QVBoxLayout(self.scrollAreaWidgetContents_5)
         self.verticalLayout_13.setObjectName("verticalLayout_13")
         self.formLayout_7 = QFormLayout()
@@ -785,7 +796,8 @@ class Ui_PreferencesDialog(object):
         self.buttonBox.accepted.connect(PreferencesDialog.accept)
         self.buttonBox.rejected.connect(PreferencesDialog.reject)
 
-        self.tabWidget.setCurrentIndex(3)
+        self.tabWidget.setCurrentIndex(1)
+        self.visibleSpeakerComboBox.setCurrentIndex(1)
 
         QMetaObject.connectSlotsByName(PreferencesDialog)
 
@@ -804,16 +816,15 @@ class Ui_PreferencesDialog(object):
         self.audioDeviceLabel.setText(
             QCoreApplication.translate("PreferencesDialog", "Audio device", None)
         )
-        self.useMpLabel.setText(
-            QCoreApplication.translate("PreferencesDialog", "Use multiprocessing?", None)
+        self.fadeInLabel.setText(
+            QCoreApplication.translate("PreferencesDialog", "Fade in audio on play", None)
         )
-        self.useMpCheckBox.setText("")
+        self.enableFadeCheckBox.setText("")
         self.useCudaLabel.setText(
             QCoreApplication.translate("PreferencesDialog", "Use CUDA", None)
         )
-        self.cudaCheckBox.setText("")
         self.numJobsLabel.setText(
-            QCoreApplication.translate("PreferencesDialog", "Number of processors to use", None)
+            QCoreApplication.translate("PreferencesDialog", "Number of MFA jobs", None)
         )
         self.githubTokenLabel.setText(
             QCoreApplication.translate("PreferencesDialog", "Github request token", None)
@@ -831,9 +842,29 @@ class Ui_PreferencesDialog(object):
             1, QCoreApplication.translate("PreferencesDialog", "Right-to-left", None)
         )
 
-        self.enableFadeCheckBox.setText("")
-        self.label_25.setText(
-            QCoreApplication.translate("PreferencesDialog", "Fade in audio on play", None)
+        self.visibleSpeakerLabel.setText(
+            QCoreApplication.translate("PreferencesDialog", "Maximum visible speakers", None)
+        )
+        self.visibleSpeakerComboBox.setItemText(
+            0, QCoreApplication.translate("PreferencesDialog", "1", None)
+        )
+        self.visibleSpeakerComboBox.setItemText(
+            1, QCoreApplication.translate("PreferencesDialog", "2", None)
+        )
+        self.visibleSpeakerComboBox.setItemText(
+            2, QCoreApplication.translate("PreferencesDialog", "3", None)
+        )
+        self.visibleSpeakerComboBox.setItemText(
+            3, QCoreApplication.translate("PreferencesDialog", "4", None)
+        )
+        self.visibleSpeakerComboBox.setItemText(
+            4, QCoreApplication.translate("PreferencesDialog", "5", None)
+        )
+
+        self.cudaCheckBox.setText("")
+        self.useMpCheckBox.setText("")
+        self.useMpLabel.setText(
+            QCoreApplication.translate("PreferencesDialog", "Use multiprocessing?", None)
         )
         self.tabWidget.setTabText(
             self.tabWidget.indexOf(self.generalTab),
@@ -844,7 +875,7 @@ class Ui_PreferencesDialog(object):
             0, QCoreApplication.translate("PreferencesDialog", "MFA", None)
         )
         self.presetThemeEdit.setItemText(
-            1, QCoreApplication.translate("PreferencesDialog", "Praat-like", None)
+            1, QCoreApplication.translate("PreferencesDialog", "Native", None)
         )
         self.presetThemeEdit.setItemText(
             2, QCoreApplication.translate("PreferencesDialog", "Custom", None)

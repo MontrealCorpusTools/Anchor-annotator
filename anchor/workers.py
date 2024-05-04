@@ -3071,7 +3071,11 @@ class WaveformWorker(FunctionWorker):  # pragma: no cover
     def run(self):
         self.stopped.clear()
         with self.lock:
-            y, _ = soundfile.read(self.file_path)
+            try:
+                y, _ = soundfile.read(self.file_path)
+            except soundfile.LibsndfileError:
+                logger.warning(f"Could not read {self.file_path}")
+                y = None
             if self.stopped.is_set():
                 return
             self.signals.result.emit((y, self.file_path))
@@ -3351,6 +3355,9 @@ class DownloadWorker(FunctionWorker):  # pragma: no cover
 class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
     def __init__(self, *args):
         super().__init__("Importing corpus", *args)
+        self.corpus_path = None
+        self.dictionary_path = None
+        self.reset = None
 
     def stop(self):
         if hasattr(self, "corpus") and self.corpus is not None:
@@ -3365,6 +3372,25 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
         config.CLEAN = self.reset
         corpus_name = os.path.basename(self.corpus_path)
         dataset_type = inspect_database(corpus_name)
+        if (
+            dataset_type is DatasetType.ACOUSTIC_CORPUS_WITH_DICTIONARY
+            and self.dictionary_path is None
+        ):
+            string = f"postgresql+psycopg2://@/{corpus_name}?host={config.database_socket()}"
+            try:
+                engine = sqlalchemy.create_engine(
+                    string,
+                    poolclass=sqlalchemy.NullPool,
+                    pool_reset_on_return=None,
+                    isolation_level="AUTOCOMMIT",
+                    logging_name="inspect_dataset_engine",
+                ).execution_options(logging_token="inspect_dataset_engine")
+                with sqlalchemy.orm.Session(engine) as session:
+                    dictionary = session.query(Dictionary.path).first()
+                    if dictionary is not None:
+                        self.dictionary_path = dictionary[0]
+            except (sqlalchemy.exc.OperationalError, sqlalchemy.exc.ProgrammingError):
+                pass
         try:
             if dataset_type is DatasetType.NONE:
                 if self.dictionary_path and os.path.exists(self.dictionary_path):

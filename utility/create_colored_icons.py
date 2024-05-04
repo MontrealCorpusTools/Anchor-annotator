@@ -2,7 +2,7 @@ import os
 from xml.dom import minidom
 
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-icon_folder = os.path.join(root_dir, "anchor", "resources")
+icon_folder = os.path.join(root_dir, "icons")
 
 base_folder = os.path.join(icon_folder, "base_tool_buttons")
 checked_folder = os.path.join(icon_folder, "checked_tool_buttons")

@@ -673,7 +673,6 @@ class UpdateUtteranceSpeakerCommand(FileCommand):
         self.corpus_model.change_speaker_table_utterances(self.utterances)
         self.file_model.change_speaker_table_utterances(self.utterances)
         self.corpus_model.changeCommandFired.emit()
-        self.corpus_model.update_data()
         self.corpus_model.runFunction.emit(
             "Recalculating speaker ivectors",
             self.finish_recalculate,

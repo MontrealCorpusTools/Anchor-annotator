@@ -505,7 +505,13 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         normalized_text = ""
         speaker_id = None
         channel = None
+        prev_index = None
         for old_utt in sorted(utterances, key=lambda x: x.begin):
+            index = self.reversed_indices[old_utt.id]
+            if prev_index is not None:
+                if index - prev_index != 1:
+                    return
+            prev_index = index
             if speaker_id is None:
                 speaker_id = old_utt.speaker_id
             if channel is None:
@@ -567,7 +573,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
     channelChanged = QtCore.Signal()
     resetView = QtCore.Signal()
     viewChanged = QtCore.Signal(object, object)
-    selectionAudioChanged = QtCore.Signal()
+    selectionAudioChanged = QtCore.Signal(object)
     currentUtteranceChanged = QtCore.Signal()
     speakerRequested = QtCore.Signal(object)
 
@@ -606,6 +612,9 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.model().utterancesReady.connect(self.finalize_set_new_file)
         self.viewChanged.connect(self.load_audio_selection)
         self.model().selectionRequested.connect(self.update_selected_utterances)
+        self.view_change_timer = QtCore.QTimer()
+        self.view_change_timer.setInterval(50)
+        self.view_change_timer.timeout.connect(self.send_selection_update)
 
     def selected_utterances(self):
         utts = []
@@ -728,22 +737,21 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.waveformReady.emit()
 
     def select_audio(self, begin, end):
-        if end is not None and end - begin < 0.025:
+        if end is not None and end - begin < 0.05:
             end = None
         self.selected_min_time = begin
         self.selected_max_time = end
         if self.selected_min_time != self.min_time:
-            self.selectionAudioChanged.emit()
+            self.selectionAudioChanged.emit(False)
 
-    def request_start_time(self, start_time):
+    def request_start_time(self, start_time, update=False):
         if start_time >= self.max_time:
             return
         if start_time < self.min_time:
             return
         self.selected_min_time = start_time
         self.selected_max_time = None
-        if self.selected_min_time != self.min_time:
-            self.selectionAudioChanged.emit()
+        self.selectionAudioChanged.emit(update)
 
     def set_current_channel(self, channel):
         if channel == self.selected_channel:
@@ -813,23 +821,27 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
 
     def zoom_to_selection(self):
         if self.selected_min_time is not None and self.selected_max_time is not None:
-            self.set_view_times(self.selected_min_time, self.selected_max_time)
+            begin = self.selected_min_time
+            end = self.selected_max_time
+        elif len(self.selectedRows(0)) > 0:
+            m = self.model()
+            begin = 100000
+            end = 0
+            for index in self.selectedRows(0):
+                u = m.utterances[index.row()]
+                if u.begin < begin:
+                    begin = u.begin
+                if u.end > end:
+                    end = u.end
+        else:
+            return
+        self.set_view_times(begin, end)
 
     def update_from_slider(self, value):
         if not self.max_time:
             return
         cur_window = self.max_time - self.min_time
         self.set_view_times(value, value + cur_window)
-
-    def update_selection_audio(self, begin, end):
-        if begin < self.min_time:
-            begin = self.min_time
-        if end > self.max_time:
-            end = self.max_time
-        self.selected_min_time = begin
-        self.selected_max_time = end
-        if self.selected_min_time != self.min_time:
-            self.selectionAudioChanged.emit()
 
     def visible_utterances(self) -> typing.List[Utterance]:
         file_utts = []
@@ -866,6 +878,10 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             and not self.min_time <= self.selected_max_time <= self.max_time
         ):
             self.selected_max_time = None
+        self.view_change_timer.start()
+
+    def send_selection_update(self):
+        self.view_change_timer.stop()
         self.viewChanged.emit(self.min_time, self.max_time)
 
     def set_current_file(self, file_id, begin, end, utterance_id, speaker_id, force_update=False):
@@ -971,7 +987,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         self.currentRowChanged.connect(self.switch_utterance)
         # self.selectionChanged.connect(self.update_selection_audio)
         # self.selectionChanged.connect(self.update_selection_audio)
-        self.model().newResults.connect(self.check_selection)
+        # self.model().newResults.connect(self.check_selection)
         self.model().unlockCorpus.connect(self.fileChanged.emit)
 
     def set_current_utterance(self, utterance_id):
