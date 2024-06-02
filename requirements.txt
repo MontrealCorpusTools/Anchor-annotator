@@ -4,7 +4,6 @@ pyside6
 librosa
 numba
 numpy
-resampy
 joblib
 sqlalchemy
 pysoundfile

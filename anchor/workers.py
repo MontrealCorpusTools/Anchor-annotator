@@ -3386,7 +3386,9 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                     logging_name="inspect_dataset_engine",
                 ).execution_options(logging_token="inspect_dataset_engine")
                 with sqlalchemy.orm.Session(engine) as session:
-                    dictionary = session.query(Dictionary.path).first()
+                    dictionary = (
+                        session.query(Dictionary.path).filter(Dictionary.path != "").first()
+                    )
                     if dictionary is not None:
                         self.dictionary_path = dictionary[0]
             except (sqlalchemy.exc.OperationalError, sqlalchemy.exc.ProgrammingError):

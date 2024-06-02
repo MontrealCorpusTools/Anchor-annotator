@@ -909,7 +909,7 @@ class AnchorSettings(QtCore.QSettings):
         }}
         QToolButton:checked  {{
             color: {active_color};
-            background-color: {active_background_color};
+            background-color: {hover_background_color};
             border-color: {active_border_color};
         }}
         QPushButton:disabled, QToolButton:disabled {{

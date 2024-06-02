@@ -123,6 +123,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.media_player = MediaPlayer(self)
         self.media_player.playbackStateChanged.connect(self.handleAudioState)
         self.media_player.audioReady.connect(self.file_loaded)
+        self.media_player.playingChanged.connect(self.update_play_button)
         self.media_player.timeChanged.connect(
             self.ui.utteranceDetailWidget.plot_widget.audio_plot.update_play_line
         )
@@ -345,14 +346,11 @@ class MainWindow(QtWidgets.QMainWindow):
             session.commit()
 
     def file_loaded(self, ready):
-        if ready:
-            self.ui.playAct.setEnabled(ready)
-            self.ui.muteAct.setEnabled(ready)
-        else:
-            self.ui.playAct.setEnabled(False)
-            self.ui.playAct.setChecked(False)
-            self.ui.muteAct.setChecked(False)
-            self.ui.muteAct.setEnabled(False)
+        self.ui.playAct.setEnabled(ready)
+        self.ui.muteAct.setEnabled(ready)
+
+    def update_play_button(self, playing):
+        self.ui.playAct.setChecked(playing)
 
     def corpus_changed(self, clean):
         if clean:

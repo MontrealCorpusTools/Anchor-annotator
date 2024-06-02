@@ -9,6 +9,9 @@
         <file alias="anchor-yellow.svg">resources/logos/anchor-yellow.svg</file>
         <file alias="splash_screen.svg">resources/logos/splash_screen.svg</file>
         <file alias="spinning_blue.svg">resources/icons/custom_icons/spinning_blue.svg</file>
+        <file alias="icons/edit-regex-checked.svg">resources/icons/custom_icons/regex-checked.svg</file>
+        <file alias="icons/edit-case-checked.svg">resources/icons/custom_icons/case-checked.svg</file>
+        <file alias="icons/edit-word-checked.svg">resources/icons/custom_icons/word-checked.svg</file>
 
         <file alias="icons/anchor_light/index.theme">resources/icons/anchor_light/index.theme</file>
         <file alias="icons/anchor_light/actions/edit-clear.svg">resources/icons/anchor_light/actions/times-circle-solid.svg</file>

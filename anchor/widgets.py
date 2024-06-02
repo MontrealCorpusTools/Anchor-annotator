@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import typing
 from typing import TYPE_CHECKING, Optional
 
@@ -93,13 +94,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.fade_in_anim.setEasingCurve(QtCore.QEasingCurve.Type.Linear)
         self.fade_in_anim.setKeyValueAt(0.1, 0.1)
 
-        self.fade_out_anim = QtCore.QPropertyAnimation(self._audio_output, b"volume")
-        self.fade_out_anim.setDuration(5)
-        self.fade_out_anim.setStartValue(self._audio_output.volume())
-        self.fade_out_anim.setEndValue(0)
-        self.fade_out_anim.setEasingCurve(QtCore.QEasingCurve.Type.Linear)
-        self.fade_out_anim.setKeyValueAt(0.1, self._audio_output.volume())
-        self.fade_out_anim.finished.connect(super().pause)
         self.file_path = None
         self.set_volume(self.settings.value(self.settings.VOLUME))
 
@@ -112,6 +106,12 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
 
     def play(self) -> None:
         if self.startTime() is None:
+            return
+        if self.mediaStatus() not in {
+            QtMultimedia.QMediaPlayer.MediaStatus.BufferedMedia,
+            QtMultimedia.QMediaPlayer.MediaStatus.LoadedMedia,
+            QtMultimedia.QMediaPlayer.MediaStatus.EndOfMedia,
+        }:
             return
         fade_in = self.settings.value(self.settings.ENABLE_FADE)
         if fade_in:
@@ -167,7 +167,7 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         if selection_model is None:
             return
         self.selection_model = selection_model
-        self.selection_model.fileChanged.connect(self.loadNewFile)
+        self.selection_model.fileChanged.connect(self.load_new_file)
         self.selection_model.viewChanged.connect(self.update_times)
         self.selection_model.selectionAudioChanged.connect(self.update_selection_times)
 
@@ -175,24 +175,23 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.settings.setValue(self.settings.VOLUME, volume)
         if self.audioOutput() is None:
             return
-        linearVolume = QtMultimedia.QtAudio.convertVolume(
+        linearVolume = QtMultimedia.QAudio.convertVolume(
             volume / 100.0,
-            QtMultimedia.QtAudio.VolumeScale.LogarithmicVolumeScale,
-            QtMultimedia.QtAudio.VolumeScale.LinearVolumeScale,
+            QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
+            QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
         )
         self.audioOutput().setVolume(linearVolume)
         self.fade_in_anim.setEndValue(linearVolume)
-        self.fade_out_anim.setStartValue(linearVolume)
 
     def volume(self) -> int:
         if self.audioOutput() is None:
             return 100
         volume = self.audioOutput().volume()
         volume = int(
-            QtMultimedia.QtAudio.convertVolume(
+            QtMultimedia.QAudio.convertVolume(
                 volume,
-                QtMultimedia.QtAudio.VolumeScale.LinearVolumeScale,
-                QtMultimedia.QtAudio.VolumeScale.LogarithmicVolumeScale,
+                QtMultimedia.QAudio.VolumeScale.LinearVolumeScale,
+                QtMultimedia.QAudio.VolumeScale.LogarithmicVolumeScale,
             )
             * 100
         )
@@ -211,9 +210,13 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             self.stop()
             self.setCurrentTime(self.startTime())
 
-    def loadNewFile(self, *args):
-        self.audioReady.emit(False)
-        self.stop()
+    def load_new_file(self, *args):
+        if self.playbackState() in {
+            QtMultimedia.QMediaPlayer.PlaybackState.PlayingState,
+            QtMultimedia.QMediaPlayer.PlaybackState.PausedState,
+        }:
+            self.stop()
+            time.sleep(0.1)
         try:
             new_file = self.selection_model.model().file.sound_file.sound_file_path
         except Exception:
@@ -227,8 +230,6 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
             self.setSource(QtCore.QUrl())
             return
         self.setSource(f"file:///{new_file}")
-        self.setPosition(0)
-        self.audioReady.emit(True)
 
     def currentTime(self):
         pos = self.position()
@@ -1063,21 +1064,72 @@ class SearchBox(ClearableField):
 
     def __init__(self, *args):
         super().__init__(*args)
+        settings = AnchorSettings()
         self.returnPressed.connect(self.activate)
         self.setObjectName("search_box")
 
         self.clear_action.triggered.connect(self.returnPressed.emit)
 
-        regex_icon = QtGui.QIcon.fromTheme("edit-regex")
+        regex_icon = QtGui.QIcon()
+        word_icon = QtGui.QIcon()
+        case_icon = QtGui.QIcon()
+        if (
+            settings.theme_preset == "Native"
+            and QtGui.QGuiApplication.styleHints().colorScheme() == QtCore.Qt.ColorScheme.Dark
+        ):
+            regex_icon.addFile(
+                ":icons/anchor_dark/actions/edit-regex.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+            word_icon.addFile(
+                ":icons/anchor_dark/actions/edit-word.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+            case_icon.addFile(
+                ":icons/anchor_dark/actions/edit-case.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+        else:
+            regex_icon.addFile(
+                ":icons/anchor_light/actions/edit-regex.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+            word_icon.addFile(
+                ":icons/anchor_light/actions/edit-word.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+            case_icon.addFile(
+                ":icons/anchor_light/actions/edit-case.svg",
+                mode=QtGui.QIcon.Mode.Normal,
+                state=QtGui.QIcon.State.Off,
+            )
+        regex_icon.addFile(
+            ":icons/edit-regex-checked.svg",
+            mode=QtGui.QIcon.Mode.Normal,
+            state=QtGui.QIcon.State.On,
+        )
+        word_icon.addFile(
+            ":icons/edit-word-checked.svg",
+            mode=QtGui.QIcon.Mode.Normal,
+            state=QtGui.QIcon.State.On,
+        )
+        case_icon.addFile(
+            ":icons/edit-case-checked.svg",
+            mode=QtGui.QIcon.Mode.Normal,
+            state=QtGui.QIcon.State.On,
+        )
 
         self.regex_action = QtGui.QAction(icon=regex_icon, parent=self)
         self.regex_action.setCheckable(True)
 
-        word_icon = QtGui.QIcon.fromTheme("edit-word")
         self.word_action = QtGui.QAction(icon=word_icon, parent=self)
         self.word_action.setCheckable(True)
 
-        case_icon = QtGui.QIcon.fromTheme("edit-case")
         self.case_action = QtGui.QAction(icon=case_icon, parent=self)
         self.case_action.setCheckable(True)
 
@@ -2205,8 +2257,7 @@ class SpeakerTableView(AnchorTableView):
             | QtWidgets.QAbstractItemView.EditTrigger.DoubleClicked
         )
         self.speaker_model: SpeakerModel = None
-        self.view_delegate = ButtonDelegate(":magnifying-glass.svg", self)
-        self.delete_delegate = ButtonDelegate(":expand.svg", self)
+        self.view_delegate = ButtonDelegate("edit-find", self)
         self.edit_delegate = EditableDelegate(self)
         self.speaker_delegate = SpeakerViewDelegate(self)
         self.setItemDelegateForColumn(1, self.speaker_delegate)
@@ -2500,7 +2551,7 @@ class ButtonDelegate(QtWidgets.QStyledItemDelegate):
         options = QtWidgets.QStyleOptionViewItem(option)
         options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
         self.initStyleOption(options, index)
-        icon = QtGui.QIcon(self.icon_path)
+        icon = QtGui.QIcon.fromTheme(self.icon_path)
         icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
 
         painter.restore()
