@@ -1328,8 +1328,6 @@ class TextAttributeRegion(pg.GraphicsObject):
         self.picture = QtGui.QPicture()
         self.mouseHovering = False
         self.selected = False
-        self.background_brush = self.parentItem().background_brush
-        self.selected_brush = self.parentItem().selected_brush
         self.currentBrush = self.parentItem().currentBrush
         self.text.setPos((self.begin + self.end) / 2, self.top_point - (self.height / 2))
         self.begin_line = pg.InfiniteLine()
@@ -1344,10 +1342,7 @@ class TextAttributeRegion(pg.GraphicsObject):
         self._generate_picture()
 
     def setSelected(self, selected):
-        if selected:
-            new_brush = self.selected_brush
-        else:
-            new_brush = self.background_brush
+        new_brush = self.parentItem().currentBrush
         if new_brush != self.currentBrush:
             self.currentBrush = new_brush
             self._generate_picture()
@@ -1996,7 +1991,7 @@ class UtteranceRegion(MfaRegion):
                     interval_reg.audioSelected.connect(self.setSelected)
                 elif "phone_intervals" in lookup:
                     color = None
-                    if interval.confidence is not None:
+                    if interval.confidence is not None and max_confidence != min_confidence:
                         normalized_confidence = (interval.confidence - min_confidence) / (
                             max_confidence - min_confidence
                         )
@@ -2063,7 +2058,10 @@ class UtteranceRegion(MfaRegion):
 
     def setSelected(self, selected: bool):
         if selected:
-            self.text_edit.setFocus()
+            if not self.selected:
+                self.text_edit.setFocus()
+            else:
+                self.text_edit.clearFocus()
         super().setSelected(selected)
 
     def change_editing(self, editable: bool):

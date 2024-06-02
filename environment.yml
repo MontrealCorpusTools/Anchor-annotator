@@ -8,6 +8,8 @@ dependencies:
   - montreal-forced-aligner
   - kalpy =*=cpu*
   - pyside6
+  - qt6-main
+  - qt6-multimedia
   - pyqtgraph
   - pytorch
   - torchaudio

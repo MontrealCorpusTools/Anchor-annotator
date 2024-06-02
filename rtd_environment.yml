@@ -5,10 +5,11 @@ dependencies:
   - sphinx
   - montreal-forced-aligner
   - pyside6
+  - qt6-main
+  - qt6-multimedia
   - pyqtgraph
   - myst-parser
   - numpydoc
-  - resampy
   - librosa
   - pydata-sphinx-theme
   - sphinx-design
