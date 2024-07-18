@@ -116,6 +116,8 @@ class AnchorSettings(QtCore.QSettings):
     CLUSTERING_DISTANCE_THRESHOLD = "anchor/clustering/distance_threshold"
     CLUSTERING_METRIC = "anchor/clustering/metric"
 
+    PLOT_THREAD_COUNT = "anchor/plot/max_thread_count"
+
     PITCH_MAX_TIME = "anchor/pitch/max_time"
     PITCH_MIN_F0 = "anchor/pitch/min_f0"
     PITCH_MAX_F0 = "anchor/pitch/max_f0"
@@ -218,6 +220,7 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE: True,
             AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE: True,
             AnchorSettings.THEME_PRESET: "MFA",
+            AnchorSettings.PLOT_THREAD_COUNT: 10,
         }
         self.default_values.update(self.mfa_theme)
         self.border_radius = 5
@@ -264,9 +267,10 @@ class AnchorSettings(QtCore.QSettings):
                 super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
             )
         elif "color" in arg__1:
-            value = QtGui.QColor(
-                super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
-            )
+            value = super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
+            if value is None:
+                value = self.default_values[arg__1]
+            value = QtGui.QColor(value)
         elif "keybind" in arg__1:
             value = QtGui.QKeySequence(
                 super(AnchorSettings, self).value(arg__1, self.default_values[arg__1])
@@ -319,6 +323,8 @@ class AnchorSettings(QtCore.QSettings):
 
     def set_theme(self, theme):
         for k, v in theme.items():
+            if v is None:
+                continue
             self.setValue(k, v)
         self.sync()
         self.themeUpdated.emit()

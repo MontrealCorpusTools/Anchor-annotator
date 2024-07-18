@@ -404,8 +404,14 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Diarizing utterances":
             worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
-        elif function == "Counting diarization results":
+        elif function == "Diarizing speakers":
+            worker = workers.SpeakerUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == "Counting utterance diarization results":
             worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
+        elif function == "Counting speaker diarization results":
+            worker = workers.SpeakerUtterancesWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Merging speakers":
             self.set_application_state("loading")
@@ -718,7 +724,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         for worker in self.workers:
             worker.stopped.set()
-        self.file_selection_model.clean_up_for_close()
         self.file_utterances_model.clean_up_for_close()
         self.settings.setValue(
             AnchorSettings.UTTERANCES_VISIBLE, self.ui.utteranceDockWidget.isVisible()
@@ -762,6 +767,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if not worker.finished():
                 return
         if self.thread_pool.activeThreadCount() > 0:
+            return
+        if self.file_selection_model.thread_pool.activeThreadCount() > 0:
             return
         if self.corpus_model.session is not None:
             self.corpus_model.session = None
@@ -849,8 +856,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.transcriptionWidget.button.setDefaultAction(self.ui.transcribeCorpusAct)
         self.ui.utteranceListWidget.oov_button.setDefaultAction(self.ui.oovsOnlyAct)
         self.ui.alignmentWidget.button.setDefaultAction(self.ui.alignCorpusAct)
+        self.ui.alignmentWidget.verify_button.setDefaultAction(self.ui.verifyTranscriptsAct)
 
         self.ui.alignCorpusAct.triggered.connect(self.begin_alignment)
+        self.ui.verifyTranscriptsAct.triggered.connect(self.begin_verify_transcripts)
         self.ui.diarizationWidget.refresh_ivectors_action.triggered.connect(
             self.begin_refresh_ivectors
         )
@@ -1322,6 +1331,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.corpus_model.has_reference_alignments = True
                 elif w.workflow_type is WorkflowType.transcription:
                     self.corpus_model.has_transcribed_alignments = True
+                elif w.workflow_type is WorkflowType.transcript_verification:
+                    self.corpus_model.has_transcribed_alignments = True
+                    self.corpus_model.has_transcript_verification_alignments = True
                 elif w.workflow_type is WorkflowType.per_speaker_transcription:
                     self.corpus_model.has_per_speaker_transcribed_alignments = True
 
@@ -1404,6 +1416,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.alignment_worker.start()
         self.set_application_state("loading")
         self.ui.loadingScreen.setCorpusName("Performing alignment...")
+
+    def begin_verify_transcripts(self):
+        self.enableMfaActions(False)
+        self.alignment_worker.set_params(
+            self.corpus_model.corpus, self.acoustic_model, self.ui.alignmentWidget.parameters()
+        )
+        self.alignment_worker.start()
+        self.set_application_state("loading")
+        self.ui.loadingScreen.setCorpusName("Verifying transcriptions...")
 
     def begin_refresh_ivectors(self):
         self.enableMfaActions(False)
@@ -1558,6 +1579,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.corpus_model.update_data()
         self.check_actions()
+        self.corpus_model.update_latest_alignment_workflow()
         self.set_application_state("loaded")
 
     def finalize_utterance_alignment(self, utterance_id: int):
@@ -2530,6 +2552,7 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.tabWidget.setCurrentIndex(0)
         # self.setFont(self.settings.font)
         # self.setStyleSheet(self.settings.style_sheet)
+        self.update_preset_theme()
 
     def set_theme(self, theme):
         self.ui.primaryBaseEdit.set_color(theme[self.settings.PRIMARY_BASE_COLOR])

@@ -427,28 +427,26 @@ class UpdateUtteranceTextCommand(FileCommand):
                 "UpdateUtteranceTextCommand", "Update utterance text"
             )
         )
+        self.tokenizer = self.corpus_model.corpus.get_tokenizer(
+            self.corpus_model.corpus.get_dict_id_for_speaker(
+                self.corpus_model.get_speaker_name(self.speaker_id)
+            )
+        )
+
+    def _process_text(self, session, text: str):
+        self.utterance.text = text
+        normalized_text, normalized_character_text, oovs = self.tokenizer(text)
+        self.utterance.normalized_text = normalized_text
+        self.utterance.normalized_character_text = normalized_character_text
+        self.utterance.oovs = " ".join(oovs)
+        self.utterance.ignored = not text
+        session.merge(self.utterance)
 
     def _redo(self, session) -> None:
-        oovs = set()
-        for w in self.new_text.split():
-            if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
-                oovs.add(w)
-        self.utterance.text = self.new_text
-        self.utterance.normalized_text = self.new_text  # FIXME: Update this
-        self.utterance.oovs = " ".join(oovs)
-        self.utterance.ignored = not self.new_text
-        session.merge(self.utterance)
+        self._process_text(session, self.new_text)
 
     def _undo(self, session) -> None:
-        oovs = set()
-        for w in self.new_text.split():
-            if not self.corpus_model.dictionary_model.check_word(w, self.speaker_id):
-                oovs.add(w)
-        self.utterance.text = self.old_text
-        self.utterance.normalized_text = self.old_text  # FIXME: Update this
-        self.utterance.oovs = " ".join(oovs)
-        self.utterance.ignored = not self.old_text
-        session.merge(self.utterance)
+        self._process_text(session, self.old_text)
 
     def id(self) -> int:
         return 1
@@ -767,7 +765,9 @@ class AddPronunciationCommand(DictionaryCommand):
 
     def _redo(self, session) -> None:
         if self.word_id is None:
-            self.word_id = session.query(Word.id).filter(Word.word == self.word).first()[0]
+            q = session.query(Word.id).filter(Word.word == self.word).first()
+            if q is not None:
+                self.word_id = q[0]
             if self.word_id is None:
                 self.word_id = session.query(sqlalchemy.func.max(Word.id)).scalar() + 1
                 word_mapping_id = (
