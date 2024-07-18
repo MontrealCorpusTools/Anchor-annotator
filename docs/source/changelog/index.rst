@@ -6,6 +6,13 @@ Changelog
 
    Alpha releases
 
+0.7.0
+-----
+
+- Refactored thread workers
+- Optimized word and phone interval drawing
+- Added transcript verification button to alignment window
+
 0.5.0
 -----
 

@@ -262,6 +262,8 @@ class Ui_MainWindow(object):
         self.segmentUtteranceAct.setIcon(icon6)
         self.openCorpusManagerAct = QAction(MainWindow)
         self.openCorpusManagerAct.setObjectName("openCorpusManagerAct")
+        self.verifyTranscriptsAct = QAction(MainWindow)
+        self.verifyTranscriptsAct.setObjectName("verifyTranscriptsAct")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -661,6 +663,14 @@ class Ui_MainWindow(object):
         # if QT_CONFIG(tooltip)
         self.openCorpusManagerAct.setToolTip(
             QCoreApplication.translate("MainWindow", "Manage corpora and models", None)
+        )
+        # endif // QT_CONFIG(tooltip)
+        self.verifyTranscriptsAct.setText(
+            QCoreApplication.translate("MainWindow", "Verify transcripts", None)
+        )
+        # if QT_CONFIG(tooltip)
+        self.verifyTranscriptsAct.setToolTip(
+            QCoreApplication.translate("MainWindow", "Verify transcripts", None)
         )
         # endif // QT_CONFIG(tooltip)
         self.menuCorpus.setTitle(QCoreApplication.translate("MainWindow", "Corpus", None))

@@ -847,6 +847,14 @@
     <string>Manage corpora and models</string>
    </property>
   </action>
+  <action name="verifyTranscriptsAct">
+   <property name="text">
+    <string>Verify transcripts</string>
+   </property>
+   <property name="toolTip">
+    <string>Verify transcripts</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>

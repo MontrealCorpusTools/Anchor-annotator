@@ -1160,7 +1160,7 @@ class SearchBox(ClearableField):
     def query(self) -> TextFilterQuery:
         filter = TextFilterQuery(
             super().text(),
-            self.regex_action.isChecked() or self.word_action.isChecked(),
+            self.regex_action.isChecked(),
             self.word_action.isChecked(),
             self.case_action.isChecked(),
         )
@@ -2115,7 +2115,7 @@ class OovTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        # menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.exec_(self.mapToGlobal(location))
 
@@ -2174,7 +2174,7 @@ class DictionaryTableView(AnchorTableView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
-        # menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.addAction(self.add_pronunciation_action)
         menu.addSeparator()
         menu.addAction(self.delete_words_action)
@@ -2950,9 +2950,13 @@ class AlignmentWidget(QtWidgets.QWidget):
     def __init__(self, *args):
         super().__init__(*args)
         self.button = QtWidgets.QToolButton()
-        layout = QtWidgets.QFormLayout()
+        self.verify_button = QtWidgets.QToolButton()
+        form_layout = QtWidgets.QFormLayout()
+        button_layout = QtWidgets.QHBoxLayout()
+        layout = QtWidgets.QVBoxLayout()
         self.acoustic_model_label = QtWidgets.QLabel("Not loaded")
         self.dictionary_label = QtWidgets.QLabel("Not loaded")
+        self.interjection_word_label = QtWidgets.QLabel("Not loaded")
         self.fine_tune_check = QtWidgets.QCheckBox()
         self.beam = QtWidgets.QSpinBox()
         self.beam.setMinimum(6)
@@ -2965,14 +2969,18 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.silence_boost = ThresholdWidget()
         self.silence_boost.setText("1.0")
         self.cutoff_check = QtWidgets.QCheckBox()
-        layout.addRow(QtWidgets.QLabel("Acoustic model"), self.acoustic_model_label)
-        layout.addRow(QtWidgets.QLabel("Dictionary"), self.dictionary_label)
-        layout.addRow(QtWidgets.QLabel("Beam"), self.beam)
-        layout.addRow(QtWidgets.QLabel("Retry beam"), self.retry_beam)
-        layout.addRow(QtWidgets.QLabel("Silence boost factor"), self.silence_boost)
-        layout.addRow(QtWidgets.QLabel("Fine tune"), self.fine_tune_check)
-        layout.addRow(QtWidgets.QLabel("Cutoff modeling"), self.cutoff_check)
-        layout.addWidget(self.button)
+        form_layout.addRow(QtWidgets.QLabel("Acoustic model"), self.acoustic_model_label)
+        form_layout.addRow(QtWidgets.QLabel("Dictionary"), self.dictionary_label)
+        form_layout.addRow(QtWidgets.QLabel("Beam"), self.beam)
+        form_layout.addRow(QtWidgets.QLabel("Retry beam"), self.retry_beam)
+        form_layout.addRow(QtWidgets.QLabel("Silence boost factor"), self.silence_boost)
+        form_layout.addRow(QtWidgets.QLabel("Fine tune"), self.fine_tune_check)
+        form_layout.addRow(QtWidgets.QLabel("Cutoff modeling"), self.cutoff_check)
+        form_layout.addRow(QtWidgets.QLabel("Interjection words"), self.interjection_word_label)
+        layout.addLayout(form_layout)
+        button_layout.addWidget(self.button)
+        button_layout.addWidget(self.verify_button)
+        layout.addLayout(button_layout)
         self.text = QtWidgets.QTextEdit()
         self.text.setReadOnly(True)
         layout.addWidget(self.text)
@@ -2981,6 +2989,10 @@ class AlignmentWidget(QtWidgets.QWidget):
 
     def refresh(self):
         validate_enabled = True
+        num_interjection_words = self.corpus_model.get_interjection_count()
+        self.interjection_word_label.setText(str(num_interjection_words))
+        if self.verify_button.defaultAction() is not None:
+            self.verify_button.defaultAction().setEnabled(num_interjection_words > 0)
         if self.corpus_model.has_dictionary:
             self.dictionary_label.setText(self.corpus_model.corpus.dictionary_model.name)
         else:
@@ -2999,6 +3011,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         self.refresh()
         self.corpus_model.dictionaryChanged.connect(self.refresh)
         self.corpus_model.acousticModelChanged.connect(self.refresh)
+        self.corpus_model.corpusLoaded.connect(self.refresh)
 
     def parameters(self):
         return {
@@ -3279,6 +3292,7 @@ class SpeakerWidget(QtWidgets.QWidget):
                         session.query(Speaker.id).filter(Speaker.name == speaker_id).first()
                     )
                     if actual_speaker_id is None:
+                        self.speaker_model.set_speaker_filter(speaker_id)
                         return
                     self.speaker_dropdown.completions[speaker_id] = actual_speaker_id[0]
                     speaker_id = actual_speaker_id[0]

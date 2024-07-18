@@ -11,6 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
 from Bio import pairwise2
+from line_profiler_pycharm import profile
 from montreal_forced_aligner.data import CtmInterval
 from montreal_forced_aligner.db import Speaker, Utterance
 from montreal_forced_aligner.dictionary.mixins import (
@@ -375,11 +376,12 @@ class AudioPlotItem(pg.PlotItem):
     def __init__(self, top_point, bottom_point):
         super().__init__(axisItems={"bottom": TimeAxis("bottom")})
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
         self.setDefaultPadding(0)
         self.setClipToView(True)
 
-        self.getAxis("bottom").setPen(self.settings.plot_theme.break_line_color)
-        self.getAxis("bottom").setTextPen(self.settings.plot_theme.break_line_color)
+        self.getAxis("bottom").setPen(self.plot_theme.break_line_color)
+        self.getAxis("bottom").setTextPen(self.plot_theme.break_line_color)
         self.getAxis("bottom").setTickFont(self.settings.small_font)
         rect = QtCore.QRectF()
         rect.setTop(top_point)
@@ -467,8 +469,8 @@ class UtteranceView(QtWidgets.QWidget):
         )
         self.audio_layout.centralWidget.layout.setContentsMargins(0, 0, 0, 0)
         self.audio_layout.centralWidget.layout.setSpacing(0)
-        plot_theme = self.settings.plot_theme
-        self.audio_layout.setBackground(plot_theme.background_color)
+        self.plot_theme = self.settings.plot_theme
+        self.audio_layout.setBackground(self.plot_theme.background_color)
         self.audio_plot = AudioPlots(2, 1, 0)
         self.audio_plot_item = AudioPlotItem(2, 0)
         self.audio_plot_item.addItem(self.audio_plot)
@@ -485,7 +487,7 @@ class UtteranceView(QtWidgets.QWidget):
         self.speaker_tier_layout.setAspectLocked(False)
         self.speaker_tier_layout.centralWidget.layout.setContentsMargins(0, 0, 0, 0)
         self.speaker_tier_layout.centralWidget.layout.setSpacing(0)
-        self.speaker_tier_layout.setBackground(plot_theme.background_color)
+        self.speaker_tier_layout.setBackground(self.plot_theme.background_color)
         self.speaker_tiers: dict[SpeakerTier] = {}
         self.speaker_tier_items = {}
         self.search_term = None
@@ -539,15 +541,13 @@ class UtteranceView(QtWidgets.QWidget):
         self.corpus_model.refreshTiers.connect(self.finalize_loading_utterances)
 
     def refresh_theme(self):
-        self.audio_layout.setBackground(self.settings.plot_theme.background_color)
-        self.speaker_tier_layout.setBackground(self.settings.plot_theme.background_color)
+        self.audio_layout.setBackground(self.plot_theme.background_color)
+        self.speaker_tier_layout.setBackground(self.plot_theme.background_color)
         self.audio_plot.wave_form.update_theme()
         self.audio_plot.spectrogram.update_theme()
         self.audio_plot.pitch_track.update_theme()
-        self.audio_plot_item.getAxis("bottom").setPen(self.settings.plot_theme.break_line_color)
-        self.audio_plot_item.getAxis("bottom").setTextPen(
-            self.settings.plot_theme.break_line_color
-        )
+        self.audio_plot_item.getAxis("bottom").setPen(self.plot_theme.break_line_color)
+        self.audio_plot_item.getAxis("bottom").setTextPen(self.plot_theme.break_line_color)
 
     def refresh(self):
         self.finalize_loading_utterances()
@@ -890,17 +890,15 @@ class Menu(QtWidgets.QMenu):
 
 
 class TextEdit(QtWidgets.QTextEdit):
-    lookUpWord = QtCore.Signal(object)
-    createWord = QtCore.Signal(object)
     lostFocus = QtCore.Signal()
+    gainedFocus = QtCore.Signal()
+    menuRequested = QtCore.Signal(object, object)
 
     def __init__(self, dictionary_model, speaker_id, *args):
         super().__init__(*args)
         self.settings = AnchorSettings()
         self.dictionary_model: DictionaryTableModel = dictionary_model
         self.speaker_id = speaker_id
-        self.lookUpWord.connect(self.dictionary_model.lookup_word)
-        self.createWord.connect(self.dictionary_model.add_word)
         self.setCursor(QtCore.Qt.CursorShape.IBeamCursor)
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
 
@@ -925,35 +923,25 @@ class TextEdit(QtWidgets.QTextEdit):
         self.lostFocus.emit()
         return super().focusOutEvent(e)
 
+    def focusInEvent(self, e: QtGui.QFocusEvent) -> None:
+        self.gainedFocus.emit()
+        return super().focusInEvent(e)
+
     def generate_context_menu(self, location):
-        menu = Menu(self)
         cursor = self.cursorForPosition(location)
         cursor.select(QtGui.QTextCursor.SelectionType.WordUnderCursor)
         word = cursor.selectedText()
-        # add extra items to the menu
-        menu.addSeparator()
-        if self.dictionary_model.check_word(word, speaker_id=self.speaker_id):
-            lookUpAction = QtGui.QAction(f'Look up "{word}" in dictionary', self)
-            lookUpAction.triggered.connect(lambda: self.lookUpWord.emit(word))
-            lookUpAction.triggered.connect(menu.hide)
-            menu.addAction(lookUpAction)
-        else:
-            createAction = QtGui.QAction(f'Add pronunciation for "{word}"', self)
-            createAction.triggered.connect(lambda: self.createWord.emit(word))
-            createAction.triggered.connect(menu.hide)
-            menu.addAction(createAction)
-        menu.setStyleSheet(self.settings.menu_style_sheet)
-        # show the menu
-        menu.exec_(self.mapToGlobal(location))
+        self.menuRequested.emit(word, self.mapToGlobal(location))
 
 
 class UtterancePGTextItem(pg.TextItem):
+    @profile
     def __init__(
         self,
         begin: float,
         end: float,
         text: str,
-        selection_model: CorpusSelectionModel,
+        selection_model: FileSelectionModel,
         top_point=None,
         bottom_point=None,
         per_tier_range=None,
@@ -962,6 +950,7 @@ class UtterancePGTextItem(pg.TextItem):
         fill=None,
         dictionary_model: Optional[DictionaryTableModel] = None,
         speaker_id: int = 0,
+        editable: bool = True,
     ):
         self.anchor = pg.Point(anchor)
         self.rotateAxis = None
@@ -974,17 +963,16 @@ class UtterancePGTextItem(pg.TextItem):
         self.dictionary_model = dictionary_model
         self.speaker_id = speaker_id
         pg.GraphicsObject.__init__(self)
+        self.editable = editable
         self.text_edit = TextEdit(dictionary_model, speaker_id)
         self.text_edit.cursorPositionChanged.connect(self.update)
 
-        # self.text_edit.setAutoFillBackground(False)
-        # self.text_edit.viewport().setAutoFillBackground(False)
         self.textItem = QtWidgets.QGraphicsProxyWidget(self)
         self.textItem.setWidget(self.text_edit)
+        self.text_edit.setPlainText(text)
         self._lastTransform = None
         self._lastScene = None
         self._bounds = QtCore.QRectF()
-        self.text_edit.setPlainText(text)
         self.fill = pg.mkBrush(fill)
         self.border = pg.mkPen(border)
         self._cached_pixel_size = None
@@ -994,9 +982,23 @@ class UtterancePGTextItem(pg.TextItem):
         self.per_tier_range = per_tier_range
         self.view_min = self.selection_model.plot_min
         self.view_max = self.selection_model.plot_max
-        self.selection_model.viewChanged.connect(self.update_times)
+        self.selection_model.viewChanged.connect(self.update_view_times)
 
     def update_times(self, begin, end):
+        self.begin = begin
+        self.end = end
+        if self.end <= self.view_min or self.begin >= self.view_max:
+            return
+        self.hide()
+        if (
+            self.view_min <= self.begin < self.view_max
+            or self.view_max >= self.end > self.view_min
+            or (self.begin <= self.view_min and self.end >= self.view_max)
+        ):
+            self.update_pos()
+            self.show()
+
+    def update_view_times(self, begin, end):
         self.view_min = begin
         self.view_max = end
         if self.end <= self.view_min or self.begin >= self.view_max:
@@ -1007,23 +1009,16 @@ class UtterancePGTextItem(pg.TextItem):
             or self.view_max >= self.end > self.view_min
             or (self.begin <= self.view_min and self.end >= self.view_max)
         ):
+            self.update_pos()
             self.show()
 
-    def boundingRect(self):
-        br = QtCore.QRectF(self.viewRect())  # bounds of containing ViewBox mapped to local coords.
-        vb = self.getViewBox()
-        if self.begin is None or self.view_min is None:
-            return br
+    def update_pos(self):
         visible_begin = max(self.begin, self.view_min)
         visible_end = min(self.end, self.view_max)
-
-        br.setLeft(visible_begin)
-        br.setRight(visible_end)
-
-        br.setTop(self.top_point)
-        # br.setBottom(self.top_point-self.per_tier_range)
-        br.setBottom(self.bottom_point)
         duration = visible_end - visible_begin
+        vb = self.getViewBox()
+        if vb is None:
+            return
         self._cached_pixel_size = vb.viewPixelSize()
         x_margin_px = 25
         y_margin_top_px = 25
@@ -1038,6 +1033,20 @@ class UtterancePGTextItem(pg.TextItem):
         self.textItem.setGeometry(0, 0, width, height)
         self.text_edit.setFixedWidth(width)
         self.text_edit.setFixedHeight(height)
+
+    @profile
+    def boundingRect(self):
+        br = QtCore.QRectF()  # bounds of containing ViewBox mapped to local coords.
+        if self._cached_pixel_size is None:
+            self.update_pos()
+        visible_begin = max(self.begin, self.view_min)
+        visible_end = min(self.end, self.view_max)
+
+        br.setLeft(visible_begin)
+        br.setRight(visible_end)
+
+        br.setTop(self.top_point)
+        br.setBottom(self.bottom_point)
         return br
 
 
@@ -1093,9 +1102,10 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
         super().__init__(*args)
         self.alignment = None
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
 
-        self.keyword_color = self.settings.plot_theme.error_color
-        self.keyword_text_color = self.settings.plot_theme.error_text_color
+        self.keyword_color = self.plot_theme.error_color
+        self.keyword_text_color = self.plot_theme.error_text_color
         self.highlight_format = QtGui.QTextCharFormat()
         self.highlight_format.setBackground(self.keyword_color)
         self.highlight_format.setForeground(self.keyword_text_color)
@@ -1114,16 +1124,15 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
             return
         current_align_ind = 0
         for word_object in re.finditer(self.WORDS, text):
-            while self.alignment.seqB[current_align_ind] != word_object.group():
-                current_align_ind += 1
             sb = self.alignment.seqB[current_align_ind]
             sa = self.alignment.seqA[current_align_ind]
-            if sb == word_object.group() and sb != sa:
-                self.setFormat(
-                    word_object.start(),
-                    word_object.end() - word_object.start(),
-                    self.highlight_format,
-                )
+            if sb == word_object.group():
+                if sb != sa:
+                    self.setFormat(
+                        word_object.start(),
+                        word_object.end() - word_object.start(),
+                        self.highlight_format,
+                    )
                 current_align_ind += 1
         if self.search_term:
             if not self.search_term.case_sensitive:
@@ -1133,8 +1142,8 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
                 for i in range(word_object.start(), word_object.end()):
                     f = self.format(i)
                     f.setFontWeight(QtGui.QFont.Weight.Bold)
-                    f.setBackground(QtGui.QColor(self.settings.accent_base_color))
-                    f.setForeground(QtGui.QColor(self.settings.primary_very_dark_color))
+                    f.setBackground(QtGui.QColor(self.plot_theme.break_line_color))
+                    f.setForeground(QtGui.QColor(self.plot_theme.background_color))
                     self.setFormat(i, 1, f)
 
 
@@ -1212,8 +1221,8 @@ class IntervalTextRegion(pg.GraphicsObject):
         self.speaker_id = speaker_id
         super().__init__()
         text = interval.label
-        self.text = TextItem(text, color=color, anchor=(0.5, 0.5))
-        self.text.setParentItem(self)
+        self.text_item = TextItem(text, color=color, anchor=(0.5, 0.5))
+        self.text_item.setParentItem(self)
 
         self.picture = QtGui.QPicture()
         self.interval = interval
@@ -1225,7 +1234,7 @@ class IntervalTextRegion(pg.GraphicsObject):
         self.mouseHovering = False
         self.selected = False
         self.currentBrush = self.background_brush
-        self.text.setPos(
+        self.text_item.setPos(
             (self.interval.begin + self.interval.end) / 2, self.top_point - (self.height / 2)
         )
         self.begin_line = pg.InfiniteLine()
@@ -1271,8 +1280,6 @@ class IntervalTextRegion(pg.GraphicsObject):
 
 
 class TextAttributeRegion(pg.GraphicsObject):
-    audioSelected = QtCore.Signal(object, object)
-
     def __init__(
         self,
         parent,
@@ -1281,16 +1288,19 @@ class TextAttributeRegion(pg.GraphicsObject):
         text: str,
         top_point,
         height,
-        selection_model: CorpusSelectionModel,
-        border=None,
+        selection_model: FileSelectionModel,
         dictionary_model=None,
         speaker_id=None,
+        plot_theme=None,
     ):
         super().__init__()
         self.begin = begin
         self.end = end
         self.text = text
-        self.border = border
+        self.plot_theme = plot_theme
+        self.settings = AnchorSettings()
+        if self.plot_theme is None:
+            self.plot_theme = self.settings.plot_theme
         self.dictionary_model = dictionary_model
         self.speaker_id = speaker_id
         self.selection_model = selection_model
@@ -1301,7 +1311,8 @@ class TextAttributeRegion(pg.GraphicsObject):
         self.height = height
         self.bottom_point = self.top_point - self.height
         self.setParentItem(parent)
-        self.text = UtterancePGTextItem(
+
+        self.text_item = UtterancePGTextItem(
             self.begin,
             self.end,
             self.text,
@@ -1314,8 +1325,8 @@ class TextAttributeRegion(pg.GraphicsObject):
             speaker_id=self.speaker_id,
             border=pg.mkPen(self.parentItem().settings.accent_light_color),
         )
-        self.text.setParentItem(self)
-        self.text_edit = self.text.text_edit
+        self.text_item.setParentItem(self)
+        self.text_edit = self.text_item.text_edit
         self.text_edit.setReadOnly(True)
         self.text_edit.setViewportMargins(
             self.parentItem().text_margin_pixels,
@@ -1325,82 +1336,55 @@ class TextAttributeRegion(pg.GraphicsObject):
         )
         self.text_edit.setStyleSheet(self.parentItem().settings.interval_style_sheet)
 
-        self.picture = QtGui.QPicture()
-        self.mouseHovering = False
         self.selected = False
         self.currentBrush = self.parentItem().currentBrush
-        self.text.setPos((self.begin + self.end) / 2, self.top_point - (self.height / 2))
-        self.begin_line = pg.InfiniteLine()
-        self.rect = QtCore.QRectF(
-            left=self.begin,
-            top=self.top_point,
-            width=self.end - self.begin,
-            height=self.height,
-        )
-        self.rect.setTop(self.top_point)
-        self.rect.setBottom(self.bottom_point)
-        self._generate_picture()
-
-    def setSelected(self, selected):
-        new_brush = self.parentItem().currentBrush
-        if new_brush != self.currentBrush:
-            self.currentBrush = new_brush
-            self._generate_picture()
-
-    def _generate_picture(self):
-        painter = QtGui.QPainter(self.picture)
-        painter.setPen(self.border)
-        painter.setBrush(self.currentBrush)
-        painter.drawRect(self.rect)
-        painter.end()
-
-    def mouseClickEvent(self, ev):
-        if ev.button() != QtCore.Qt.MouseButton.LeftButton:
-            ev.ignore()
-            return
-        self.audioSelected.emit(self.begin, self.end)
-        ev.accept()
+        self.text_item.setPos((self.begin + self.end) / 2, self.top_point - (self.height / 2))
+        self._cached_pixel_size = None
+        self.cached_bounds = None
 
     def boundingRect(self):
-        br = QtCore.QRectF(self.picture.boundingRect())
+        visible_begin = max(self.begin, self.selection_model.plot_min)
+        visible_end = min(self.end, self.selection_model.plot_max)
+        br = QtCore.QRectF(
+            visible_begin,
+            self.bottom_point,
+            visible_end - visible_begin,
+            abs(self.top_point - self.bottom_point),
+        )
         return br
 
-    def paint(self, painter: QtGui.QPainter, *args):
-        painter.drawPicture(0, 0, self.picture)
+    def paint(self, painter, option, widget=...):
+        return
 
 
 class TranscriberTextRegion(TextAttributeRegion):
-    viewRequested = QtCore.Signal(object, object)
-    audioSelected = QtCore.Signal(object, object)
-
+    @profile
     def __init__(
         self,
         parent,
-        begin: float,
-        end: float,
-        text: str,
+        item,
         top_point,
         height,
         selection_model: CorpusSelectionModel,
-        border=None,
         dictionary_model=None,
         speaker_id=None,
         alignment=None,
         search_term=None,
+        plot_theme=None,
     ):
         super().__init__(
             parent,
-            begin,
-            end,
-            text,
+            item.begin,
+            item.end,
+            item.transcription_text,
             top_point,
             height,
             selection_model,
-            border,
             dictionary_model,
             speaker_id,
+            plot_theme,
         )
-
+        self.item = item
         self.highlighter = TranscriberErrorHighlighter(self.text_edit.document())
         if alignment is not None:
             self.highlighter.set_alignment(alignment)
@@ -1409,9 +1393,6 @@ class TranscriberTextRegion(TextAttributeRegion):
 
 
 class NormalizedTextRegion(TextAttributeRegion):
-    viewRequested = QtCore.Signal(object, object)
-    audioSelected = QtCore.Signal(object, object)
-
     def __init__(
         self,
         parent,
@@ -1421,10 +1402,10 @@ class NormalizedTextRegion(TextAttributeRegion):
         top_point,
         height,
         selection_model: CorpusSelectionModel,
-        border=None,
         dictionary_model=None,
         search_term=None,
         speaker_id=None,
+        plot_theme=None,
     ):
         super().__init__(
             parent,
@@ -1434,16 +1415,20 @@ class NormalizedTextRegion(TextAttributeRegion):
             top_point,
             height,
             selection_model,
-            border,
             dictionary_model,
             speaker_id,
+            plot_theme,
         )
 
-        self.highlighter = Highlighter(self.text_edit.document())
+        self.highlighter = Highlighter(self.text_item.text_edit.document())
         self.highlighter.set_models(dictionary_model)
         self.highlighter.set_speaker(speaker_id)
         if search_term:
             self.highlighter.setSearchTerm(search_term)
+
+    def boundingRect(self):
+        br = super().boundingRect()
+        return br
 
 
 class Highlighter(QtGui.QSyntaxHighlighter):
@@ -1537,6 +1522,7 @@ class MfaRegion(pg.LinearRegionItem):
         self.item = item
 
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
 
         self.item_min = self.item.begin
         self.item_max = self.item.end
@@ -1552,13 +1538,13 @@ class MfaRegion(pg.LinearRegionItem):
         self.text_margin_pixels = 2
         self.height = abs(self.top_point - self.bottom_point)
 
-        self.interval_background_color = self.settings.plot_theme.interval_background_color
-        self.hover_line_color = self.settings.plot_theme.hover_line_color
-        self.moving_line_color = self.settings.plot_theme.moving_line_color
+        self.interval_background_color = self.plot_theme.interval_background_color
+        self.hover_line_color = self.plot_theme.hover_line_color
+        self.moving_line_color = self.plot_theme.moving_line_color
 
-        self.break_line_color = self.settings.plot_theme.break_line_color
-        self.text_color = self.settings.plot_theme.text_color
-        self.selected_interval_color = self.settings.plot_theme.selected_interval_color
+        self.break_line_color = self.plot_theme.break_line_color
+        self.text_color = self.plot_theme.text_color
+        self.selected_interval_color = self.plot_theme.selected_interval_color
         self.plot_text_font = self.settings.big_font
         self.setCursor(QtCore.Qt.CursorShape.SizeAllCursor)
         self.pen = pg.mkPen(self.break_line_color, width=3)
@@ -1681,122 +1667,131 @@ class MfaRegion(pg.LinearRegionItem):
         return br
 
 
-class AlignmentRegion(MfaRegion):
-    def __init__(
-        self,
-        phone_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        file_model: FileUtterancesModel,
-        selection_model: CorpusSelectionModel,
-        bottom_point: float = 0,
-        top_point: float = 1,
-    ):
-        super().__init__(
-            phone_interval,
-            corpus_model,
-            file_model,
-            None,
-            selection_model,
-            bottom_point,
-            top_point,
-        )
-        self.original_text = self.item.label
-
-        self.text = pg.TextItem(
-            self.item.label, anchor=(0.5, 0.5), color=self.text_color  # , border=pg.mkColor("r")
-        )
-        self.text.setVisible(False)
-
-        self.text.setFont(self.settings.font)
-        options = QtGui.QTextOption()
-        options.setWrapMode(QtGui.QTextOption.WrapMode.NoWrap)
-        self.text.textItem.document().setDefaultTextOption(options)
-        self.text.setParentItem(self)
-        self.per_tier_range = self.top_point - self.bottom_point
-        self.currentBrush = pg.mkBrush((0, 0, 0, 0))
-        self.selection_model.viewChanged.connect(self.check_visibility)
-        self.check_visibility()
-
-    def setSelected(self, selected: bool):
-        if selected:
-            self.text.setColor(self.settings.plot_theme.selected_text_color)
-        else:
-            self.text.setColor(self.settings.plot_theme.text_color)
-
-    def check_visibility(self):
-        if (self.item_max - self.item_min) / (
-            self.selection_model.max_time - self.selection_model.min_time
-        ) < 0.001:
-            self.hide()
-        else:
-            vb = self.getViewBox()
-            visible_begin = max(self.item_min, self.selection_model.plot_min)
-            visible_end = min(self.item_max, self.selection_model.plot_max)
-            visible_duration = visible_end - visible_begin
-            self.text.setPos(
-                visible_begin + (visible_duration / 2), self.top_point - (self.per_tier_range / 2)
-            )
-            if vb is None:
-                self.text.setVisible(
-                    (visible_end - visible_begin)
-                    / (self.selection_model.max_time - self.selection_model.min_time)
-                    > 0.005
-                )
-            else:
-                pixel_size = vb.viewPixelSize()[0]
-                if pixel_size != 0:
-                    x_margin_px = 8
-                    available_text_width = visible_duration / pixel_size - (2 * x_margin_px)
-
-                    self.text.setVisible(available_text_width > 10)
-            self.show()
-
-
-class PhoneRegion(AlignmentRegion):
-    def __init__(
-        self,
-        phone_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        file_model: FileUtterancesModel,
-        selection_model: CorpusSelectionModel,
-        bottom_point: float = 0,
-        top_point: float = 1,
-        color=None,
-    ):
-        super().__init__(
-            phone_interval, corpus_model, file_model, selection_model, bottom_point, top_point
-        )
-        if color is not None:
-            self.currentBrush = pg.mkBrush(color)
-        self._generate_picture()
-
-
-class WordRegion(AlignmentRegion):
+class IntervalTier(pg.GraphicsObject):
     highlightRequested = QtCore.Signal(object)
 
     def __init__(
         self,
-        word_interval: CtmInterval,
-        corpus_model: CorpusModel,
-        file_model: FileUtterancesModel,
-        selection_model: CorpusSelectionModel,
-        bottom_point: float = 0,
-        top_point: float = 1,
+        parent,
+        utterance: CtmInterval,
+        intervals: typing.List[CtmInterval],
+        selection_model: FileSelectionModel,
+        top_point,
+        bottom_point,
+        word=False,
     ):
-        super().__init__(
-            word_interval, corpus_model, file_model, selection_model, bottom_point, top_point
-        )
-        self._generate_picture()
+        super().__init__()
+        self.setParentItem(parent)
+        self.intervals = intervals
+        self.word = word
+        self.array = pg.Qt.internals.PrimitiveArray(QtCore.QRectF, 4)
+        self.array.resize(len(self.intervals))
+        self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
+        memory = self.array.ndarray()
+        self.anchor = pg.Point((0.5, 0.5))
+        if self.word:
+            self.plot_text_font = self.settings.font
+        else:
+            self.plot_text_font = self.settings.small_font
 
-    def mouseClickEvent(self, ev: QtGui.QMouseEvent):
-        search_term = TextFilterQuery(self.item.label, word=True)
-        self.highlightRequested.emit(search_term)
-        super().mouseClickEvent(ev)
+        fm = QtGui.QFontMetrics(self.plot_text_font)
+        for i, interval in enumerate(intervals):
+            memory[i, 0] = interval.begin
+            memory[i, 2] = interval.end - interval.begin
+            if interval.label not in self.parentItem().painter_path_cache[self.word]:
+                symbol = QtGui.QPainterPath()
+
+                symbol.addText(0, 0, self.plot_text_font, interval.label)
+                br = symbol.boundingRect()
+
+                # getting transform object
+                tr = QtGui.QTransform()
+
+                # translating
+                tr.translate(-br.x() - br.width() / 2.0, fm.height() / 2.0)
+                self.parentItem().painter_path_cache[self.word][interval.label] = tr.map(symbol)
+
+        memory[:, 1] = bottom_point
+        memory[:, 3] = top_point - bottom_point
+        self.top_point = top_point
+        self.bottom_point = bottom_point
+        self.selection_model = selection_model
+        self.utterance = utterance
+
+        self.background_color = self.plot_theme.background_color
+        self.hover_line_color = self.plot_theme.hover_line_color
+        self.moving_line_color = self.plot_theme.moving_line_color
+
+        self.break_line_color = self.plot_theme.break_line_color
+        self.text_color = self.plot_theme.text_color
+        self.selected_interval_color = self.plot_theme.selected_interval_color
+        self.text_pen = pg.mkPen(self.text_color)
+        self.border_pen = pg.mkPen(self.break_line_color, width=1)
+        self.border_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
+
+    def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
+        if e.button() == QtCore.Qt.MouseButton.LeftButton:
+            time = e.pos().x()
+            memory = self.array.ndarray()
+            if memory.shape[0] > 0:
+                index = np.searchsorted(memory[:, 0], time) - 1
+                self.selection_model.select_audio(
+                    self.intervals[index].begin, self.intervals[index].end
+                )
+                if self.word:
+                    self.highlightRequested.emit(
+                        TextFilterQuery(self.intervals[index].label, word=True)
+                    )
+                e.accept()
+                return
+
+        return super().mousePressEvent(e)
+
+    def paint(self, painter, *args):
+        inst = self.array.instances()
+        vb = self.getViewBox()
+        px = vb.viewPixelSize()
+        painter.setPen(self.border_pen)
+        painter.drawRects(inst)
+        total_time = self.selection_model.max_time - self.selection_model.min_time
+        for i, interval in enumerate(self.intervals):
+            r = inst[i]
+            visible_begin = max(r.left(), self.selection_model.plot_min)
+            visible_end = min(r.right(), self.selection_model.plot_max)
+            visible_duration = visible_end - visible_begin
+            if visible_duration / total_time <= 0.0075:
+                continue
+            x = (r.left() + r.right()) / 2
+            painter.save()
+            options = QtGui.QTextOption()
+            options.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            painter.setRenderHint(painter.RenderHint.Antialiasing, True)
+            painter.setPen(self.text_pen)
+            painter.setBrush(self.text_color)
+            painter.translate(x, (self.top_point + self.bottom_point) / 2)
+            path = self.parentItem().painter_path_cache[self.word][interval.label]
+            painter.scale(px[0], -px[1])
+            painter.drawPath(path)
+            painter.restore()
+
+    def boundingRect(self):
+        return QtCore.QRectF(
+            self.utterance.begin,
+            self.bottom_point,
+            self.utterance.end - self.utterance.begin,
+            abs(self.top_point - self.bottom_point),
+        )
 
 
 class UtteranceRegion(MfaRegion):
+    lookUpWord = QtCore.Signal(object)
+    createWord = QtCore.Signal(object)
+
+    @profile
     def __init__(
         self,
+        parent,
         utterance: workers.UtteranceData,
         corpus_model: CorpusModel,
         file_model: FileUtterancesModel,
@@ -1817,6 +1812,8 @@ class UtteranceRegion(MfaRegion):
             bottom_point,
             top_point,
         )
+        self.setParentItem(parent)
+        plot_theme = self.settings.plot_theme
         self.hide()
         self.item = utterance
         self.selection_model = selection_model
@@ -1869,44 +1866,34 @@ class UtteranceRegion(MfaRegion):
 
         self.corpus_model.utteranceTextUpdated.connect(self.update_text_from_model)
         self.original_text = self.item.text
-        self.text = UtterancePGTextItem(
+        self.text_item = NormalizedTextRegion(
+            self,
             self.item.begin,
             self.item.end,
-            self.item.text,
+            self.item.normalized_text,
+            self.top_point,
+            self.per_tier_range,
             self.selection_model,
-            anchor=(0, 0),
-            top_point=self.top_point,
-            bottom_point=self.bottom_point,
-            per_tier_range=self.per_tier_range,
-            dictionary_model=self.dictionary_model,
-            speaker_id=self.item.speaker_id,
-            border=pg.mkPen(self.settings.plot_theme.break_line_color),
+            dictionary_model=dictionary_model,
+            search_term=search_term,
+            speaker_id=utterance.speaker_id,
         )
-        self.text.setParentItem(self)
 
-        self.text_edit = self.text.text_edit
-        if not self.corpus_model.editable:
-            self.text_edit.setReadOnly(True)
+        self.text_edit = self.text_item.text_edit
+        self.text_edit.gainedFocus.connect(self.select_self)
+        self.text_edit.menuRequested.connect(self.generate_text_edit_menu)
+        self.text_edit.setReadOnly(False)
         self.corpus_model.editableChanged.connect(self.change_editing)
-        self.text_edit.setViewportMargins(
-            self.text_margin_pixels,
-            self.text_margin_pixels,
-            self.text_margin_pixels,
-            self.text_margin_pixels,
-        )
-        self.text_edit.setStyleSheet(self.settings.interval_style_sheet)
         self.text_edit.installEventFilter(self)
-        self.highlighter = Highlighter(self.text_edit.document())
-        self.highlighter.set_models(dictionary_model)
-        self.highlighter.set_speaker(self.item.speaker_id)
-        if search_term:
-            self.highlighter.setSearchTerm(search_term)
         self.timer = QtCore.QTimer()
         self.text_edit.textChanged.connect(self.refresh_timer)
         self.text_edit.lostFocus.connect(self.save_changes)
+        self.text_edit.gainedFocus.connect(self.select_self)
+        self.text_edit.menuRequested.connect(self.generate_text_edit_menu)
         self.timer.timeout.connect(self.save_changes)
         self._cached_pixel_size = None
         self.normalized_text = None
+        self.transcription_text = None
         i = -1
         for tier_name, lookup in self.extra_tiers.items():
             if not visible_tiers[tier_name]:
@@ -1924,23 +1911,19 @@ class UtteranceRegion(MfaRegion):
                     tier_top_point,
                     self.per_tier_range,
                     self.selection_model,
-                    border=pg.mkPen(self.settings.plot_theme.break_line_color),
                     dictionary_model=dictionary_model,
                     search_term=search_term,
                     speaker_id=utterance.speaker_id,
                 )
+                self.normalized_text.text_edit.gainedFocus.connect(self.select_self)
+                self.normalized_text.text_edit.menuRequested.connect(self.generate_text_edit_menu)
                 continue
-            alignment = None
-            intervals = getattr(self.item, lookup)
-            if lookup in {"transcription_text", "normalized_text"}:
-                if (
-                    lookup == "transcription_text"
-                    and self.item.text
-                    and self.item.transcription_text
-                ):
+            elif lookup == "transcription_text":
+                alignment = None
+                if self.item.normalized_text and self.item.transcription_text:
                     alignment = pairwise2.align.globalms(
-                        self.item.text.split(),
-                        self.item.transcription_text.split(),
+                        self.item.normalized_text.lower().split(),
+                        self.item.transcription_text.lower().split(),
                         0,
                         -2,
                         -1,
@@ -1948,18 +1931,39 @@ class UtteranceRegion(MfaRegion):
                         gap_char=["-"],
                         one_alignment_only=True,
                     )[0]
+                self.transcription_text = TranscriberTextRegion(
+                    self,
+                    self.item,
+                    tier_top_point,
+                    self.per_tier_range,
+                    self.selection_model,
+                    alignment=alignment,
+                    dictionary_model=dictionary_model,
+                    search_term=search_term,
+                    speaker_id=utterance.speaker_id,
+                    plot_theme=self.plot_theme,
+                )
+                self.transcription_text.setParentItem(self)
+                self.transcription_text.text_edit.gainedFocus.connect(self.select_self)
+                self.transcription_text.text_edit.menuRequested.connect(
+                    self.generate_text_edit_menu
+                )
+                continue
+            intervals = getattr(self.item, lookup)
 
             self.extra_tier_intervals[tier_name] = []
 
             if intervals is None:
                 continue
+            if not isinstance(intervals, list):
+                intervals = [intervals]
             min_confidence = None
             max_confidence = None
             cmap = pg.ColorMap(
                 None,
                 [
-                    self.settings.plot_theme.error_color,
-                    self.settings.plot_theme.interval_background_color,
+                    plot_theme.error_color,
+                    plot_theme.interval_background_color,
                 ],
             )
             cmap.linearize()
@@ -1971,64 +1975,49 @@ class UtteranceRegion(MfaRegion):
                         min_confidence = interval.confidence
                     if max_confidence is None or interval.confidence > max_confidence:
                         max_confidence = interval.confidence
-            for interval in intervals:
-                if lookup == "transcription_text":
-                    interval_reg = TranscriberTextRegion(
-                        self,
-                        self.item.begin,
-                        self.item.end,
-                        self.item.transcription_text,
-                        tier_top_point,
-                        self.per_tier_range,
-                        self.selection_model,
-                        border=pg.mkPen(self.settings.plot_theme.break_line_color),
-                        alignment=alignment,
-                        dictionary_model=dictionary_model,
-                        search_term=search_term,
-                        speaker_id=utterance.speaker_id,
-                    )
-                    interval_reg.setParentItem(self)
-                    interval_reg.audioSelected.connect(self.setSelected)
-                elif "phone_intervals" in lookup:
-                    color = None
-                    if interval.confidence is not None and max_confidence != min_confidence:
-                        normalized_confidence = (interval.confidence - min_confidence) / (
-                            max_confidence - min_confidence
-                        )
-                        color = cmap.map(normalized_confidence)
-                    interval_reg = PhoneRegion(
-                        interval,
-                        self.corpus_model,
-                        self.file_model,
-                        selection_model=selection_model,
-                        top_point=tier_top_point,
-                        bottom_point=tier_bottom_point,
-                        color=color,
-                    )
-                    interval_reg.setParentItem(self)
-                    interval_reg.audioSelected.connect(self.setSelected)
-                elif "word_intervals" in lookup:
-                    interval_reg = WordRegion(
-                        interval,
-                        self.corpus_model,
-                        self.file_model,
-                        selection_model=selection_model,
-                        top_point=tier_top_point,
-                        bottom_point=tier_bottom_point,
-                    )
-                    interval_reg.setParentItem(self)
-                    interval_reg.highlightRequested.connect(self.highlighter.setSearchTerm)
-                    interval_reg.audioSelected.connect(self.setSelected)
+                interval_tier = IntervalTier(
+                    self,
+                    self.item,
+                    intervals,
+                    self.selection_model,
+                    top_point=tier_top_point,
+                    bottom_point=tier_bottom_point,
+                    word=False,
+                )
 
+            elif "word_intervals" in lookup:
+                interval_tier = IntervalTier(
+                    self,
+                    self.item,
+                    intervals,
+                    self.selection_model,
+                    top_point=tier_top_point,
+                    bottom_point=tier_bottom_point,
+                    word=True,
+                )
+                interval_tier.highlightRequested.connect(self.text_item.highlighter.setSearchTerm)
+                if self.transcription_text is not None:
+                    interval_tier.highlightRequested.connect(
+                        self.transcription_text.highlighter.setSearchTerm
+                    )
+                if self.normalized_text is not None:
+                    interval_tier.highlightRequested.connect(
+                        self.normalized_text.highlighter.setSearchTerm
+                    )
+
+            for interval in intervals:
+                if "phone_intervals" in lookup or "word_intervals" in lookup:
+                    continue
                 else:
                     interval_reg = IntervalTextRegion(
                         interval,
                         self.text_color,
-                        border=pg.mkPen(self.settings.plot_theme.break_line_color, width=3),
+                        border=pg.mkPen(plot_theme.break_line_color, width=1),
                         top_point=tier_top_point,
                         height=self.per_tier_range,
                         background_brush=self.background_brush,
                         selected_brush=pg.mkBrush(self.selected_interval_color),
+                        plot_theme=self.plot_theme,
                     )
                     interval_reg.audioSelected.connect(self.setSelected)
                     interval_reg.setParentItem(self)
@@ -2037,8 +2026,22 @@ class UtteranceRegion(MfaRegion):
                 interval_reg.viewRequested.connect(self.viewRequested.emit)
                 self.extra_tier_intervals[tier_name].append(interval_reg)
         self.selection_model.viewChanged.connect(self.update_view_times)
+        self.lookUpWord.connect(self.dictionary_model.lookup_word)
+        self.createWord.connect(self.dictionary_model.add_word)
         self.show()
         self.available_speakers = available_speakers
+
+    @property
+    def painter_path_cache(self):
+        return self.parentItem().painter_path_cache
+
+    def update_edit_fields(self):
+        begin, end = self.getRegion()
+        self.text_item.text_item.update_times(begin, end)
+        if self.normalized_text is not None:
+            self.normalized_text.text_item.update_times(begin, end)
+        if self.transcription_text is not None:
+            self.transcription_text.text_item.update_times(begin, end)
 
     def show(self):
         for intervals in self.extra_tier_intervals.values():
@@ -2055,14 +2058,6 @@ class UtteranceRegion(MfaRegion):
                 else:
                     interval.hide()
         super().show()
-
-    def setSelected(self, selected: bool):
-        if selected:
-            if not self.selected:
-                self.text_edit.setFocus()
-            else:
-                self.text_edit.clearFocus()
-        super().setSelected(selected)
 
     def change_editing(self, editable: bool):
         self.lines[0].movable = editable
@@ -2083,7 +2078,7 @@ class UtteranceRegion(MfaRegion):
         self.movable = False
         self.setAcceptHoverEvents(False)
 
-    def contextMenuEvent(self, ev: QtWidgets.QGraphicsSceneContextMenuEvent):
+    def construct_context_menu(self):
         menu = QtWidgets.QMenu()
         change_speaker_menu = QtWidgets.QMenu("Change speaker")
         a = QtGui.QAction(menu)
@@ -2128,6 +2123,26 @@ class UtteranceRegion(MfaRegion):
         change_speaker_menu.setStyleSheet(self.settings.menu_style_sheet)
         visible_tiers_menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.setStyleSheet(self.settings.menu_style_sheet)
+        return menu
+
+    def generate_text_edit_menu(self, word, location):
+        menu = self.construct_context_menu()
+        menu.addSeparator()
+        if self.dictionary_model.check_word(word, speaker_id=self.item.speaker_id):
+            lookUpAction = QtGui.QAction(f'Look up "{word}" in dictionary', self)
+            lookUpAction.triggered.connect(lambda: self.lookUpWord.emit(word))
+            lookUpAction.triggered.connect(menu.hide)
+            menu.addAction(lookUpAction)
+        else:
+            createAction = QtGui.QAction(f'Add pronunciation for "{word}"', self)
+            createAction.triggered.connect(lambda: self.createWord.emit(word))
+            createAction.triggered.connect(menu.hide)
+            menu.addAction(createAction)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.exec_(location)
+
+    def contextMenuEvent(self, ev: QtWidgets.QGraphicsSceneContextMenuEvent):
+        menu = self.construct_context_menu()
         menu.exec_(ev.screenPos())
 
     def update_tier_visibility(self, checked):
@@ -2280,7 +2295,7 @@ class UtteranceRegion(MfaRegion):
             if utterance_id != self.item.id or new_text == self.original_text:
                 return
         self.original_text = new_text
-        with QtCore.QSignalBlocker(self.text.text_edit):
+        with QtCore.QSignalBlocker(self.text_item.text_edit):
             position = self.text_edit.textCursor().position()
             end_offset = self.text_edit.document().characterCount() - position
             self.text_edit.setPlainText(new_text)
@@ -2330,10 +2345,11 @@ class WaveForm(pg.PlotCurveItem):
 class PitchTrack(pg.PlotCurveItem):
     def __init__(self, bottom_point, top_point):
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
         self.top_point = top_point
         self.bottom_point = bottom_point
         self.mid_point = (self.top_point + self.bottom_point) / 2
-        pen = pg.mkPen(self.settings.plot_theme.pitch_color, width=3)
+        pen = pg.mkPen(self.plot_theme.pitch_color, width=3)
         super().__init__()
         self.setPen(pen)
         self.channel = 0
@@ -2342,24 +2358,24 @@ class PitchTrack(pg.PlotCurveItem):
         self.setAcceptHoverEvents(False)
         self.min_label = pg.TextItem(
             str(self.settings.PITCH_MIN_F0),
-            self.settings.plot_theme.pitch_color,
+            self.plot_theme.pitch_color,
             anchor=(1, 1),
         )
         self.min_label.setFont(self.settings.font)
         self.min_label.setParentItem(self)
         self.max_label = pg.TextItem(
             str(self.settings.PITCH_MAX_F0),
-            self.settings.plot_theme.pitch_color,
+            self.plot_theme.pitch_color,
             anchor=(1, 0),
         )
         self.max_label.setFont(self.settings.font)
         self.max_label.setParentItem(self)
 
     def update_theme(self):
-        pen = pg.mkPen(self.settings.plot_theme.pitch_color, width=3)
+        pen = pg.mkPen(self.plot_theme.pitch_color, width=3)
         self.setPen(pen)
-        self.min_label.setColor(self.settings.plot_theme.pitch_color)
-        self.max_label.setColor(self.settings.plot_theme.pitch_color)
+        self.min_label.setColor(self.plot_theme.pitch_color)
+        self.max_label.setColor(self.plot_theme.pitch_color)
 
     def hoverEvent(self, ev):
         return
@@ -2377,6 +2393,7 @@ class PitchTrack(pg.PlotCurveItem):
 class Spectrogram(pg.ImageItem):
     def __init__(self, bottom_point, top_point):
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
         self.top_point = top_point
         self.bottom_point = bottom_point
         self.selection_model = None
@@ -2385,8 +2402,8 @@ class Spectrogram(pg.ImageItem):
         self.cmap = pg.ColorMap(
             None,
             [
-                self.settings.plot_theme.background_color,
-                self.settings.plot_theme.spectrogram_color,
+                self.plot_theme.background_color,
+                self.plot_theme.spectrogram_color,
             ],
         )
         self.cmap.linearize()
@@ -2402,8 +2419,8 @@ class Spectrogram(pg.ImageItem):
         self.cmap = pg.ColorMap(
             None,
             [
-                self.settings.plot_theme.background_color,
-                self.settings.plot_theme.spectrogram_color,
+                self.plot_theme.background_color,
+                self.plot_theme.spectrogram_color,
             ],
         )
         self.cmap.linearize()
@@ -2485,6 +2502,7 @@ class AudioPlots(pg.GraphicsObject):
     def __init__(self, top_point, separator_point, bottom_point):
         super().__init__()
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
         self.selection_model: typing.Optional[FileSelectionModel] = None
         self.top_point = top_point
         self.separator_point = separator_point
@@ -2495,19 +2513,23 @@ class AudioPlots(pg.GraphicsObject):
         self.wave_form.setParentItem(self)
         self.spectrogram.setParentItem(self)
         self.pitch_track.setParentItem(self)
-        color = self.settings.plot_theme.selected_range_color
+        color = self.plot_theme.selected_range_color
         color.setAlphaF(0.25)
         self.selection_brush = pg.mkBrush(color)
-        self.background_pen = pg.mkPen(self.settings.plot_theme.break_line_color)
-        self.background_brush = pg.mkBrush(self.settings.plot_theme.background_color)
+        self.background_pen = pg.mkPen(self.plot_theme.background_color)
+        self.background_brush = pg.mkBrush(self.plot_theme.background_color)
         self.selection_area = SelectionArea(
             top_point=self.top_point,
             bottom_point=self.bottom_point,
             brush=self.selection_brush,
             clipItem=self,
-            pen=pg.mkPen(self.settings.plot_theme.selected_interval_color),
+            pen=pg.mkPen(self.plot_theme.selected_interval_color),
         )
         self.selection_area.setParentItem(self)
+
+        self.play_timer = QtCore.QTimer()
+        self.play_timer.setInterval(1)
+        self.play_timer.timeout.connect(self.update_play_line)
 
         self.play_line = pg.InfiniteLine(
             pos=-20,
@@ -2521,7 +2543,7 @@ class AudioPlots(pg.GraphicsObject):
             pos=-20,
             span=(0, 1),
             pen=pg.mkPen(
-                self.settings.plot_theme.selected_interval_color,
+                self.plot_theme.selected_interval_color,
                 width=3,
                 style=QtCore.Qt.PenStyle.DashLine,
             ),
@@ -2647,12 +2669,17 @@ class AudioPlots(pg.GraphicsObject):
         br = QtCore.QRectF(self.picture.boundingRect())
         return br
 
-    def update_play_line(self, time):
+    def update_play_line(self, time=None):
         if time is None:
             return
+        self.play_line.setVisible(
+            self.selection_model.min_time <= time <= self.selection_model.max_time
+        )
         self.play_line.setPos(time)
 
     def update_plot(self):
+        self.setVisible(False)
+        self.play_line.setVisible(False)
         if (
             self.selection_model.model().file is None
             or self.selection_model.model().file.sound_file is None
@@ -2662,9 +2689,8 @@ class AudioPlots(pg.GraphicsObject):
         self.rect.setLeft(self.selection_model.plot_min)
         self.rect.setRight(self.selection_model.plot_max)
         self._generate_picture()
-        self.update_play_line(self.selection_model.plot_min)
-        self.selection_area.update_region()
-        self.update()
+        # self.selection_area.update_region()
+        self.setVisible(True)
 
 
 class SpeakerTier(pg.GraphicsObject):
@@ -2690,14 +2716,13 @@ class SpeakerTier(pg.GraphicsObject):
         self.selection_model = selection_model
         self.dictionary_model = dictionary_model
         self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
         self.search_term = search_term
         self.speaker_id = speaker_id
         self.speaker_name = speaker_name
         self.speaker_index = 0
         self.top_point = top_point
-        self.speaker_label = pg.TextItem(
-            self.speaker_name, color=self.settings.plot_theme.break_line_color
-        )
+        self.speaker_label = pg.TextItem(self.speaker_name, color=self.plot_theme.break_line_color)
         self.speaker_label.setFont(self.settings.font)
         self.speaker_label.setParentItem(self)
         self.speaker_label.setZValue(40)
@@ -2705,8 +2730,8 @@ class SpeakerTier(pg.GraphicsObject):
         self.annotation_range = self.top_point - self.bottom_point
         self.extra_tiers = {}
         self.visible_utterances: dict[str, UtteranceRegion] = {}
-        self.background_brush = pg.mkBrush(self.settings.plot_theme.background_color)
-        self.border = pg.mkPen(self.settings.plot_theme.break_line_color)
+        self.background_brush = pg.mkBrush(self.plot_theme.background_color)
+        self.border = pg.mkPen(self.plot_theme.break_line_color)
         self.picture = QtGui.QPicture()
         self.has_visible_utterances = False
         self.has_selected_utterances = False
@@ -2722,6 +2747,7 @@ class SpeakerTier(pg.GraphicsObject):
         self.selection_model.selectionChanged.connect(self.update_select)
         self.selection_model.model().utterancesReady.connect(self.refresh)
         self.available_speakers = {}
+        self.painter_path_cache = {True: {}, False: {}}
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
@@ -2736,6 +2762,10 @@ class SpeakerTier(pg.GraphicsObject):
         p.drawPicture(0, 0, self.picture)
 
     def _generate_picture(self):
+        speaker_name = self.corpus_model.get_speaker_name(self.speaker_id)
+        if speaker_name != self.speaker_name:
+            self.speaker_name = speaker_name
+            self.speaker_label.setText(self.speaker_name)
         self.picture = QtGui.QPicture()
         painter = QtGui.QPainter(self.picture)
         painter.setPen(self.border)
@@ -2760,7 +2790,7 @@ class SpeakerTier(pg.GraphicsObject):
 
     def setSearchTerm(self, term):
         for utt in self.visible_utterances.values():
-            utt.highlighter.setSearchTerm(term)
+            utt.text_item.highlighter.setSearchTerm(term)
 
     def refreshTexts(self, utt_id, text):
         for reg in self.visible_utterances.values():
@@ -2776,6 +2806,7 @@ class SpeakerTier(pg.GraphicsObject):
                 reg.scene().removeItem(reg)
         self.visible_utterances = {}
 
+    @profile
     def refresh(self, *args):
         self.hide()
         if self.selection_model.plot_min is None:
@@ -2820,6 +2851,7 @@ class SpeakerTier(pg.GraphicsObject):
             self.has_visible_utterances = True
             # Utterance region always at the top
             reg = UtteranceRegion(
+                self,
                 u,
                 self.corpus_model,
                 self.file_model,
@@ -2845,7 +2877,6 @@ class SpeakerTier(pg.GraphicsObject):
             reg.viewRequested.connect(self.selection_model.set_view_times)
             reg.textEdited.connect(self.update_utterance_text)
             reg.selectRequested.connect(self.selection_model.update_select)
-            reg.setParentItem(self)
             self.visible_utterances[u.id] = reg
 
         self.show()
@@ -2895,13 +2926,7 @@ class SpeakerTier(pg.GraphicsObject):
                 if other_begin < end <= other_end or end > other_begin > other_end > beg:
                     reg.setRegion([beg, other_begin])
                     break
-            reg.text.begin, reg.text.end = reg.getRegion()
-            reg.text.update_times(self.selection_model.plot_min, self.selection_model.plot_max)
-            if reg.normalized_text is not None:
-                reg.normalized_text.text.begin, reg.normalized_text.text.end = reg.getRegion()
-                reg.normalized_text.text.update_times(
-                    self.selection_model.plot_min, self.selection_model.plot_max
-                )
+            reg.update_edit_fields()
         reg.select_self()
         reg.update()
 
@@ -2916,7 +2941,5 @@ class SpeakerTier(pg.GraphicsObject):
             return
         self.selection_model.model().update_utterance_times(utt, begin=new_begin, end=new_end)
         self.selection_model.request_start_time(new_begin)
-        reg.text.begin = new_begin
-        reg.text.end = new_end
-        reg.update()
+        reg.update_edit_fields()
         self.lineDragFinished.emit(True)

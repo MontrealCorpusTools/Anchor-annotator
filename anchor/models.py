@@ -22,8 +22,8 @@ from montreal_forced_aligner.corpus.acoustic_corpus import (
     AcousticCorpus,
     AcousticCorpusWithPronunciations,
 )
-from montreal_forced_aligner.data import PhoneType, WordType
-from montreal_forced_aligner.db import File, Phone, Speaker, Utterance
+from montreal_forced_aligner.data import PhoneType, WordType, WorkflowType
+from montreal_forced_aligner.db import CorpusWorkflow, File, Phone, Speaker, Utterance, Word
 from montreal_forced_aligner.dictionary.mixins import (
     DEFAULT_CLITIC_MARKERS,
     DEFAULT_COMPOUND_MARKERS,
@@ -97,14 +97,13 @@ class TextFilterQuery:
             if not text.endswith(word_break_set):
                 text += word_break_set
         if posix:
-            text = text.replace(r"\b", word_break_set)
+            text = text.replace(r"\b", r"\y")
             if text.startswith(r"\b"):
                 text = rf"((?<={WORD_BREAK_REGEX_SET})|(?<=^))" + text[2:]
             if text.endswith(r"\b"):
                 text = text[:-2] + rf"((?={WORD_BREAK_REGEX_SET})|(?=$))"
-        if self.regex or self.word:
-            if not self.case_sensitive:
-                text = "(?i)" + text
+        if not self.case_sensitive:
+            text = "(?i)" + text
         return text
 
 
@@ -202,10 +201,10 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.reversed_indices = {}
         self.speaker_channel_mapping = {}
         self.corpus_model: CorpusModel = None
-        self.waveform_worker = workers.WaveformWorker()
-        self.speaker_tier_worker = workers.SpeakerTierWorker()
-        self.speaker_tier_worker.signals.result.connect(self.finalize_loading_utterances)
-        self.waveform_worker.signals.result.connect(self.finalize_loading_wave_form)
+        self.closing = False
+
+        self.thread_pool = QtCore.QThreadPool()
+        self.thread_pool.setMaxThreadCount(4)
 
     def get_utterance(self, utterance_id: int) -> Utterance:
         try:
@@ -217,8 +216,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.corpus_model = corpus_model
 
     def clean_up_for_close(self):
-        self.waveform_worker.stop()
-        self.speaker_tier_worker.stop()
+        self.closing = True
 
     def set_file(self, file_id):
         self.file = (
@@ -226,11 +224,13 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         )
         self.y = None
         self.get_utterances()
-        self.waveform_worker.stop()
-        self.waveform_worker.set_params(self.file.sound_file.sound_file_path)
-        self.waveform_worker.start()
+        waveform_worker = workers.WaveformWorker(self.file.sound_file.sound_file_path)
+        waveform_worker.signals.result.connect(self.finalize_loading_wave_form)
+        self.thread_pool.start(waveform_worker)
 
     def finalize_loading_utterances(self, results):
+        if self.closing:
+            return
         utterances, file_id = results
         if file_id != self.file.id:
             return
@@ -246,6 +246,8 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.utterancesReady.emit()
 
     def finalize_loading_wave_form(self, results):
+        if self.closing:
+            return
         y, file_path = results
         if self.file is None or file_path != self.file.sound_file.sound_file_path:
             return
@@ -264,15 +266,17 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.endRemoveRows()
         if self.file is None:
             return
-        self.speaker_tier_worker.stop()
-        self.speaker_tier_worker.query_alignment = (
-            self.corpus_model.has_alignments
-            or self.corpus_model.has_reference_alignments
-            or self.corpus_model.has_transcribed_alignments
+        speaker_tier_worker = workers.SpeakerTierWorker(
+            self.corpus_model.session,
+            self.file.id,
+            query_alignment=(
+                self.corpus_model.has_alignments
+                or self.corpus_model.has_reference_alignments
+                or self.corpus_model.has_transcribed_alignments
+            ),
         )
-        self.speaker_tier_worker.session = self.corpus_model.session
-        self.speaker_tier_worker.set_params(self.file.id)
-        self.speaker_tier_worker.start()
+        speaker_tier_worker.signals.result.connect(self.finalize_loading_utterances)
+        self.thread_pool.start(speaker_tier_worker)
 
     def create_utterance(self, speaker_id: Optional[int], begin: float, end: float):
         if not self.corpus_model.editable:
@@ -602,18 +606,17 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.waveform_x = None
         self.waveform_y = None
         self.requested_utterance_id = None
-        self.auto_waveform_worker = workers.AutoWaveformWorker()
-        self.spectrogram_worker = workers.SpectrogramWorker()
-        self.pitch_track_worker = workers.PitchWorker()
-        self.auto_waveform_worker.signals.result.connect(self.finalize_loading_auto_wave_form)
-        self.spectrogram_worker.signals.result.connect(self.finalize_loading_spectrogram)
-        self.pitch_track_worker.signals.result.connect(self.finalize_loading_pitch_track)
+        self.closing = False
+
+        self.thread_pool = QtCore.QThreadPool()
+        self.thread_pool.setMaxThreadCount(self.settings.value(self.settings.PLOT_THREAD_COUNT))
         self.model().waveformReady.connect(self.load_audio_selection)
         self.model().utterancesReady.connect(self.finalize_set_new_file)
         self.viewChanged.connect(self.load_audio_selection)
         self.model().selectionRequested.connect(self.update_selected_utterances)
         self.view_change_timer = QtCore.QTimer()
-        self.view_change_timer.setInterval(50)
+        self.view_change_timer.setSingleShot(True)
+        self.view_change_timer.setInterval(10)
         self.view_change_timer.timeout.connect(self.send_selection_update)
 
     def selected_utterances(self):
@@ -633,18 +636,17 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             y = self.model().y[begin_samp:end_samp, self.selected_channel]
         else:
             y = self.model().y[begin_samp:end_samp]
-        self.spectrogram_worker.stop()
-        self.spectrogram_worker.set_params(
+        spectrogram_worker = workers.SpectrogramWorker(
             y,
             self.model().file.sound_file.sample_rate,
             self.min_time,
             self.max_time,
             self.selected_channel,
         )
-        self.spectrogram_worker.start()
+        spectrogram_worker.signals.result.connect(self.finalize_loading_spectrogram)
+        self.thread_pool.start(spectrogram_worker)
 
-        self.pitch_track_worker.stop()
-        self.pitch_track_worker.set_params(
+        pitch_track_worker = workers.PitchWorker(
             y,
             self.model().file.sound_file.sample_rate,
             self.min_time,
@@ -653,10 +655,10 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             self.bottom_point,
             self.separator_point,
         )
-        self.pitch_track_worker.start()
+        pitch_track_worker.signals.result.connect(self.finalize_loading_pitch_track)
+        self.thread_pool.start(pitch_track_worker)
 
-        self.auto_waveform_worker.stop()
-        self.auto_waveform_worker.set_params(
+        auto_waveform_worker = workers.AutoWaveformWorker(
             y,
             self.separator_point,
             self.top_point,
@@ -664,12 +666,11 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             self.max_time,
             self.selected_channel,
         )
-        self.auto_waveform_worker.start()
+        auto_waveform_worker.signals.result.connect(self.finalize_loading_auto_wave_form)
+        self.thread_pool.start(auto_waveform_worker)
 
     def clean_up_for_close(self):
-        self.spectrogram_worker.stop()
-        self.pitch_track_worker.stop()
-        self.auto_waveform_worker.stop()
+        self.closing = True
 
     @property
     def plot_min(self):
@@ -684,6 +685,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         return self.max_time
 
     def finalize_loading_spectrogram(self, results):
+        if self.closing:
+            return
         if results is None:
             self.spectrogram = None
             self.min_db = None
@@ -691,28 +694,28 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             self.spectrogramReady.emit()
             return
         stft, channel, begin, end, min_db, max_db = results
+        if begin != self.min_time or end != self.max_time:
+            return
         if self.settings.right_to_left:
             stft = np.flip(stft, 1)
-            begin, end = -end, -begin
-        if begin != self.plot_min or end != self.plot_max:
-            return
         self.spectrogram = stft
         self.min_db = self.min_db
         self.max_db = self.max_db
         self.spectrogramReady.emit()
 
     def finalize_loading_pitch_track(self, results):
+        if self.closing:
+            return
         if results is None:
             self.pitch_track_y = None
             self.pitch_track_x = None
             self.pitchTrackReady.emit()
             return
         pitch_track, voicing_track, channel, begin, end, min_f0, max_f0 = results
+        if begin != self.min_time or end != self.max_time:
+            return
         if self.settings.right_to_left:
             pitch_track = np.flip(pitch_track, 0)
-            begin, end = -end, -begin
-        if begin != self.plot_min or end != self.plot_max:
-            return
         self.pitch_track_y = pitch_track
         if pitch_track is None:
             return
@@ -725,23 +728,24 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.pitchTrackReady.emit()
 
     def finalize_loading_auto_wave_form(self, results):
+        if self.closing:
+            return
         y, begin, end, channel = results
+        if begin != self.min_time or end != self.max_time:
+            return
         if self.settings.right_to_left:
             y = np.flip(y, 0)
-            begin, end = -end, -begin
-        if begin != self.plot_min or end != self.plot_max:
-            return
         x = np.linspace(start=self.plot_min, stop=self.plot_max, num=y.shape[0])
         self.waveform_x = x
         self.waveform_y = y
         self.waveformReady.emit()
 
     def select_audio(self, begin, end):
-        if end is not None and end - begin < 0.05:
+        if end is not None and end - begin < 0.025:
             end = None
         self.selected_min_time = begin
         self.selected_max_time = end
-        if self.selected_min_time != self.min_time:
+        if self.selected_min_time != self.min_time or end is not None:
             self.selectionAudioChanged.emit(False)
 
     def request_start_time(self, start_time, update=False):
@@ -881,7 +885,6 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.view_change_timer.start()
 
     def send_selection_update(self):
-        self.view_change_timer.stop()
         self.viewChanged.emit(self.min_time, self.max_time)
 
     def set_current_file(self, file_id, begin, end, utterance_id, speaker_id, force_update=False):
@@ -1916,14 +1919,30 @@ class DiarizationModel(TableModel):
         self.runFunction.emit("Reassigning utterances for speaker", self.update_data, [kwargs])
 
     def update_result_count(self):
-        self.runFunction.emit(
-            "Counting diarization results", self.finalize_result_count, [self.count_kwargs]
-        )
+        if self.in_speakers:
+            self.runFunction.emit(
+                "Counting speaker diarization results",
+                self.finalize_result_count,
+                [self.count_kwargs],
+            )
+        else:
+            self.runFunction.emit(
+                "Counting utterance diarization results",
+                self.finalize_result_count,
+                [self.count_kwargs],
+            )
 
     def update_data(self):
         if not self.corpus_model.corpus.has_any_ivectors():
             return
-        self.runFunction.emit("Diarizing utterances", self.finish_update_data, [self.query_kwargs])
+        if self.in_speakers:
+            self.runFunction.emit(
+                "Diarizing speakers", self.finish_update_data, [self.query_kwargs]
+            )
+        else:
+            self.runFunction.emit(
+                "Diarizing utterances", self.finish_update_data, [self.query_kwargs]
+            )
 
 
 class CorpusModel(TableModel):
@@ -2040,6 +2059,31 @@ class CorpusModel(TableModel):
         self.has_reference_alignments = False
         self.has_transcribed_alignments = False
         self.has_per_speaker_transcribed_alignments = False
+        self.has_transcript_verification_alignments = False
+        self.latest_alignment_workflow = None
+
+    def update_latest_alignment_workflow(self):
+        with self.corpus.session() as session:
+            query = (
+                session.query(CorpusWorkflow.id)
+                .filter(CorpusWorkflow.workflow_type.in_(WorkflowType.alignment_workflows()))
+                .order_by(sqlalchemy.desc(CorpusWorkflow.time_stamp))
+                .limit(1)
+            ).first()
+            if query is not None:
+                query = query[0]
+            self.latest_alignment_workflow = query
+
+    def get_interjection_count(self):
+        if self.corpus is None:
+            return 0
+        with self.corpus.session() as session:
+            count = (
+                session.query(sqlalchemy.func.count(Word.id))
+                .filter(Word.word_type == WordType.interjection)
+                .first()[0]
+            )
+        return count
 
     def get_speaker_name(self, speaker_id: int):
         if speaker_id not in self.speaker_id_mapping:
@@ -2326,6 +2370,7 @@ class CorpusModel(TableModel):
             self.refresh_files()
             self.refresh_speakers()
             self.refresh_utterances()
+            self.update_latest_alignment_workflow()
 
     def search(
         self,

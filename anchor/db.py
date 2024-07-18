@@ -105,6 +105,7 @@ class AnchorCorpus(AnchorSqlBase):
     custom_mapping_path = Column(PathType, nullable=True)
     reference_directory = Column(PathType, nullable=True)
     current = Column(Boolean, nullable=False, default=False, index=True)
+    # last_used = Column(DateTime, nullable=False, server_default=sqlalchemy.func.now(), index=True)
 
     acoustic_model_id = Column(Integer, ForeignKey("acoustic_model.id"), index=True, nullable=True)
     acoustic_model = relationship("AcousticModel", back_populates="corpora")
