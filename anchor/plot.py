@@ -1870,7 +1870,7 @@ class UtteranceRegion(MfaRegion):
             self,
             self.item.begin,
             self.item.end,
-            self.item.normalized_text,
+            self.item.text,
             self.top_point,
             self.per_tier_range,
             self.selection_model,
@@ -2310,11 +2310,12 @@ class UtteranceRegion(MfaRegion):
 
     def save_changes(self):
         text = self.text_edit.toPlainText()
-        self.timer.stop()
         if self.original_text == text:
             return
         self.original_text = text
         self.textEdited.emit(self.item, text)
+        if self.normalized_text:
+            self.normalized_text.text_edit.setPlainText(self.item.normalized_text)
 
 
 class WaveForm(pg.PlotCurveItem):

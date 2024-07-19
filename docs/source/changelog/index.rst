@@ -6,6 +6,12 @@ Changelog
 
    Alpha releases
 
+0.7.1
+-----
+
+- Fixed bug when editing text
+- Disabled scrolling to the top when editing pronunciations
+
 0.7.0
 -----
 
