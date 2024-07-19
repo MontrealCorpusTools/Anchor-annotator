@@ -387,7 +387,7 @@ class BaseTableView(QtWidgets.QTableView):
 class AnchorTableView(BaseTableView):
     def setModel(self, model: QtCore.QAbstractItemModel) -> None:
         super().setModel(model)
-        self.model().newResults.connect(self.scrollToTop)
+        # self.model().newResults.connect(self.scrollToTop)
         self.selectionModel().clear()
         self.horizontalHeader().sortIndicatorChanged.connect(self.model().update_sort)
 
