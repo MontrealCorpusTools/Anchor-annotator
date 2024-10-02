@@ -1,12 +1,25 @@
-default_language_version:
-  python: python3.11
 repos:
+  - repo: local
+    hooks:
+      - id: profile-check
+        name: no profiling
+        entry: '@profile'
+        language: pygrep
+        types: [ python ]
+        files: ^anchor/
+      - id: print-check
+        name: no print statements
+        entry: '\bprint\('
+        language: pygrep
+        types: [ python ]
+        files: ^anchor/
   - repo: https://github.com/psf/black
     rev: 23.9.1
     hooks:
       - id: black
+        exclude: ^anchor/resources_rc.py
   - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
+    rev: 7.0.0
     hooks:
       - id: flake8
         entry: pflake8

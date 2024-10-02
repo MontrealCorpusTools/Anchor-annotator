@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -19,6 +20,7 @@ from montreal_forced_aligner.data import (  # noqa
     WordType,
 )
 from montreal_forced_aligner.db import Corpus, Phone, Speaker, Utterance  # noqa
+from montreal_forced_aligner.models import AcousticModel, Archive
 from montreal_forced_aligner.utils import DatasetType, inspect_database, mfa_open  # noqa
 from PySide6 import QtCore, QtGui, QtMultimedia, QtSvgWidgets, QtWidgets
 
@@ -51,6 +53,8 @@ if TYPE_CHECKING:
 
 outside_column_ratio = 0.2
 outside_column_minimum = 250
+
+logger = logging.getLogger("anchor")
 
 
 class ErrorButtonBox(QtWidgets.QDialogButtonBox):
@@ -101,8 +105,8 @@ class MediaPlayer(QtMultimedia.QMediaPlayer):  # pragma: no cover
         self.audioOutput().setMuted(muted)
 
     def handle_error(self, *args):
-        print("ERROR")
-        print(args)
+        logger.info("ERROR")
+        logger.info(args)
 
     def play(self) -> None:
         if self.startTime() is None:
@@ -729,25 +733,20 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
 
     def search(self):
         self.selection_model.clearSelection()
-        new_query = (
-            self.search_box.query,
-            self.file_dropdown.current_text(),
-            self.speaker_dropdown.current_text(),
-            self.oov_button.isChecked(),
-        )
-        if new_query != self.cached_query:
-            self.pagination_toolbar.reset()
-            self.corpus_model.current_offset = 0
+        query = self.search_box.query()
+        query.graphemes = self.corpus_model.dictionary_model.graphemes
+        self.pagination_toolbar.reset()
+        self.corpus_model.current_offset = 0
         self.corpus_model.search(
-            self.search_box.query(),
+            query,
             self.file_dropdown.current_text(),
             self.speaker_dropdown.current_text(),
             oovs=self.oov_button.isChecked(),
         )
-        self.corpus_model.set_text_filter(self.search_box.query())
 
     def replace(self):
         search_query = self.search_box.query()
+        search_query.graphemes = self.corpus_model.dictionary_model.graphemes
         if not search_query.text:
             return
         replacement = self.replace_box.text()
@@ -2360,7 +2359,7 @@ class ModelInfoWidget(QtWidgets.QWidget):
 
     def refresh(self):
         self.tree.clear()
-        if self.model is not None:
+        if self.model is not None and isinstance(self.model, Archive):
             self.label.setText(self.model.name)
             self.path_label.setText(str(self.model.source))
             meta = self.model.meta
@@ -2474,7 +2473,7 @@ class TranscriberWidget(QtWidgets.QWidget):
         else:
             validate_enabled = False
             self.dictionary_label.setText("Not loaded")
-        if self.corpus_model.acoustic_model is not None:
+        if isinstance(self.corpus_model.acoustic_model, AcousticModel):
             self.acoustic_model_label.setText(self.corpus_model.acoustic_model.name)
         else:
             validate_enabled = False
@@ -2998,7 +2997,7 @@ class AlignmentWidget(QtWidgets.QWidget):
         else:
             validate_enabled = False
             self.dictionary_label.setText("Not loaded")
-        if self.corpus_model.acoustic_model is not None:
+        if isinstance(self.corpus_model.acoustic_model, AcousticModel):
             self.acoustic_model_label.setText(self.corpus_model.acoustic_model.name)
         else:
             validate_enabled = False

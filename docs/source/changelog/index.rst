@@ -6,6 +6,18 @@ Changelog
 
    Alpha releases
 
+0.8.0
+-----
+
+- Added support for whisper and speechbrain for transcribing utterances
+- Added support for trimming utterance silence based on VAD
+- Added VAD model selection to Model menu
+- Added Language menu for use in whisper transcription
+- Fixed a bug where alignment metrics were not being computed
+- Improved search to better handle cases where diacritics were being treated as non-word symbols
+- Improved transcription window functionality
+- Compatibility with MFA 3.2.0
+
 0.7.1
 -----
 

@@ -60,6 +60,8 @@
         <file alias="icons/anchor_light/actions/edit-lock-open.svg">resources/icons/anchor_light/actions/lock-open-solid.svg</file>
         <file alias="icons/anchor_light/actions/edit-lock.svg">resources/icons/anchor_light/actions/lock-solid.svg</file>
         <file alias="icons/anchor_light/actions/edit-magic.svg">resources/icons/anchor_light/actions/magic-solid.svg</file>
+        <file alias="icons/anchor_light/actions/edit-scissors.svg">resources/icons/anchor_light/actions/scissors-solid.svg</file>
+        <file alias="icons/anchor_light/actions/edit-pen.svg">resources/icons/anchor_light/actions/pen-nib-solid.svg</file>
         <file alias="icons/anchor_light/actions/sort-down.svg">resources/icons/anchor_light/actions/sort-down-solid.svg</file>
         <file alias="icons/anchor_light/actions/sort-up.svg">resources/icons/anchor_light/actions/sort-up-solid.svg</file>
 
@@ -109,6 +111,8 @@
         <file alias="icons/anchor_dark/actions/edit-lock-open.svg">resources/icons/anchor_dark/actions/lock-open-solid.svg</file>
         <file alias="icons/anchor_dark/actions/edit-lock.svg">resources/icons/anchor_dark/actions/lock-solid.svg</file>
         <file alias="icons/anchor_dark/actions/edit-magic.svg">resources/icons/anchor_dark/actions/magic-solid.svg</file>
+        <file alias="icons/anchor_dark/actions/edit-scissors.svg">resources/icons/anchor_dark/actions/scissors-solid.svg</file>
+        <file alias="icons/anchor_dark/actions/edit-pen.svg">resources/icons/anchor_dark/actions/pen-nib-solid.svg</file>
         <file alias="icons/anchor_dark/actions/sort-down.svg">resources/icons/anchor_dark/actions/sort-down-solid.svg</file>
         <file alias="icons/anchor_dark/actions/sort-up.svg">resources/icons/anchor_dark/actions/sort-up-solid.svg</file>
 

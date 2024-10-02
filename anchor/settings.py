@@ -46,6 +46,9 @@ class AnchorSettings(QtCore.QSettings):
     IE_MODEL_PATH = "ie_model_path"
     PHONE_MAPPING_PATH = "phone_mapping_path"
     REFERENCE_ALIGNMENT_PATH = "reference_alignment_path"
+    LANGUAGE = "language"
+    VAD_MODEL = "kaldi"
+    SPECTRAL_FEATURES = "spectrogram"
 
     AUTOSAVE = "anchor/autosave"
     AUTOLOAD = "anchor/autoload"
@@ -99,6 +102,7 @@ class AnchorSettings(QtCore.QSettings):
     LOCKED = "anchor/locked"
     CUDA = "anchor/cuda"
     GITHUB_TOKEN = "anchor/github_token"
+    HF_TOKEN = "anchor/hf_token"
     TIME_DIRECTION = "anchor/time_direction"
     RTL = "Right-to-left"
     LTR = "Left-to-right"
@@ -220,6 +224,9 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE: True,
             AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE: True,
             AnchorSettings.THEME_PRESET: "MFA",
+            AnchorSettings.LANGUAGE: "unknown",
+            AnchorSettings.VAD_MODEL: "kaldi",
+            AnchorSettings.SPECTRAL_FEATURES: "spectrogram",
             AnchorSettings.PLOT_THREAD_COUNT: 10,
         }
         self.default_values.update(self.mfa_theme)
@@ -778,7 +785,7 @@ class AnchorSettings(QtCore.QSettings):
             border: {self.border_width}px solid {enabled_border_color};
         }}
         QCheckBox::indicator:checked {{
-            image: url(:/icons/anchor_dark/actions/check.svg);
+            image: url(:/icons/anchor_light/actions/check.svg);
         }}
         QTextEdit{{
             color: {text_edit_color};

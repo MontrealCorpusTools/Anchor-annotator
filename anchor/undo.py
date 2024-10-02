@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import collections
 import typing
+import unicodedata
 
 import pynini.lib
 import sqlalchemy
@@ -427,18 +428,23 @@ class UpdateUtteranceTextCommand(FileCommand):
                 "UpdateUtteranceTextCommand", "Update utterance text"
             )
         )
-        self.tokenizer = self.corpus_model.corpus.get_tokenizer(
-            self.corpus_model.corpus.get_dict_id_for_speaker(
-                self.corpus_model.get_speaker_name(self.speaker_id)
+        try:
+            self.tokenizer = self.corpus_model.corpus.get_tokenizer(
+                self.corpus_model.corpus.get_dict_id_for_speaker(
+                    self.corpus_model.get_speaker_name(self.speaker_id)
+                )
             )
-        )
+        except (AttributeError, KeyError):
+            self.tokenizer = None
 
     def _process_text(self, session, text: str):
         self.utterance.text = text
-        normalized_text, normalized_character_text, oovs = self.tokenizer(text)
-        self.utterance.normalized_text = normalized_text
-        self.utterance.normalized_character_text = normalized_character_text
-        self.utterance.oovs = " ".join(oovs)
+        if self.tokenizer is not None:
+            text = unicodedata.normalize("NFKC", text)
+            normalized_text, normalized_character_text, oovs = self.tokenizer(text)
+            self.utterance.normalized_text = normalized_text
+            self.utterance.normalized_character_text = normalized_character_text
+            self.utterance.oovs = " ".join(oovs)
         self.utterance.ignored = not text
         session.merge(self.utterance)
 
@@ -751,7 +757,7 @@ class AddPronunciationCommand(DictionaryCommand):
         if not self.pronunciation:
             if dictionary_model.g2p_generator is not None:
                 try:
-                    self.pronunciation = dictionary_model.g2p_generator.rewriter(word)[0]
+                    self.pronunciation = dictionary_model.g2p_generator.rewriter(word)[0][0]
                 except (pynini.lib.rewrite.Error, IndexError):
                     self.pronunciation = self.oov_phone
             else:

@@ -17,7 +17,7 @@
    <item>
     <widget class="QTabWidget" name="tabWidget">
      <property name="currentIndex">
-      <number>1</number>
+      <number>3</number>
      </property>
      <widget class="QWidget" name="generalTab">
       <attribute name="title">
@@ -34,8 +34,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>258</width>
-            <height>322</height>
+            <width>682</width>
+            <height>353</height>
            </rect>
           </property>
           <layout class="QFormLayout" name="formLayout">
@@ -100,38 +100,38 @@
            <item row="7" column="1">
             <widget class="QSpinBox" name="numJobsEdit"/>
            </item>
-           <item row="8" column="0">
+           <item row="9" column="0">
             <widget class="QLabel" name="githubTokenLabel">
              <property name="text">
               <string>Github request token</string>
              </property>
             </widget>
            </item>
-           <item row="8" column="1">
+           <item row="9" column="1">
             <widget class="QLineEdit" name="githubTokenEdit"/>
            </item>
-           <item row="10" column="0">
+           <item row="11" column="0">
             <widget class="QLabel" name="resultsPerPageLabel">
              <property name="text">
               <string>Results per page</string>
              </property>
             </widget>
            </item>
-           <item row="10" column="1">
+           <item row="11" column="1">
             <widget class="QSpinBox" name="resultsPerPageEdit">
              <property name="maximum">
               <number>1000</number>
              </property>
             </widget>
            </item>
-           <item row="12" column="0">
+           <item row="13" column="0">
             <widget class="QLabel" name="timeDirectionLabel">
              <property name="text">
               <string>Time direction</string>
              </property>
             </widget>
            </item>
-           <item row="12" column="1">
+           <item row="13" column="1">
             <widget class="QComboBox" name="timeDirectionComboBox">
              <item>
               <property name="text">
@@ -145,14 +145,14 @@
              </item>
             </widget>
            </item>
-           <item row="13" column="0">
+           <item row="14" column="0">
             <widget class="QLabel" name="visibleSpeakerLabel">
              <property name="text">
               <string>Maximum visible speakers</string>
              </property>
             </widget>
            </item>
-           <item row="13" column="1">
+           <item row="14" column="1">
             <widget class="QComboBox" name="visibleSpeakerComboBox">
              <property name="currentIndex">
               <number>1</number>
@@ -202,6 +202,16 @@
             <widget class="QLabel" name="useMpLabel">
              <property name="text">
               <string>Use multiprocessing?</string>
+             </property>
+            </widget>
+           </item>
+           <item row="10" column="1">
+            <widget class="QLineEdit" name="hfTokenEdit"/>
+           </item>
+           <item row="10" column="0">
+            <widget class="QLabel" name="hfTokenLabel">
+             <property name="text">
+              <string>HuggingFace request token</string>
              </property>
             </widget>
            </item>
@@ -542,7 +552,7 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>173</width>
+            <width>668</width>
             <height>410</height>
            </rect>
           </property>
@@ -706,8 +716,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>231</width>
-            <height>228</height>
+            <width>682</width>
+            <height>353</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_11">
@@ -828,8 +838,8 @@
            <rect>
             <x>0</x>
             <y>0</y>
-            <width>223</width>
-            <height>250</height>
+            <width>682</width>
+            <height>353</height>
            </rect>
           </property>
           <layout class="QVBoxLayout" name="verticalLayout_13">
