@@ -2,19 +2,15 @@ import os
 from xml.dom import minidom
 
 root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-icon_folder = os.path.join(root_dir, "icons")
+icon_folder = os.path.join(root_dir, "anchor", "resources", "icons")
+print(icon_folder)
 
-base_folder = os.path.join(icon_folder, "base_tool_buttons")
-checked_folder = os.path.join(icon_folder, "checked_tool_buttons")
-disabled_folder = os.path.join(icon_folder, "disabled_tool_buttons")
-hover_folder = os.path.join(icon_folder, "hover_tool_buttons")
+base_folder = os.path.join(icon_folder, "anchor_light", "actions")
+checked_folder = os.path.join(icon_folder, "anchor_dark", "actions")
 
 folders = {
-    "base": os.path.join(icon_folder, "base_tool_buttons"),
-    "hover": os.path.join(icon_folder, "hover_tool_buttons"),
-    "disabled": os.path.join(icon_folder, "disabled_tool_buttons"),
-    "checked": os.path.join(icon_folder, "checked_tool_buttons"),
-    "highlighted": os.path.join(icon_folder, "highlighted_tool_buttons"),
+    "base": os.path.join(icon_folder, "anchor_light", "actions"),
+    "checked": os.path.join(icon_folder, "anchor_dark", "actions"),
 }
 
 colors = {
@@ -51,7 +47,7 @@ def create_icon_set(identifier):
 
 
 create_icon_set("base")
-create_icon_set("hover")
-create_icon_set("disabled")
+# create_icon_set("hover")
+# create_icon_set("disabled")
 create_icon_set("checked")
-create_icon_set("highlighted")
+# create_icon_set("highlighted")

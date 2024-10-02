@@ -13,7 +13,7 @@ from montreal_forced_aligner import config
 from montreal_forced_aligner.command_line.utils import check_databases
 from montreal_forced_aligner.config import MfaConfiguration, get_temporary_directory
 from montreal_forced_aligner.corpus import AcousticCorpus
-from montreal_forced_aligner.data import WorkflowType
+from montreal_forced_aligner.data import Language, WorkflowType
 from montreal_forced_aligner.db import CorpusWorkflow
 from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_SPEECHBRAIN
 from montreal_forced_aligner.exceptions import DatabaseError
@@ -24,7 +24,9 @@ from montreal_forced_aligner.models import (
     LanguageModel,
     ModelManager,
 )
+from montreal_forced_aligner.transcription.models import FOUND_WHISPERX
 from montreal_forced_aligner.utils import DatasetType, inspect_database
+from montreal_forced_aligner.vad.models import MfaVAD
 from PySide6 import QtCore, QtGui, QtMultimedia, QtWidgets
 
 import anchor.db
@@ -246,10 +248,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.alignment_utterance_worker.signals.result.connect(self.finalize_utterance_alignment)
         self.workers.append(self.alignment_utterance_worker)
 
+        self.transcribe_utterance_worker = workers.TranscribeUtteranceWorker(self)
+        self.transcribe_utterance_worker.signals.error.connect(self.handle_error)
+        self.transcribe_utterance_worker.signals.result.connect(
+            self.finalize_utterance_transcription
+        )
+        self.workers.append(self.transcribe_utterance_worker)
+
         self.segment_utterance_worker = workers.SegmentUtteranceWorker(self)
         self.segment_utterance_worker.signals.error.connect(self.handle_error)
         self.segment_utterance_worker.signals.result.connect(self.finalize_segmentation)
         self.workers.append(self.segment_utterance_worker)
+
+        self.trim_utterance_worker = workers.TrimUtteranceWorker(self)
+        self.trim_utterance_worker.signals.error.connect(self.handle_error)
+        self.trim_utterance_worker.signals.result.connect(self.finalize_trimming)
+        self.workers.append(self.trim_utterance_worker)
 
         self.alignment_evaluation_worker = workers.AlignmentEvaluationWorker(self)
         self.alignment_evaluation_worker.signals.error.connect(self.handle_error)
@@ -270,6 +284,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.corpus_undo_stack = QtGui.QUndoStack(self)
         self.dictionary_undo_stack = QtGui.QUndoStack(self)
 
+        self.g2p_model = None
+        self.acoustic_model = None
+        self.vad_model = None
+        self.language_model = None
+        self.ivector_extractor = None
         self.set_up_models()
         if self.settings.value(AnchorSettings.AUTOLOAD):
             self.load_corpus()
@@ -280,6 +299,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.load_acoustic_model()
         self.load_language_model()
         self.load_g2p()
+        self.load_vad()
         self.create_actions()
         self.refresh_settings()
 
@@ -557,18 +577,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.diarizationWidget.set_models(self.diarization_model, self.file_selection_model)
         self.ui.oovWidget.set_models(self.oov_model)
         self.file_selection_model.currentUtteranceChanged.connect(self.change_utterance)
+        self.file_selection_model.currentUtteranceChanged.connect(
+            self.selection_model.set_current_utterance
+        )
         self.selection_model.fileViewRequested.connect(self.file_selection_model.set_current_file)
         self.file_selection_model.fileChanged.connect(self.change_file)
         self.selection_model.fileAboutToChange.connect(self.check_media_stop)
         self.media_player.set_models(self.file_selection_model)
         self.corpus_model.addCommand.connect(self.update_corpus_stack)
+        self.corpus_model.transcribeRequested.connect(self.begin_utterance_transcription)
         self.file_utterances_model.addCommand.connect(self.update_corpus_stack)
         self.file_selection_model.selectionChanged.connect(self.sync_selected_utterances)
-
-        self.g2p_model = None
-        self.acoustic_model = None
-        self.language_model = None
-        self.ivector_extractor = None
 
     def sync_selected_utterances(self):
         self.selection_model.update_selected_utterances(
@@ -706,15 +725,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.deleteUtterancesAct.setEnabled(False)
         self.ui.splitUtterancesAct.setEnabled(False)
         self.ui.alignUtteranceAct.setEnabled(False)
+        self.ui.transcribeUtteranceAct.setEnabled(False)
+        self.ui.trimUtteranceAct.setEnabled(False)
         self.ui.segmentUtteranceAct.setEnabled(False)
         if not selection and self.selection_model.current_utterance_id is None:
             return
-
         if len(selection) == 1 or self.selection_model.current_utterance_id is not None:
             self.ui.splitUtterancesAct.setEnabled(True)
-            if self.corpus_model.acoustic_model is not None and self.corpus_model.has_dictionary:
-                self.ui.alignUtteranceAct.setEnabled(True)
-                self.ui.segmentUtteranceAct.setEnabled(True)
+            self.ui.trimUtteranceAct.setEnabled(True)
+            if self.corpus_model.acoustic_model is not None:
+                if self.corpus_model.has_dictionary:
+                    self.ui.alignUtteranceAct.setEnabled(True)
+                    self.ui.transcribeUtteranceAct.setEnabled(True)
+                    self.ui.segmentUtteranceAct.setEnabled(True)
+                elif not isinstance(self.acoustic_model, AcousticModel):
+                    self.ui.transcribeUtteranceAct.setEnabled(True)
         if len(selection) > 1:
             self.ui.mergeUtterancesAct.setEnabled(True)
         else:
@@ -801,6 +826,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.openPreferencesAct.triggered.connect(self.open_options)
         self.ui.openCorpusManagerAct.triggered.connect(self.open_corpus_manager)
         self.ui.loadAcousticModelAct.triggered.connect(self.change_acoustic_model)
+        self.ui.kaldiVadAct.triggered.connect(self.change_vad)
+        self.ui.speechbrainVadAct.triggered.connect(self.change_vad)
         self.ui.loadLanguageModelAct.triggered.connect(self.change_language_model)
         self.ui.loadIvectorExtractorAct.triggered.connect(self.change_ivector_extractor)
         self.ui.loadDictionaryAct.triggered.connect(self.change_dictionary)
@@ -870,6 +897,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.begin_reset_ivectors
         )
         self.ui.alignUtteranceAct.triggered.connect(self.begin_utterance_alignment)
+        self.ui.transcribeUtteranceAct.triggered.connect(self.begin_utterance_transcription)
+        self.ui.trimUtteranceAct.triggered.connect(self.begin_utterance_trimming)
         self.ui.segmentUtteranceAct.triggered.connect(self.begin_utterance_segmentation)
         self.ui.evaluateAlignmentsAct.triggered.connect(self.begin_alignment_evaluation)
         self.ui.selectMappingFileAct.triggered.connect(self.change_custom_mapping)
@@ -917,6 +946,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.acoustic_action_group = QtGui.QActionGroup(self)
         self.acoustic_action_group.setExclusive(True)
+
+        self.langauge_action_group = QtGui.QActionGroup(self)
+        self.langauge_action_group.setExclusive(True)
 
         self.g2p_action_group = QtGui.QActionGroup(self)
         self.g2p_action_group.setExclusive(True)
@@ -1032,6 +1064,25 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def refresh_model_actions(self):
+        self.ui.menuLanguage.clear()
+        for lang in sorted(Language, key=lambda x: x.display_name):
+            a = QtGui.QAction(lang.display_name, parent=self)
+            a.setCheckable(True)
+            if lang.name == self.settings.value(self.settings.LANGUAGE):
+                a.setChecked(True)
+            self.langauge_action_group.addAction(a)
+            a.triggered.connect(self.change_language)
+            self.ui.menuLanguage.addAction(a)
+        if not FOUND_SPEECHBRAIN:
+            self.ui.speechbrainVadAct.setChecked(False)
+            self.ui.speechbrainVadAct.setEnabled(False)
+            self.settings.setValue(self.settings.VAD_MODEL, "kaldi")
+            self.ui.kaldiVadAct.setChecked(True)
+        else:
+            self.ui.speechbrainVadAct.setEnabled(True)
+            if self.settings.value(self.settings.VAD_MODEL) == "speechbrain":
+                self.ui.speechbrainVadAct.setChecked(True)
+
         self.ui.menuDownload_acoustic_model.clear()
         self.ui.menuDownload_G2P_model.clear()
         self.ui.menuDownload_language_model.clear()
@@ -1168,11 +1219,10 @@ class MainWindow(QtWidgets.QMainWindow):
                     .first()
                 )
                 if m is None:
-                    session.add(
-                        anchor.db.IvectorExtractor(
-                            name="speechbrain", path="speechbrain", available_locally=True
-                        )
+                    m = anchor.db.IvectorExtractor(
+                        name="speechbrain", path="speechbrain", available_locally=True
                     )
+                    session.add(m)
                     session.flush()
                     session.commit()
                 a = QtGui.QAction(text="speechbrain", parent=self)
@@ -1180,6 +1230,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 a.triggered.connect(self.change_ivector_extractor)
                 self.ui.ivectorExtractorMenu.addAction(a)
                 self.ivector_action_group.addAction(a)
+            for m_name, found in [("speechbrain", FOUND_SPEECHBRAIN), ("whisper", FOUND_WHISPERX)]:
+                if not found:
+                    continue
+                m = (
+                    session.query(anchor.db.AcousticModel)
+                    .filter(anchor.db.AcousticModel.path == m_name)
+                    .first()
+                )
+                if m is None:
+                    m = anchor.db.AcousticModel(name=m_name, path=m_name, available_locally=True)
+                    session.add(m)
+                    session.flush()
+                    session.commit()
+                a = QtGui.QAction(text=m_name, parent=self)
+                a.setData(m.id)
+                a.triggered.connect(self.change_acoustic_model)
+                self.ui.acousticModelMenu.addAction(a)
+                self.acoustic_action_group.addAction(a)
 
             for m in (
                 session.query(anchor.db.IvectorExtractor)
@@ -1411,7 +1479,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def begin_alignment(self):
         self.enableMfaActions(False)
         self.alignment_worker.set_params(
-            self.corpus_model.corpus, self.acoustic_model, self.ui.alignmentWidget.parameters()
+            self.corpus_model.corpus,
+            self.acoustic_model,
+            verify_transcripts=False,
+            parameters=self.ui.alignmentWidget.parameters(),
         )
         self.alignment_worker.start()
         self.set_application_state("loading")
@@ -1420,7 +1491,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def begin_verify_transcripts(self):
         self.enableMfaActions(False)
         self.alignment_worker.set_params(
-            self.corpus_model.corpus, self.acoustic_model, self.ui.alignmentWidget.parameters()
+            self.corpus_model.corpus,
+            self.acoustic_model,
+            verify_transcripts=True,
+            parameters=self.ui.alignmentWidget.parameters(),
         )
         self.alignment_worker.start()
         self.set_application_state("loading")
@@ -1475,6 +1549,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_application_state("loading")
         self.ui.loadingScreen.setCorpusName("Performing alignment...")
 
+    def begin_utterance_transcription(self, utterance_id: int = None):
+        if not utterance_id:
+            utterance_id = self.selection_model.current_utterance_id
+        self.transcribe_utterance_worker.set_params(self.corpus_model, utterance_id)
+        self.transcribe_utterance_worker.start()
+
     def begin_utterance_segmentation(self):
         if self.selection_model.current_utterance_id is None:
             return
@@ -1482,6 +1562,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.corpus_model, self.selection_model.current_utterance_id
         )
         self.segment_utterance_worker.start()
+
+    def begin_utterance_trimming(self):
+        if self.selection_model.current_utterance_id is None:
+            return
+        self.trim_utterance_worker.set_params(
+            self.corpus_model, self.selection_model.current_utterance_id
+        )
+        self.trim_utterance_worker.start()
 
     def begin_alignment_evaluation(self):
         self.enableMfaActions(False)
@@ -1588,10 +1676,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.check_actions()
         self.set_application_state("loaded")
 
+    def finalize_utterance_transcription(self, data):
+        utterance_id, transcription = data
+
+        utt = self.file_utterances_model.get_utterance(utterance_id)
+        utt.transcription_text = transcription
+        self.file_utterances_model.utterancesReady.emit()
+
     def finalize_segmentation(self, data):
         original_utterance_id, split_data = data
         self.file_utterances_model.split_vad_utterance(original_utterance_id, split_data)
         self.ensure_utterance_panel_visible()
+
+    def finalize_trimming(self, data):
+        original_utterance_id, begin, end = data
+        self.file_utterances_model.update_utterance_times(original_utterance_id, begin, end)
+        self.ui.utteranceDetailWidget.plot_widget.refresh_text_grid()
 
     def finalize_saving(self):
         self.check_actions()
@@ -1914,6 +2014,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.ui.alignUtteranceAct.setIcon(
                     QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.FormatTextUnderline)
                 )
+                self.ui.trimUtteranceAct.setIcon(
+                    QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.FormatTextUnderline)
+                )
                 self.ui.cancelCorpusLoadAct.setIcon(
                     QtGui.QIcon.fromTheme(QtGui.QIcon.ThemeIcon.ProcessStop)
                 )
@@ -1960,6 +2063,31 @@ class MainWindow(QtWidgets.QMainWindow):
             self.db_string, "g2p", self.sender().text(), self.model_manager
         )
         self.download_worker.start()
+
+    def change_language(self):
+        from montreal_forced_aligner.transcription.models import MfaFasterWhisperPipeline
+
+        self.settings.setValue(self.settings.LANGUAGE, self.sender().text().lower())
+        if isinstance(self.acoustic_model, MfaFasterWhisperPipeline):
+            self.acoustic_model.set_language(self.sender().text().lower())
+
+    def change_vad(self):
+        self.settings.setValue(self.settings.VAD_MODEL, self.sender().text().lower())
+        self.load_vad()
+
+    def load_vad(self):
+        if self.settings.value(self.settings.VAD_MODEL) == "speechbrain":
+            model_dir = os.path.join(config.TEMPORARY_DIRECTORY, "models", "VAD")
+            os.makedirs(model_dir, exist_ok=True)
+            run_opts = None
+            if self.settings.value(self.settings.CUDA):
+                run_opts = {"device": "cuda"}
+            self.vad_model = MfaVAD.from_hparams(
+                source="speechbrain/vad-crdnn-libriparty", savedir=model_dir, run_opts=run_opts
+            )
+        else:
+            self.vad_model = None
+        self.trim_utterance_worker.set_vad_model(self.vad_model)
 
     def download_acoustic_model(self):
         self.download_worker.set_params(
@@ -2502,6 +2630,8 @@ class OptionsDialog(QtWidgets.QDialog):
         self.ui.cudaCheckBox.setChecked(self.settings.value(self.settings.CUDA))
         if config.GITHUB_TOKEN is not None:
             self.ui.githubTokenEdit.setText(config.GITHUB_TOKEN)
+        if config.HF_TOKEN is not None:
+            self.ui.hfTokenEdit.setText(config.HF_TOKEN)
 
         self.ui.autoloadLastUsedCorpusCheckBox.setChecked(
             self.settings.value(self.settings.AUTOLOAD)
@@ -2634,10 +2764,15 @@ class OptionsDialog(QtWidgets.QDialog):
         config.NUM_JOBS = self.ui.numJobsEdit.value()
         config.USE_MP = self.ui.useMpCheckBox.isChecked()
         config.GITHUB_TOKEN = self.ui.githubTokenEdit.text()
+        config.HF_TOKEN = self.ui.hfTokenEdit.text()
         config.GLOBAL_CONFIG.current_profile.num_jobs = config.NUM_JOBS
         config.GLOBAL_CONFIG.current_profile.use_mp = config.USE_MP
         config.GLOBAL_CONFIG.current_profile.github_token = config.GITHUB_TOKEN
+        config.GLOBAL_CONFIG.current_profile.hf_token = config.HF_TOKEN
         config.GLOBAL_CONFIG.save()
+
+        self.settings.setValue(self.settings.GITHUB_TOKEN, self.ui.githubTokenEdit.text())
+        self.settings.setValue(self.settings.HF_TOKEN, self.ui.hfTokenEdit.text())
 
         self.settings.setValue(
             self.settings.SPEC_DYNAMIC_RANGE, int(self.ui.dynamicRangeEdit.value())

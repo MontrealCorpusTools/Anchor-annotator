@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import typing
+import unicodedata
 from threading import Lock
 from typing import Any, Optional, Union
 
@@ -23,12 +24,14 @@ from montreal_forced_aligner.corpus.acoustic_corpus import (
     AcousticCorpusWithPronunciations,
 )
 from montreal_forced_aligner.data import PhoneType, WordType, WorkflowType
-from montreal_forced_aligner.db import CorpusWorkflow, File, Phone, Speaker, Utterance, Word
-from montreal_forced_aligner.dictionary.mixins import (
-    DEFAULT_CLITIC_MARKERS,
-    DEFAULT_COMPOUND_MARKERS,
-    DEFAULT_PUNCTUATION,
-    DEFAULT_WORD_BREAK_MARKERS,
+from montreal_forced_aligner.db import (
+    CorpusWorkflow,
+    File,
+    Grapheme,
+    Phone,
+    Speaker,
+    Utterance,
+    Word,
 )
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
@@ -51,23 +54,6 @@ if typing.TYPE_CHECKING:
 logger = logging.getLogger("anchor")
 
 
-WORD_BREAK_SET = "".join(
-    sorted(
-        set(
-            DEFAULT_WORD_BREAK_MARKERS
-            + DEFAULT_PUNCTUATION
-            + DEFAULT_CLITIC_MARKERS
-            + DEFAULT_COMPOUND_MARKERS
-        )
-    )
-)
-
-if "-" in WORD_BREAK_SET:
-    WORD_BREAK_SET = "" + WORD_BREAK_SET.replace("-", "")
-
-WORD_BREAK_REGEX_SET = rf"[\s{WORD_BREAK_SET}]"
-
-
 # noinspection PyUnresolvedReferences
 @dataclass(slots=True)
 class TextFilterQuery:
@@ -75,6 +61,7 @@ class TextFilterQuery:
     regex: bool = False
     word: bool = False
     case_sensitive: bool = False
+    graphemes: typing.Collection[str] = None
 
     @property
     def search_text(self):
@@ -83,6 +70,11 @@ class TextFilterQuery:
         return self.text
 
     def generate_expression(self, posix=False):
+        word_symbols = r"\w"
+        if self.graphemes:
+            dash_prefix = "-" if "-" in self.graphemes else ""
+            graphemes = "".join([x for x in self.graphemes if x != "-"])
+            word_symbols = rf"[{dash_prefix}\w{graphemes}]"
         text = self.text
         if not self.case_sensitive:
             text = text.lower()
@@ -97,11 +89,10 @@ class TextFilterQuery:
             if not text.endswith(word_break_set):
                 text += word_break_set
         if posix:
-            text = text.replace(r"\b", r"\y")
             if text.startswith(r"\b"):
-                text = rf"((?<={WORD_BREAK_REGEX_SET})|(?<=^))" + text[2:]
+                text = rf"((?<!{word_symbols})|(?<=^))" + text[2:]
             if text.endswith(r"\b"):
-                text = text[:-2] + rf"((?={WORD_BREAK_REGEX_SET})|(?=$))"
+                text = text[:-2] + rf"((?!{word_symbols})|(?=$))"
         if not self.case_sensitive:
             text = "(?i)" + text
         return text
@@ -385,7 +376,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         if isinstance(utterance, int):
             if utterance not in self.reversed_indices:
                 return
-            utterance = self.reversed_indices[utterance]
+            utterance = self.utterances[self.reversed_indices[utterance]]
         old_speaker_id = utterance.speaker_id
         if old_speaker_id == speaker_id:
             return
@@ -395,10 +386,18 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.corpus_model.set_speaker_modified(old_speaker_id)
 
     def update_utterance_times(
-        self, utterance: Utterance, begin: Optional[float] = None, end: Optional[float] = None
+        self,
+        utterance: typing.Union[Utterance, int],
+        begin: Optional[float] = None,
+        end: Optional[float] = None,
     ):
         if not self.corpus_model.editable:
             return
+        if isinstance(utterance, int):
+            if utterance not in self.reversed_indices:
+                return
+            utterance = self.utterances[self.reversed_indices[utterance]]
+
         if utterance.begin == begin and utterance.end == end:
             return
         self.addCommand.emit(undo.UpdateUtteranceTimesCommand(utterance, begin, end, self))
@@ -578,7 +577,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
     resetView = QtCore.Signal()
     viewChanged = QtCore.Signal(object, object)
     selectionAudioChanged = QtCore.Signal(object)
-    currentUtteranceChanged = QtCore.Signal()
+    currentUtteranceChanged = QtCore.Signal(object)
     speakerRequested = QtCore.Signal(object)
 
     spectrogramReady = QtCore.Signal()
@@ -636,13 +635,22 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             y = self.model().y[begin_samp:end_samp, self.selected_channel]
         else:
             y = self.model().y[begin_samp:end_samp]
-        spectrogram_worker = workers.SpectrogramWorker(
-            y,
-            self.model().file.sound_file.sample_rate,
-            self.min_time,
-            self.max_time,
-            self.selected_channel,
-        )
+        if self.settings.value(self.settings.SPECTRAL_FEATURES) == "mfcc":
+            spectrogram_worker = workers.MfccWorker(
+                y,
+                self.model().file.sound_file.sample_rate,
+                self.min_time,
+                self.max_time,
+                self.selected_channel,
+            )
+        else:
+            spectrogram_worker = workers.SpectrogramWorker(
+                y,
+                self.model().file.sound_file.sample_rate,
+                self.min_time,
+                self.max_time,
+                self.selected_channel,
+            )
         spectrogram_worker.signals.result.connect(self.finalize_loading_spectrogram)
         self.thread_pool.start(spectrogram_worker)
 
@@ -865,7 +873,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
     def model(self) -> FileUtterancesModel:
         return super().model()
 
-    def set_view_times(self, begin, end):
+    def set_view_times(self, begin, end, new_file=False):
         begin = max(begin, 0)
         end = min(end, self.model().file.duration)
         if (begin, end) == (self.min_time, self.max_time):
@@ -882,7 +890,8 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             and not self.min_time <= self.selected_max_time <= self.max_time
         ):
             self.selected_max_time = None
-        self.view_change_timer.start()
+        if not new_file:
+            self.view_change_timer.start()
 
     def send_selection_update(self):
         self.viewChanged.emit(self.min_time, self.max_time)
@@ -902,7 +911,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         else:
             self.finalize_set_new_file()
             self.speakerRequested.emit(speaker_id)
-        self.set_view_times(begin, end)
+        self.set_view_times(begin, end, new_file=True)
 
     def finalize_set_new_file(self):
         if self.requested_utterance_id is None:
@@ -930,16 +939,18 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             return
         flags = QtCore.QItemSelectionModel.SelectionFlag.Rows
         flags |= QtCore.QItemSelectionModel.SelectionFlag.Select
+        current_index = None
         for u in utterances:
             if u.id not in self.model().reversed_indices:
                 continue
+            current_index = u.id
             row = self.model().reversed_indices[u.id]
 
             index = self.model().index(row, 0)
             if not index.isValid():
                 return
             self.select(index, flags)
-        self.currentUtteranceChanged.emit()
+        self.currentUtteranceChanged.emit(current_index)
 
     def update_select(self, utterance_id: int, deselect=False, reset=False):
         if reset and [x.id for x in self.selected_utterances()] == [utterance_id]:
@@ -961,7 +972,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
         self.select(index, flags)
         if not deselect:
             self.select_audio(self.model().utterances[row].begin, self.model().utterances[row].end)
-        self.currentUtteranceChanged.emit()
+        self.currentUtteranceChanged.emit(utterance_id)
 
 
 class CorpusSelectionModel(QtCore.QItemSelectionModel):
@@ -992,6 +1003,7 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         # self.selectionChanged.connect(self.update_selection_audio)
         # self.model().newResults.connect(self.check_selection)
         self.model().unlockCorpus.connect(self.fileChanged.emit)
+        self.model().layoutChanged.connect(self._update_selection)
 
     def set_current_utterance(self, utterance_id):
         self.current_utterance_id = utterance_id
@@ -1078,8 +1090,10 @@ class CorpusSelectionModel(QtCore.QItemSelectionModel):
         if not index.isValid():
             return
         m = self.model()
-        self.current_utterance_id = m._indices[index.row()]
-        self.currentUtteranceChanged.emit()
+        try:
+            self.current_utterance_id = m._indices[index.row()]
+        except IndexError:
+            self.current_utterance_id = None
 
     def selected_utterances(self):
         current_utterance = self.current_utterance_id
@@ -1225,6 +1239,7 @@ class DictionaryTableModel(TableModel):
         self.word_sets = {}
         self.speaker_mapping = {}
         self.phones = []
+        self.graphemes = []
         self.reference_phone_set = set()
         self.custom_mapping = {}
 
@@ -1240,7 +1255,7 @@ class DictionaryTableModel(TableModel):
         except KeyError:
             return True
         if dictionary_id is not None and self.word_sets[dictionary_id]:
-            return word.lower() in self.word_sets[dictionary_id]
+            return unicodedata.normalize("NFKC", word.lower()) in self.word_sets[dictionary_id]
         return True
 
     def lookup_word(self, word: str) -> None:
@@ -1270,6 +1285,19 @@ class DictionaryTableModel(TableModel):
         if self.corpus_model.corpus.position_dependent_phones:
             phones = sorted(set(x.rsplit("_", maxsplit=1)[0] for x in phones))
         self.phones = phones
+        specials = self.corpus_model.corpus.specials_set
+        specials.update(
+            [
+                "#0",
+                "<space>",
+            ]
+        )
+        self.graphemes = [
+            x
+            for x, in self.corpus_model.session.query(Grapheme.grapheme).filter(
+                ~Grapheme.grapheme.in_(specials)
+            )
+        ]
 
     def flags(
         self, index: Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex]
@@ -1339,7 +1367,7 @@ class DictionaryTableModel(TableModel):
                             continue
                         existing_pronunciations.add(self._data[r][2])
                     candidates = self.g2p_generator.rewriter(word)
-                    for c in candidates:
+                    for c, _ in candidates:
                         if c in existing_pronunciations:
                             continue
                         pronunciation = c
@@ -1969,6 +1997,8 @@ class CorpusModel(TableModel):
     filesSaved = QtCore.Signal()
     dictionarySaved = QtCore.Signal()
     selectionRequested = QtCore.Signal(object)
+    transcribeRequested = QtCore.Signal(object)
+    alignRequested = QtCore.Signal(object)
     requestFileView = QtCore.Signal(object)
     utteranceTextUpdated = QtCore.Signal(object, object)
     refreshUtteranceText = QtCore.Signal(object, object)
@@ -2061,6 +2091,7 @@ class CorpusModel(TableModel):
         self.has_per_speaker_transcribed_alignments = False
         self.has_transcript_verification_alignments = False
         self.latest_alignment_workflow = None
+        self.language = None
 
     def update_latest_alignment_workflow(self):
         with self.corpus.session() as session:

@@ -28,6 +28,7 @@ import yaml
 from _kalpy.feat import compute_pitch
 from _kalpy.ivector import Plda, ivector_normalize_length
 from _kalpy.matrix import DoubleVector, FloatVector
+from kalpy.feat.mfcc import MfccComputer
 from kalpy.feat.pitch import PitchComputer
 from montreal_forced_aligner import config
 from montreal_forced_aligner.alignment import PretrainedAligner
@@ -41,6 +42,7 @@ from montreal_forced_aligner.data import (
     CtmInterval,
     DatasetType,
     DistanceMetric,
+    Language,
     ManifoldAlgorithm,
     TextFileType,
     WordType,
@@ -63,6 +65,7 @@ from montreal_forced_aligner.db import (
     Word,
     WordInterval,
     bulk_update,
+    full_load_utterance,
 )
 from montreal_forced_aligner.diarization.multiprocessing import visualize_clusters
 from montreal_forced_aligner.diarization.speaker_diarizer import SpeakerDiarizer
@@ -79,9 +82,16 @@ from montreal_forced_aligner.online.alignment import (
     align_utterance_online,
     update_utterance_intervals,
 )
+from montreal_forced_aligner.online.transcription import (
+    transcribe_utterance_online,
+    transcribe_utterance_online_speechbrain,
+    transcribe_utterance_online_whisper,
+)
 from montreal_forced_aligner.transcription import Transcriber
+from montreal_forced_aligner.transcription.models import MfaFasterWhisperPipeline, load_model
 from montreal_forced_aligner.utils import ProgressCallback, inspect_database
-from montreal_forced_aligner.vad.segmenter import TranscriptionSegmenter
+from montreal_forced_aligner.vad.models import FOUND_SPEECHBRAIN, MfaVAD
+from montreal_forced_aligner.vad.segmenter import TranscriptionSegmenter, VadSegmenter
 from montreal_forced_aligner.validation.corpus_validator import PretrainedValidator
 from PySide6 import QtCore
 from sklearn import discriminant_analysis, metrics, preprocessing
@@ -646,7 +656,7 @@ class ExportFilesWorker(Worker):
                         subqueryload(File.utterances),
                         subqueryload(File.speakers),
                         joinedload(File.sound_file, innerjoin=True).load_only(SoundFile.duration),
-                        joinedload(File.text_file, innerjoin=True).load_only(TextFile.file_type),
+                        joinedload(File.text_file, innerjoin=False).load_only(TextFile.file_type),
                     )
                     .filter(File.modified == True)  # noqa
                 )
@@ -835,7 +845,7 @@ class ChangeSpeakerWorker(Worker):
                     return
                 session.commit()
             except Exception as e:
-                print(e)
+                logger.warning(e)
                 session.rollback()
                 raise
         return return_data
@@ -906,7 +916,7 @@ class BreakUpSpeakerWorker(Worker):
                     return
                 session.commit()
             except Exception as e:
-                print(e)
+                logger.warning(e)
                 session.rollback()
                 raise
         return self.utterance_ids
@@ -3232,6 +3242,53 @@ class SpectrogramWorker(Worker):  # pragma: no cover
         self.signals.result.emit((stft, self.channel, self.begin, self.end, min_db, max_db))
 
 
+class MfccWorker(Worker):  # pragma: no cover
+    def __init__(self, y, sample_rate, begin, end, channel, *args):
+        super().__init__("Generating spectrogram", *args)
+        self.y = y
+        self.sample_rate = sample_rate
+        self.begin = begin
+        self.end = end
+        self.channel = channel
+
+        self.mfcc_computer = MfccComputer(
+            use_energy=False,
+            raw_energy=False,
+            frame_shift=10,
+            frame_length=25,
+            snip_edges=False,
+            low_frequency=20,
+            high_frequency=7800,
+            sample_frequency=16000,
+            allow_downsample=True,
+            allow_upsample=True,
+            dither=0.0,
+            energy_floor=0.0,
+            num_coefficients=13,
+            num_mel_bins=23,
+            cepstral_lifter=22,
+            preemphasis_coefficient=0.97,
+        )
+
+    def run(self):
+        if self.y.shape[0] == 0:
+            self.signals.result.emit(None)
+            return
+        duration = self.y.shape[0] / self.sample_rate
+        if duration > self.settings.value(self.settings.SPEC_MAX_TIME):
+            self.signals.result.emit(None)
+            return
+        if self.sample_rate > self.mfcc_computer.sample_frequency:
+            self.y = scipy.signal.resample(
+                self.y,
+                int(self.y.shape[0] * self.mfcc_computer.sample_frequency / self.sample_rate),
+            )
+            self.sample_rate = self.mfcc_computer.sample_frequency
+        stft = self.mfcc_computer.compute_mfccs(self.y).T
+        min_db, max_db = np.min(stft), np.max(stft)
+        self.signals.result.emit((stft, self.channel, self.begin, self.end, min_db, max_db))
+
+
 class PitchWorker(Worker):  # pragma: no cover
     def __init__(self, y, sample_rate, begin, end, channel, normalized_min, normalized_max, *args):
         super().__init__("Generating pitch track", *args)
@@ -3633,11 +3690,48 @@ class ImportAcousticModelWorker(FunctionWorker):  # pragma: no cover
         if not self.model_path:
             return
         try:
-            acoustic_model = AcousticModel(self.model_path)
+            if str(self.model_path) == "whisper":
+                cuda = self.settings.value(self.settings.CUDA)
+                run_opts = None
+                vad_model = None
+                if cuda:
+                    run_opts = {"device": "cuda"}
+                if FOUND_SPEECHBRAIN:
+                    vad_model = MfaVAD.from_hparams(
+                        source="speechbrain/vad-crdnn-libriparty",
+                        savedir=os.path.join(config.TEMPORARY_DIRECTORY, "models", "VAD"),
+                        run_opts=run_opts,
+                    )
+                vad_options = {
+                    "apply_energy_VAD": False,
+                    "double_check": False,
+                    "activation_th": 0.5,
+                    "deactivation_th": 0.25,
+                    "en_activation_th": 0.5,
+                    "en_deactivation_th": 0.4,
+                    "speech_th": 0.5,
+                    "close_th": 0.333,
+                    "len_th": 0.333,
+                }
+                acoustic_model = load_model(
+                    "large-v3",
+                    device="cuda" if cuda else "cpu",
+                    download_root=os.path.join(
+                        config.TEMPORARY_DIRECTORY,
+                        "models",
+                        "Whisper",
+                    ),
+                    threads=config.NUM_JOBS,
+                    vad_model=vad_model,
+                    vad_options=vad_options,
+                )
+            elif str(self.model_path) == "speechbrain":
+                pass
+            else:
+                acoustic_model = AcousticModel(self.model_path)
         except Exception:
-            if os.path.exists(self.model_path):
-                exctype, value = sys.exc_info()[:2]
-                self.signals.error.emit((exctype, value, traceback.format_exc()))
+            exctype, value = sys.exc_info()[:2]
+            self.signals.error.emit((exctype, value, traceback.format_exc()))
         else:
             self.signals.result.emit(acoustic_model)  # Return the result of the processing
         finally:
@@ -3777,6 +3871,63 @@ class AlignUtteranceWorker(FunctionWorker):  # pragma: no cover
             self.signals.finished.emit()  # Done
 
 
+class TranscribeUtteranceWorker(FunctionWorker):  # pragma: no cover
+    def __init__(self, *args):
+        super().__init__("Transcribing utterance", *args)
+        self.corpus_model: typing.Optional[CorpusModel] = None
+        self.utterance_id: typing.Optional[int] = None
+
+    def set_params(self, corpus_model: CorpusModel, utterance_id: int):
+        self.corpus_model = corpus_model
+        self.utterance_id = utterance_id
+
+    def run(self):
+        self.settings.sync()
+        if isinstance(self.corpus_model.acoustic_model, AcousticModel):
+            self.corpus_model.check_align_lexicon_compiler()
+        language = Language[self.settings.value(self.settings.LANGUAGE)]
+        try:
+            with self.corpus_model.corpus.session() as session:
+                utterance = (
+                    session.query(Utterance)
+                    .options(
+                        joinedload(Utterance.file, innerjoin=True).joinedload(
+                            File.sound_file, innerjoin=True
+                        ),
+                        joinedload(Utterance.speaker, innerjoin=True),
+                    )
+                    .get(self.utterance_id)
+                )
+                if isinstance(self.corpus_model.acoustic_model, AcousticModel):
+                    transcription = transcribe_utterance_online(
+                        self.corpus_model.acoustic_model,
+                        utterance.to_kalpy(),
+                        self.corpus_model.align_lexicon_compiler,
+                    )
+                elif isinstance(self.corpus_model.acoustic_model, MfaFasterWhisperPipeline):
+                    self.corpus_model.acoustic_model.set_language(language)
+                    transcription = transcribe_utterance_online_whisper(
+                        self.corpus_model.acoustic_model,
+                        utterance.to_kalpy().segment,
+                    )
+                else:
+                    transcription = transcribe_utterance_online_speechbrain(
+                        self.corpus_model.acoustic_model,
+                        utterance.to_kalpy(),
+                    )
+                utterance.transcription_text = transcription
+                session.commit()
+        except Exception:
+            exctype, value = sys.exc_info()[:2]
+            self.signals.error.emit((exctype, value, traceback.format_exc()))
+        else:
+            self.signals.result.emit(
+                (self.utterance_id, transcription)
+            )  # Return the result of the processing
+        finally:
+            self.signals.finished.emit()  # Done
+
+
 class SegmentUtteranceWorker(FunctionWorker):  # pragma: no cover
     def __init__(self, *args):
         super().__init__("Segmenting utterance", *args)
@@ -3825,6 +3976,64 @@ class SegmentUtteranceWorker(FunctionWorker):  # pragma: no cover
         finally:
             segmenter.cleanup_logger()
             self.signals.finished.emit()  # Done
+
+
+class TrimUtteranceWorker(FunctionWorker):  # pragma: no cover
+    def __init__(self, *args):
+        super().__init__("Trimming utterance", *args)
+        self.corpus_model: typing.Optional[CorpusModel] = None
+        self.vad_model: typing.Optional[MfaVAD] = None
+        self.utterance_id = None
+
+    def set_vad_model(self, vad_model):
+        self.vad_model = vad_model
+
+    def set_params(self, corpus_model: CorpusModel, utterance_id: int):
+        self.corpus_model = corpus_model
+        self.utterance_id = utterance_id
+
+    def run(self):
+        self.settings.sync()
+        if self.vad_model is None:
+            segmenter = VadSegmenter(
+                corpus_directory=self.corpus_model.corpus.corpus_directory,
+            )
+            try:
+                segmenter.inspect_database()
+                segments = segmenter.segment_utterance(self.utterance_id, allow_empty=False)
+                begin = segments[0].begin
+                end = segments[-1].end
+            except Exception:
+                exctype, value = sys.exc_info()[:2]
+                self.signals.error.emit((exctype, value, traceback.format_exc()))
+            else:
+                self.signals.result.emit(
+                    (self.utterance_id, begin, end)
+                )  # Return the result of the processing
+            finally:
+                segmenter.cleanup_logger()
+                self.signals.finished.emit()  # Done
+        else:
+            try:
+                with self.corpus_model.session() as session:
+                    utterance = full_load_utterance(session, self.utterance_id)
+                    segment = utterance.to_kalpy().segment
+                    # Compute the boundaries of the speech segments
+                    segments = self.vad_model.segment_utterance(segment, apply_energy_vad=True)
+                    try:
+                        begin = segments[0].begin
+                        end = segments[-1].end
+                    except IndexError:
+                        begin, end = segment.begin, segment.end
+            except Exception:
+                exctype, value = sys.exc_info()[:2]
+                self.signals.error.emit((exctype, value, traceback.format_exc()))
+            else:
+                self.signals.result.emit(
+                    (self.utterance_id, begin, end)
+                )  # Return the result of the processing
+            finally:
+                self.signals.finished.emit()  # Done
 
 
 class AlignmentWorker(FunctionWorker):  # pragma: no cover
@@ -3922,6 +4131,7 @@ class AlignmentWorker(FunctionWorker):  # pragma: no cover
                 aligner.verify_transcripts()
             else:
                 aligner.align()
+                aligner.analyze_alignments()
         except Exception:
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))

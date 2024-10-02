@@ -3,11 +3,12 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.2.2
+## Created by: Qt User Interface Compiler version 6.7.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
 
+import resources_rc
 from PySide6.QtCore import (
     QCoreApplication,
     QDate,
@@ -54,7 +55,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import anchor.resources_rc
 from anchor.widgets import (
     AcousticModelWidget,
     AlignmentWidget,
@@ -77,7 +77,7 @@ class Ui_MainWindow(object):
             MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1448, 974)
         icon = QIcon()
-        icon.addFile(":/anchor-yellow.svg", QSize(), QIcon.Normal, QIcon.Off)
+        icon.addFile(":/anchor-yellow.svg", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
         MainWindow.setWindowIcon(icon)
         MainWindow.setStyleSheet("")
         MainWindow.setAnimated(True)
@@ -237,18 +237,23 @@ class Ui_MainWindow(object):
         self.alignUtteranceAct.setEnabled(False)
         icon19 = QIcon(QIcon.fromTheme("edit-magic"))
         self.alignUtteranceAct.setIcon(icon19)
+        self.trimUtteranceAct = QAction(MainWindow)
+        self.trimUtteranceAct.setObjectName("trimUtteranceAct")
+        self.trimUtteranceAct.setEnabled(False)
+        icon20 = QIcon(QIcon.fromTheme("edit-scissors"))
+        self.trimUtteranceAct.setIcon(icon20)
         self.reloadCorpusAct = QAction(MainWindow)
         self.reloadCorpusAct.setObjectName("reloadCorpusAct")
         self.zoomToSelectionAct = QAction(MainWindow)
         self.zoomToSelectionAct.setObjectName("zoomToSelectionAct")
         self.zoomToSelectionAct.setEnabled(False)
-        icon20 = QIcon(QIcon.fromTheme("zoom-fit-best"))
-        self.zoomToSelectionAct.setIcon(icon20)
+        icon21 = QIcon(QIcon.fromTheme("zoom-fit-best"))
+        self.zoomToSelectionAct.setIcon(icon21)
         self.oovsOnlyAct = QAction(MainWindow)
         self.oovsOnlyAct.setObjectName("oovsOnlyAct")
         self.oovsOnlyAct.setCheckable(True)
-        icon21 = QIcon(QIcon.fromTheme("tools-check-spelling"))
-        self.oovsOnlyAct.setIcon(icon21)
+        icon22 = QIcon(QIcon.fromTheme("tools-check-spelling"))
+        self.oovsOnlyAct.setIcon(icon22)
         self.diarizeSpeakersAct = QAction(MainWindow)
         self.diarizeSpeakersAct.setObjectName("diarizeSpeakersAct")
         self.find_duplicates_action = QAction(MainWindow)
@@ -264,6 +269,20 @@ class Ui_MainWindow(object):
         self.openCorpusManagerAct.setObjectName("openCorpusManagerAct")
         self.verifyTranscriptsAct = QAction(MainWindow)
         self.verifyTranscriptsAct.setObjectName("verifyTranscriptsAct")
+        self.transcribeUtteranceAct = QAction(MainWindow)
+        self.transcribeUtteranceAct.setObjectName("transcribeUtteranceAct")
+        self.transcribeUtteranceAct.setEnabled(False)
+        icon23 = QIcon(QIcon.fromTheme("edit-pen"))
+        self.transcribeUtteranceAct.setIcon(icon23)
+        self.actionLoad_VAD_model = QAction(MainWindow)
+        self.actionLoad_VAD_model.setObjectName("actionLoad_VAD_model")
+        self.speechbrainVadAct = QAction(MainWindow)
+        self.speechbrainVadAct.setObjectName("speechbrainVadAct")
+        self.speechbrainVadAct.setCheckable(True)
+        self.speechbrainVadAct.setEnabled(False)
+        self.kaldiVadAct = QAction(MainWindow)
+        self.kaldiVadAct.setObjectName("kaldiVadAct")
+        self.kaldiVadAct.setCheckable(True)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -327,12 +346,16 @@ class Ui_MainWindow(object):
         self.menuDownload_G2P_model = QMenu(self.menuModels)
         self.menuDownload_G2P_model.setObjectName("menuDownload_G2P_model")
         self.menuDownload_G2P_model.setMaximumSize(QSize(200, 400))
+        self.vadModelMenu = QMenu(self.menuModels)
+        self.vadModelMenu.setObjectName("vadModelMenu")
         self.menuAlignment = QMenu(self.menubar)
         self.menuAlignment.setObjectName("menuAlignment")
         self.menuTranscription = QMenu(self.menubar)
         self.menuTranscription.setObjectName("menuTranscription")
         self.menuExperimental = QMenu(self.menubar)
         self.menuExperimental.setObjectName("menuExperimental")
+        self.menuLanguage = QMenu(self.menubar)
+        self.menuLanguage.setObjectName("menuLanguage")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName("statusbar")
@@ -347,23 +370,23 @@ class Ui_MainWindow(object):
         self.utteranceListWidget = UtteranceListWidget()
         self.utteranceListWidget.setObjectName("utteranceListWidget")
         self.utteranceDockWidget.setWidget(self.utteranceListWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.utteranceDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.utteranceDockWidget)
         self.dictionaryDockWidget = QDockWidget(MainWindow)
         self.dictionaryDockWidget.setObjectName("dictionaryDockWidget")
         self.dictionaryWidget = DictionaryWidget()
         self.dictionaryWidget.setObjectName("dictionaryWidget")
         self.dictionaryDockWidget.setWidget(self.dictionaryWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.dictionaryDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dictionaryDockWidget)
         self.speakerDockWidget = QDockWidget(MainWindow)
         self.speakerDockWidget.setObjectName("speakerDockWidget")
         self.speakerWidget = SpeakerWidget()
         self.speakerWidget.setObjectName("speakerWidget")
         self.speakerDockWidget.setWidget(self.speakerWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.speakerDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.speakerDockWidget)
         self.toolBar = QToolBar(MainWindow)
         self.toolBar.setObjectName("toolBar")
         self.toolBar.setEnabled(True)
-        sizePolicy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         sizePolicy.setHorizontalStretch(1)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.toolBar.sizePolicy().hasHeightForWidth())
@@ -373,25 +396,31 @@ class Ui_MainWindow(object):
         self.toolBar.setAllowedAreas(Qt.BottomToolBarArea)
         self.toolBar.setIconSize(QSize(25, 25))
         self.toolBar.setFloatable(False)
-        MainWindow.addToolBar(Qt.BottomToolBarArea, self.toolBar)
+        MainWindow.addToolBar(Qt.ToolBarArea.BottomToolBarArea, self.toolBar)
         self.acousticModelDockWidget = QDockWidget(MainWindow)
         self.acousticModelDockWidget.setObjectName("acousticModelDockWidget")
         self.acousticModelWidget = AcousticModelWidget()
         self.acousticModelWidget.setObjectName("acousticModelWidget")
         self.acousticModelDockWidget.setWidget(self.acousticModelWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.acousticModelDockWidget)
+        MainWindow.addDockWidget(
+            Qt.DockWidgetArea.LeftDockWidgetArea, self.acousticModelDockWidget
+        )
         self.languageModelDockWidget = QDockWidget(MainWindow)
         self.languageModelDockWidget.setObjectName("languageModelDockWidget")
         self.languageModelWidget = LanguageModelWidget()
         self.languageModelWidget.setObjectName("languageModelWidget")
         self.languageModelDockWidget.setWidget(self.languageModelWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.languageModelDockWidget)
+        MainWindow.addDockWidget(
+            Qt.DockWidgetArea.LeftDockWidgetArea, self.languageModelDockWidget
+        )
         self.transcriptionDockWidget = QDockWidget(MainWindow)
         self.transcriptionDockWidget.setObjectName("transcriptionDockWidget")
         self.transcriptionWidget = TranscriberWidget()
         self.transcriptionWidget.setObjectName("transcriptionWidget")
         self.transcriptionDockWidget.setWidget(self.transcriptionWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.transcriptionDockWidget)
+        MainWindow.addDockWidget(
+            Qt.DockWidgetArea.LeftDockWidgetArea, self.transcriptionDockWidget
+        )
         self.alignmentDockWidget = QDockWidget(MainWindow)
         self.alignmentDockWidget.setObjectName("alignmentDockWidget")
         self.alignmentDockWidget.setEnabled(True)
@@ -399,19 +428,19 @@ class Ui_MainWindow(object):
         self.alignmentWidget = AlignmentWidget()
         self.alignmentWidget.setObjectName("alignmentWidget")
         self.alignmentDockWidget.setWidget(self.alignmentWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.alignmentDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.alignmentDockWidget)
         self.oovDockWidget = QDockWidget(MainWindow)
         self.oovDockWidget.setObjectName("oovDockWidget")
         self.oovWidget = OovWidget()
         self.oovWidget.setObjectName("oovWidget")
         self.oovDockWidget.setWidget(self.oovWidget)
-        MainWindow.addDockWidget(Qt.RightDockWidgetArea, self.oovDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.oovDockWidget)
         self.diarizationDockWidget = QDockWidget(MainWindow)
         self.diarizationDockWidget.setObjectName("diarizationDockWidget")
         self.diarizationWidget = DiarizationWidget()
         self.diarizationWidget.setObjectName("diarizationWidget")
         self.diarizationDockWidget.setWidget(self.diarizationWidget)
-        MainWindow.addDockWidget(Qt.LeftDockWidgetArea, self.diarizationDockWidget)
+        MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.diarizationDockWidget)
 
         self.menubar.addAction(self.menuCorpus.menuAction())
         self.menubar.addAction(self.menuEdit.menuAction())
@@ -421,6 +450,7 @@ class Ui_MainWindow(object):
         self.menubar.addAction(self.menuTranscription.menuAction())
         self.menubar.addAction(self.menuExperimental.menuAction())
         self.menubar.addAction(self.menuWindow.menuAction())
+        self.menubar.addAction(self.menuLanguage.menuAction())
         self.menuCorpus.addAction(self.loadCorpusAct)
         self.menuCorpus.addAction(self.loadRecentCorpusMenu.menuAction())
         self.menuCorpus.addAction(self.openCorpusManagerAct)
@@ -462,6 +492,8 @@ class Ui_MainWindow(object):
         self.menuModels.addAction(self.ivectorExtractorMenu.menuAction())
         self.menuModels.addAction(self.menuDownload_ivector_extractor.menuAction())
         self.menuModels.addAction(self.closeIvectorExtractorAct)
+        self.menuModels.addSeparator()
+        self.menuModels.addAction(self.vadModelMenu.menuAction())
         self.acousticModelMenu.addAction(self.loadAcousticModelAct)
         self.acousticModelMenu.addSeparator()
         self.g2pMenu.addAction(self.loadG2PModelAct)
@@ -474,6 +506,8 @@ class Ui_MainWindow(object):
         self.menuDownload_ivector_extractor.addSeparator()
         self.menuDownload_language_model.addSeparator()
         self.menuDownload_G2P_model.addSeparator()
+        self.vadModelMenu.addAction(self.speechbrainVadAct)
+        self.vadModelMenu.addAction(self.kaldiVadAct)
         self.menuAlignment.addAction(self.loadReferenceAlignmentsAct)
         self.menuAlignment.addAction(self.selectMappingFileAct)
         self.menuAlignment.addAction(self.evaluateAlignmentsAct)
@@ -492,6 +526,8 @@ class Ui_MainWindow(object):
         self.toolBar.addAction(self.deleteUtterancesAct)
         self.toolBar.addSeparator()
         self.toolBar.addAction(self.alignUtteranceAct)
+        self.toolBar.addAction(self.transcribeUtteranceAct)
+        self.toolBar.addAction(self.trimUtteranceAct)
         self.toolBar.addAction(self.segmentUtteranceAct)
         self.toolBar.addAction(self.lockEditAct)
         self.toolBar.addAction(self.exportFilesAct)
@@ -628,6 +664,14 @@ class Ui_MainWindow(object):
             QCoreApplication.translate("MainWindow", "Align the current utterance", None)
         )
         # endif // QT_CONFIG(tooltip)
+        self.trimUtteranceAct.setText(
+            QCoreApplication.translate("MainWindow", "Trim utterance", None)
+        )
+        # if QT_CONFIG(tooltip)
+        self.trimUtteranceAct.setToolTip(
+            QCoreApplication.translate("MainWindow", "Trim the current utterance", None)
+        )
+        # endif // QT_CONFIG(tooltip)
         self.reloadCorpusAct.setText(
             QCoreApplication.translate("MainWindow", "Reload corpus text from disk", None)
         )
@@ -673,6 +717,21 @@ class Ui_MainWindow(object):
             QCoreApplication.translate("MainWindow", "Verify transcripts", None)
         )
         # endif // QT_CONFIG(tooltip)
+        self.transcribeUtteranceAct.setText(
+            QCoreApplication.translate("MainWindow", "Transcribe utterance", None)
+        )
+        # if QT_CONFIG(tooltip)
+        self.transcribeUtteranceAct.setToolTip(
+            QCoreApplication.translate("MainWindow", "Transcribe the current utterance", None)
+        )
+        # endif // QT_CONFIG(tooltip)
+        self.actionLoad_VAD_model.setText(
+            QCoreApplication.translate("MainWindow", "Load VAD model", None)
+        )
+        self.speechbrainVadAct.setText(
+            QCoreApplication.translate("MainWindow", "speechbrain", None)
+        )
+        self.kaldiVadAct.setText(QCoreApplication.translate("MainWindow", "kaldi", None))
         self.menuCorpus.setTitle(QCoreApplication.translate("MainWindow", "Corpus", None))
         self.loadRecentCorpusMenu.setTitle(
             QCoreApplication.translate("MainWindow", "Load a recent corpus", None)
@@ -709,6 +768,9 @@ class Ui_MainWindow(object):
         self.menuDownload_G2P_model.setTitle(
             QCoreApplication.translate("MainWindow", "Download G2P model", None)
         )
+        self.vadModelMenu.setTitle(
+            QCoreApplication.translate("MainWindow", "Load VAD model", None)
+        )
         self.menuAlignment.setTitle(QCoreApplication.translate("MainWindow", "Alignment", None))
         self.menuTranscription.setTitle(
             QCoreApplication.translate("MainWindow", "Transcription", None)
@@ -716,6 +778,7 @@ class Ui_MainWindow(object):
         self.menuExperimental.setTitle(
             QCoreApplication.translate("MainWindow", "Experimental", None)
         )
+        self.menuLanguage.setTitle(QCoreApplication.translate("MainWindow", "Language", None))
         self.utteranceDockWidget.setWindowTitle(
             QCoreApplication.translate("MainWindow", "Utterances", None)
         )

@@ -219,6 +219,13 @@
      </property>
      <addaction name="separator"/>
     </widget>
+    <widget class="QMenu" name="vadModelMenu">
+     <property name="title">
+      <string>Load VAD model</string>
+     </property>
+     <addaction name="speechbrainVadAct"/>
+     <addaction name="kaldiVadAct"/>
+    </widget>
     <addaction name="acousticModelMenu"/>
     <addaction name="menuDownload_acoustic_model"/>
     <addaction name="closeAcousticModelAct"/>
@@ -234,6 +241,8 @@
     <addaction name="ivectorExtractorMenu"/>
     <addaction name="menuDownload_ivector_extractor"/>
     <addaction name="closeIvectorExtractorAct"/>
+    <addaction name="separator"/>
+    <addaction name="vadModelMenu"/>
    </widget>
    <widget class="QMenu" name="menuAlignment">
     <property name="title">
@@ -257,6 +266,11 @@
     <addaction name="cluster_utterances_action"/>
     <addaction name="classify_speakers_action"/>
    </widget>
+   <widget class="QMenu" name="menuLanguage">
+    <property name="title">
+     <string>Language</string>
+    </property>
+   </widget>
    <addaction name="menuCorpus"/>
    <addaction name="menuEdit"/>
    <addaction name="menuDictionary"/>
@@ -265,6 +279,7 @@
    <addaction name="menuTranscription"/>
    <addaction name="menuExperimental"/>
    <addaction name="menuWindow"/>
+   <addaction name="menuLanguage"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QDockWidget" name="utteranceDockWidget">
@@ -345,6 +360,8 @@
    <addaction name="deleteUtterancesAct"/>
    <addaction name="separator"/>
    <addaction name="alignUtteranceAct"/>
+   <addaction name="transcribeUtteranceAct"/>
+   <addaction name="trimUtteranceAct"/>
    <addaction name="segmentUtteranceAct"/>
    <addaction name="lockEditAct"/>
    <addaction name="exportFilesAct"/>
@@ -781,6 +798,20 @@
     <string>Align the current utterance</string>
    </property>
   </action>
+  <action name="trimUtteranceAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset theme="edit-scissors"/>
+   </property>
+   <property name="text">
+    <string>Trim utterance</string>
+   </property>
+   <property name="toolTip">
+    <string>Trim the current utterance</string>
+   </property>
+  </action>
   <action name="reloadCorpusAct">
    <property name="text">
     <string>Reload corpus text from disk</string>
@@ -853,6 +884,44 @@
    </property>
    <property name="toolTip">
     <string>Verify transcripts</string>
+   </property>
+  </action>
+  <action name="transcribeUtteranceAct">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="icon">
+    <iconset theme="edit-pen"/>
+   </property>
+   <property name="text">
+    <string>Transcribe utterance</string>
+   </property>
+   <property name="toolTip">
+    <string>Transcribe the current utterance</string>
+   </property>
+  </action>
+  <action name="actionLoad_VAD_model">
+   <property name="text">
+    <string>Load VAD model</string>
+   </property>
+  </action>
+  <action name="speechbrainVadAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>speechbrain</string>
+   </property>
+  </action>
+  <action name="kaldiVadAct">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>kaldi</string>
    </property>
   </action>
  </widget>
