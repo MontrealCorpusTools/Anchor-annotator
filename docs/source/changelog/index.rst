@@ -6,6 +6,11 @@ Changelog
 
    Alpha releases
 
+0.8.1
+-----
+
+- Fixed keyboard interaction on table views
+
 0.8.0
 -----
 
