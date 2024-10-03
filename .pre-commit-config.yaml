@@ -13,6 +13,12 @@ repos:
         language: pygrep
         types: [ python ]
         files: ^anchor/
+      - id: resource-import-check
+        name: resource import check
+        entry: 'import resources_rc'
+        language: pygrep
+        types: [ python ]
+        files: ^anchor/
   - repo: https://github.com/psf/black
     rev: 23.9.1
     hooks:
