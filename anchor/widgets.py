@@ -377,6 +377,8 @@ class BaseTableView(QtWidgets.QTableView):
             current = self.selectionModel().currentIndex()
             text = self.selectionModel().model().data(current, QtCore.Qt.ItemDataRole.DisplayRole)
             clipboard.setText(str(text))
+        elif QtGui.QKeySequence(event.keyCombination()) not in self.settings.all_keybinds:
+            super().keyPressEvent(event)
 
     def setModel(self, model: QtCore.QAbstractItemModel) -> None:
         super().setModel(model)

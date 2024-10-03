@@ -181,8 +181,8 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.ZOOM_IN_KEYBIND: "Ctrl+I",
             AnchorSettings.ZOOM_OUT_KEYBIND: "Ctrl+O",
             AnchorSettings.ZOOM_TO_SELECTION_KEYBIND: "Ctrl+N",
-            AnchorSettings.PAN_LEFT_KEYBIND: "LeftArrow",
-            AnchorSettings.PAN_RIGHT_KEYBIND: "RightArrow",
+            AnchorSettings.PAN_LEFT_KEYBIND: "Left",
+            AnchorSettings.PAN_RIGHT_KEYBIND: "Right",
             AnchorSettings.UNDO_KEYBIND: "Ctrl+Z",
             AnchorSettings.REDO_KEYBIND: "Ctrl+Shift+Z",
             AnchorSettings.RESULTS_PER_PAGE: 100,
@@ -249,6 +249,27 @@ class AnchorSettings(QtCore.QSettings):
             "Transcription": AnchorSettings.TIER_TRANSCRIPTION_VISIBLE,
             "Transcribed words": AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE,
             "Transcribed phones": AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE,
+        }
+
+    @property
+    def all_keybinds(self):
+        return {
+            QtGui.QKeySequence(self.value(x))
+            for x in [
+                self.DELETE_KEYBIND,
+                self.MERGE_KEYBIND,
+                self.PAN_LEFT_KEYBIND,
+                self.PAN_RIGHT_KEYBIND,
+                self.PLAY_KEYBIND,
+                self.REDO_KEYBIND,
+                self.UNDO_KEYBIND,
+                self.SAVE_KEYBIND,
+                self.SEARCH_KEYBIND,
+                self.SPLIT_KEYBIND,
+                self.ZOOM_IN_KEYBIND,
+                self.ZOOM_OUT_KEYBIND,
+                self.ZOOM_TO_SELECTION_KEYBIND,
+            ]
         }
 
     @property
