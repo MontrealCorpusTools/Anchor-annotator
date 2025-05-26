@@ -44,6 +44,7 @@ from montreal_forced_aligner.data import (
     DistanceMetric,
     Language,
     ManifoldAlgorithm,
+    PhoneType,
     TextFileType,
     WordType,
     WorkflowType,
@@ -57,6 +58,7 @@ from montreal_forced_aligner.db import (
     Phone,
     PhoneInterval,
     Pronunciation,
+    ReferencePhoneInterval,
     SoundFile,
     Speaker,
     SpeakerOrdering,
@@ -94,7 +96,7 @@ from montreal_forced_aligner.vad.models import FOUND_SPEECHBRAIN, MfaVAD
 from montreal_forced_aligner.vad.segmenter import TranscriptionSegmenter, VadSegmenter
 from montreal_forced_aligner.validation.corpus_validator import PretrainedValidator
 from PySide6 import QtCore
-from sklearn import discriminant_analysis, metrics, preprocessing
+from sklearn import discriminant_analysis
 from sqlalchemy.orm import joinedload, selectinload, subqueryload
 
 import anchor.db
@@ -664,6 +666,9 @@ class ExportFilesWorker(Worker):
                 if self.progress_callback is not None:
                     self.progress_callback.update_total(files.count())
                 for f in files:
+                    if not f.utterances:
+                        logger.debug(f"Skipping {f.name} for no utterances")
+                        continue
                     if self.stopped.is_set():
                         session.rollback()
                         break
@@ -784,8 +789,8 @@ class ChangeSpeakerWorker(Worker):
         per_utterance = isinstance(self.utterance_ids[0], list)
         with self.session() as session:
             try:
-                if (not per_utterance and self.new_speaker_id <= 0) or any(
-                    x[-1] <= 0 for x in self.utterance_ids
+                if (not per_utterance and self.new_speaker_id <= 0) or (
+                    per_utterance and any(x[-1] <= 0 for x in self.utterance_ids)
                 ):
                     new_speaker_id = session.query(sqlalchemy.func.max(Speaker.id)).scalar() + 1
                     speaker = session.query(Speaker).get(self.old_speaker_id)
@@ -805,6 +810,8 @@ class ChangeSpeakerWorker(Worker):
                         )
                     )
                     session.flush()
+                else:
+                    new_speaker_id = self.new_speaker_id
                 if not per_utterance:
                     utterance_ids = self.utterance_ids
                     if not utterance_ids:
@@ -1064,32 +1071,32 @@ class QueryUtterancesWorker(Worker):
             c = session.query(Corpus).first()
             count_only = self.kwargs.get("count", False)
             has_ivectors = self.kwargs.get("has_ivectors", False)
-            if count_only:
-                columns = [Utterance.id]
-            else:
-                columns = [
-                    Utterance.id,
-                    Utterance.file_id,
-                    Utterance.speaker_id,
-                    Utterance.oovs,
-                    File.name,
-                    Speaker.name,
-                    Utterance.begin,
-                    Utterance.end,
-                    Utterance.duration,
-                    Utterance.text,
-                ]
-                columns.append(Utterance.alignment_log_likelihood)
-                columns.append(Utterance.speech_log_likelihood)
-                columns.append(Utterance.duration_deviation)
-                columns.append(Utterance.phone_error_rate)
-                columns.append(Utterance.alignment_score)
-                columns.append(Utterance.transcription_text)
-                columns.append(Utterance.word_error_rate)
-                if has_ivectors and c.utterance_ivector_column is not None:
-                    columns.append(
-                        c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
-                    )
+            filter_nulls = self.kwargs.get("filter_nulls", [])
+            columns = [
+                Utterance.id,
+                Utterance.file_id,
+                Utterance.speaker_id,
+                Utterance.oovs,
+                File.name,
+                Speaker.name,
+                Utterance.begin,
+                Utterance.end,
+                Utterance.duration,
+                Utterance.text,
+                Utterance.alignment_log_likelihood,
+                Utterance.speech_log_likelihood,
+                Utterance.duration_deviation,
+                Utterance.snr,
+                Utterance.phone_error_rate,
+                Utterance.alignment_score,
+                Utterance.transcription_text,
+                Utterance.word_error_rate,
+            ]
+            if has_ivectors and c.utterance_ivector_column is not None:
+                columns.append(
+                    c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
+                )
+                columns.append(Utterance.diarization_variance)
             speaker_filter = self.kwargs.get("speaker_filter", None)
             file_filter = self.kwargs.get("file_filter", None)
             text_filter: TextFilterQuery = self.kwargs.get("text_filter", None)
@@ -1115,6 +1122,10 @@ class QueryUtterancesWorker(Worker):
                     text_column = Utterance.text
                 filter_regex = text_filter.generate_expression(posix=True)
                 utterances = utterances.filter(text_column.op("~")(filter_regex))
+            for i, null_check in enumerate(filter_nulls):
+                if null_check:
+                    column = columns[i + 3]
+                    utterances = utterances.filter(column != None)  # noqa
             if count_only:
                 try:
                     return utterances.count()
@@ -1181,9 +1192,9 @@ class QuerySpeakersWorker(Worker):
                 Speaker.num_utterances,
                 Speaker.dictionary_id,
             ]
-            if speaker_filter is None:
+            if not speaker_filter:
                 columns.append(
-                    sqlalchemy.func.avg(
+                    sqlalchemy.func.max(
                         c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column)
                     )
                 )
@@ -1257,18 +1268,29 @@ class ClusterSpeakerUtterancesWorker(Worker):
             c = session.query(Corpus).first()
             speaker_name, ivector, utt_count = (
                 session.query(Speaker.name, c.speaker_ivector_column, Speaker.num_utterances)
-                .filter(Speaker.id == speaker_ids[0], c.utterance_ivector_column != None)  # noqa
+                .filter(
+                    Speaker.id == self.speaker_ids[0], c.utterance_ivector_column != None  # noqa
+                )
                 .first()
             )
             if utt_count < 1:
                 return None
-            query = session.query(Utterance.speaker_id).filter(
-                c.utterance_ivector_column != None  # noqa
+            query = (
+                session.query(
+                    Utterance.speaker_id,
+                    c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column),
+                )
+                .join(Utterance.speaker)
+                .filter(c.utterance_ivector_column != None)  # noqa
             )
             query = query.filter(Utterance.speaker_id.in_(self.speaker_ids))
             query = query.order_by(Utterance.id)
             additional_data = (
-                session.query(Utterance.speaker_id)
+                session.query(
+                    Utterance.speaker_id,
+                    c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column),
+                )
+                .join(Utterance.speaker)
                 .filter(
                     c.utterance_ivector_column != None,  # noqa
                 )
@@ -1281,8 +1303,18 @@ class ClusterSpeakerUtterancesWorker(Worker):
             additional_data = additional_data.order_by(
                 c.utterance_ivector_column.cosine_distance(ivector)
             ).limit(min(query.count(), self.limit))
-            cluster_ids = np.array([x for x, in query] + [x for x, in additional_data])
-        return self.speaker_ids, cluster_ids
+            cluster_ids = []
+            distances = []
+            for speaker_id, distance in query:
+                cluster_ids.append(speaker_id)
+                distances.append(distance)
+            for speaker_id, distance in additional_data:
+                cluster_ids.append(speaker_id)
+                distances.append(distance)
+            cluster_ids = np.array(cluster_ids)
+            distances = np.array(distances)
+            distances = (distances - distances.min()) / distances.max()
+        return self.speaker_ids, cluster_ids, distances
 
 
 class CalculateSpeakerIvectorsWorker(Worker):
@@ -1308,7 +1340,9 @@ class CalculateSpeakerIvectorsWorker(Worker):
             c = session.query(Corpus).first()
             speaker_name, ivector, utt_count = (
                 session.query(Speaker.name, c.speaker_ivector_column, Speaker.num_utterances)
-                .filter(Speaker.id == speaker_ids[0], c.utterance_ivector_column != None)  # noqa
+                .filter(
+                    Speaker.id == self.speaker_ids[0], c.utterance_ivector_column != None  # noqa
+                )
                 .first()
             )
             if utt_count < 1:
@@ -1389,7 +1423,9 @@ class SpeakerMdsWorker(Worker):
                 dim = IVECTOR_DIMENSION
             speaker_name, ivector, utt_count = (
                 session.query(Speaker.name, c.speaker_ivector_column, Speaker.num_utterances)
-                .filter(Speaker.id == speaker_ids[0], c.utterance_ivector_column != None)  # noqa
+                .filter(
+                    Speaker.id == self.speaker_ids[0], c.utterance_ivector_column != None  # noqa
+                )
                 .first()
             )
             query = (
@@ -1442,17 +1478,17 @@ class SpeakerMdsWorker(Worker):
                     (num_utterances + additional_data.count() + self.limit,), dtype="int32"
                 )
                 ivectors = np.array(self.plda.transform_ivectors(ivectors, counts))
-                metric_type = DistanceMetric.cosine
+                self.metric_type = DistanceMetric.cosine
             if ivectors.shape[0] <= self.perplexity:
-                perplexity = ivectors.shape[0] - 1
+                self.perplexity = ivectors.shape[0] - 1
             if self.speaker_space is not None:
                 points = self.speaker_space.transform(ivectors)
             else:
                 points = visualize_clusters(
                     ivectors,
                     ManifoldAlgorithm.tsne,
-                    metric_type,
-                    perplexity,
+                    self.metric_type,
+                    self.perplexity,
                     self.plda,
                     quick=False,
                 )
@@ -1460,37 +1496,42 @@ class SpeakerMdsWorker(Worker):
         return self.speaker_ids, points
 
 
-class SpeakerDiarizationWorker(Worker):
+class AlignmentAnalysisWorker(Worker):
     def __init__(
         self,
         session,
         use_mp=False,
-        in_speakers=False,
-        use_silhouette: bool = False,
-        threshold: float = None,
-        metric: typing.Union[str, DistanceMetric] = DistanceMetric.cosine,
-        plda: Plda = None,
-        speaker_plda: SpeakerPlda = None,
+        speaker_id: int = None,
+        phone_id: int = None,
+        word_filter: TextFilterQuery = None,
+        less_than: float = None,
+        greater_than: float = None,
+        measure: str = "duration",
+        exclude_manual: bool = False,
+        word_mode: bool = False,
+        relative_duration: bool = False,
         limit: int = 100,
+        current_offset: int = 0,
+        sort_index: int = None,
+        sort_desc: bool = False,
         **kwargs,
     ):
         super().__init__(use_mp=use_mp, **kwargs)
         self.session = session
-        self.in_speakers = in_speakers
-        self.threshold = threshold
-        self.metric = metric
-        self.plda = plda
-        self.speaker_plda = speaker_plda
-        self.limit = limit
-        self.use_silhouette = use_silhouette
+        self.speaker_id = speaker_id
+        self.phone_id = phone_id
+        self.less_than = less_than
+        self.greater_than = greater_than
+        self.measure = measure
+        self.word_filter = word_filter
+        self.exclude_manual = exclude_manual
+        self.word_mode = word_mode
+        self.relative_duration = relative_duration
 
-        if isinstance(self.metric, str):
-            self.metric = DistanceMetric[self.metric]
-        if self.use_silhouette:
-            self.metric = DistanceMetric.cosine
-        if self.metric is DistanceMetric.plda:
-            if self.plda is None:
-                self.metric = DistanceMetric.cosine
+        self.limit = limit
+        self.current_offset = current_offset
+        self.sort_index = sort_index
+        self.sort_desc = sort_desc
 
     def _run(self):
         count_only = self.kwargs.get("count", False)
@@ -1498,137 +1539,164 @@ class SpeakerDiarizationWorker(Worker):
             self.progress_callback.update_total(self.limit)
 
         with self.session() as session:
-            c = session.query(Corpus).first()
-            suggested_indices = []
+            indices = []
+            file_indices = []
             speaker_indices = []
             utterance_ids = []
+            reversed_indices = {}
             data = []
-
-            query = session.query(
-                Speaker.id, c.speaker_ivector_column, Speaker.name, Speaker.num_utterances
-            ).filter(
-                c.speaker_ivector_column != None  # noqa
-            )
-            if self.use_silhouette:
-                query = query.filter(Speaker.num_utterances > 1)
+            if not self.word_mode:
+                if not count_only and self.relative_duration:
+                    duration_column = sqlalchemy.sql.label(
+                        "duration",
+                        (PhoneInterval.duration - Phone.mean_duration) / Phone.sd_duration,
+                    )
+                else:
+                    duration_column = PhoneInterval.duration
+                goodness_column = PhoneInterval.phone_goodness
+                columns = [
+                    PhoneInterval.id,
+                    PhoneInterval.utterance_id,
+                    Utterance.file_id,
+                    Utterance.speaker_id,
+                    Utterance.begin,
+                    Utterance.end,
+                    File.name,
+                    Speaker.name,
+                    Phone.phone,
+                    duration_column,
+                    goodness_column,
+                    Word.word,
+                ]
+                query = (
+                    session.query(*columns)
+                    .join(PhoneInterval.utterance)
+                    .join(PhoneInterval.phone)
+                    .join(Utterance.speaker)
+                    .join(Utterance.file)
+                    .join(PhoneInterval.word_interval)
+                    .join(WordInterval.word)
+                )
             else:
-                query = query.filter(Speaker.num_utterances > 0)
-            if count_only:
-                return query.count()
-            query = query.order_by(sqlalchemy.func.random())
-
-            if self.threshold is None:
-                query = query.limit(self.limit).offset(self.kwargs.get("current_offset", 0))
-            found = set()
-            for speaker_id, ivector, speaker_name, num_utterances in query:
-                if self.stopped is not None and self.stopped.is_set():
-                    break
-                if self.metric is DistanceMetric.plda:
-                    kaldi_ivector = DoubleVector()
-                    kaldi_ivector.from_numpy(ivector)
-                    ivector_normalize_length(kaldi_ivector)
-                    kaldi_ivector = self.plda.transform_ivector(kaldi_ivector, num_utterances)
-                    index, distance = self.plda.classify_utterance(
-                        kaldi_ivector, self.speaker_plda.test_ivectors, self.speaker_plda.counts
+                if not count_only and self.relative_duration:
+                    duration_column = sqlalchemy.sql.label(
+                        "duration",
+                        sqlalchemy.func.sum(PhoneInterval.duration)
+                        / sqlalchemy.func.sum(Phone.mean_duration),
                     )
-                    suggested_name = self.speaker_plda.suggested_names[index]
-                    suggested_count = self.speaker_plda.counts[index]
-                    suggested_id = self.speaker_plda.suggested_ids[index]
-                    if suggested_id == speaker_id:
-                        continue
-                    if self.threshold is not None and distance < self.threshold:
-                        continue
                 else:
-                    suggested_speaker_query = session.query(
-                        Speaker.id,
+                    duration_column = sqlalchemy.func.avg(PhoneInterval.duration)
+                goodness_column = sqlalchemy.func.min(PhoneInterval.phone_goodness)
+                columns = [
+                    WordInterval.id,
+                    WordInterval.utterance_id,
+                    Utterance.file_id,
+                    Utterance.speaker_id,
+                    Utterance.begin,
+                    Utterance.end,
+                    File.name,
+                    Speaker.name,
+                    sqlalchemy.func.string_agg(
+                        Phone.phone,
+                        sqlalchemy.dialects.postgresql.aggregate_order_by(
+                            sqlalchemy.literal_column("' '"), PhoneInterval.begin
+                        ),
+                    ),
+                    duration_column,
+                    goodness_column,
+                    Word.word,
+                ]
+                query = (
+                    session.query(*columns)
+                    .join(PhoneInterval.utterance)
+                    .join(PhoneInterval.phone)
+                    .join(Utterance.speaker)
+                    .join(Utterance.file)
+                    .join(PhoneInterval.word_interval)
+                    .join(WordInterval.word)
+                    .group_by(
+                        WordInterval.id,
+                        Utterance.id,
+                        Utterance.file_id,
+                        Utterance.speaker_id,
+                        Utterance.begin,
+                        Utterance.end,
+                        File.name,
                         Speaker.name,
-                        Speaker.num_utterances,
-                        c.speaker_ivector_column.cosine_distance(ivector),
-                    ).filter(
-                        Speaker.id != speaker_id,
-                        # Speaker.num_utterances <= 200
+                        Word.word,
                     )
-                    if self.use_silhouette:
-                        suggested_speaker_query = suggested_speaker_query.filter(
-                            Speaker.num_utterances > 1
-                        )
-                    suggested_speaker_query = suggested_speaker_query.order_by(
-                        c.speaker_ivector_column.cosine_distance(ivector)
-                    ).limit(1)
-                    r = suggested_speaker_query.first()
-                    if r is None:
-                        continue
-                    suggested_id, suggested_name, suggested_count, distance = r
-                    if (suggested_id, speaker_id) in found or (speaker_id, suggested_id) in found:
-                        continue
-                    if self.use_silhouette:
-                        utterance_query = (
-                            session.query(Utterance.speaker_id, c.utterance_ivector_column)
-                            .filter(Utterance.speaker_id.in_([speaker_id, suggested_id]))
-                            .filter(c.utterance_ivector_column != None)  # noqa
-                        )
-                        ivectors = []
-                        labels = []
-                        for speaker_id, utterance_ivector in utterance_query:
-                            labels.append(speaker_id)
-                            ivectors.append(utterance_ivector)
-                        ivectors = np.array(ivectors)
-                        if self.metric is DistanceMetric.cosine:
-                            ivectors = preprocessing.normalize(ivectors, norm="l2")
-                            self.metric = "euclidean"
-                        distance = metrics.silhouette_score(ivectors, labels, metric=self.metric)
-                    if self.threshold is not None:
-                        if distance is not None and distance > self.threshold:
-                            continue
-                    if distance is None:
-                        continue
-                if self.progress_callback is not None:
-                    self.progress_callback.increment_progress(1)
+                )
 
-                utterance_ids.append(None)
-                utterance_name = ""
-                if suggested_count >= num_utterances:
-                    found.add((suggested_id, speaker_id))
-                    suggested_indices.append(suggested_id)
-                    speaker_indices.append(speaker_id)
-                    data.append(
-                        [
-                            utterance_name,
-                            suggested_name,
-                            suggested_count,
-                            speaker_name,
-                            num_utterances,
-                            distance,
-                        ]
-                    )
+            if self.speaker_id is not None:
+                if isinstance(self.speaker_id, int):
+                    query = query.filter(Utterance.speaker_id == self.speaker_id)
                 else:
-                    found.add((speaker_id, suggested_id))
-                    suggested_indices.append(speaker_id)
-                    speaker_indices.append(suggested_id)
-                    data.append(
-                        [
-                            utterance_name,
-                            speaker_name,
-                            num_utterances,
-                            suggested_name,
-                            suggested_count,
-                            distance,
-                        ]
-                    )
-                if len(data) >= self.limit:
-                    break
-            d = np.array([x[-1] for x in data])
-            if self.metric is DistanceMetric.plda:
-                d *= -1
-            indices = np.argsort(d)
-            utterance_ids = [utterance_ids[x] for x in indices]
-            suggested_indices = [suggested_indices[x] for x in indices]
-            speaker_indices = [speaker_indices[x] for x in indices]
-            data = [data[x] for x in indices]
-        return data, utterance_ids, suggested_indices, speaker_indices
+                    query = query.filter(Speaker.name == self.speaker_id)
+            if self.phone_id is not None:
+                if isinstance(self.phone_id, int):
+                    query = query.filter(PhoneInterval.phone_id == self.phone_id)
+                else:
+                    query = query.filter(Phone.phone == self.phone_id)
+            else:
+                query = query.filter(Phone.phone_type.in_([PhoneType.non_silence]))
+            if self.exclude_manual:
+                query = query.filter(Utterance.manual_alignments == False)  # noqa
+            if self.measure == "duration":
+                measure_column = duration_column
+            else:
+                measure_column = goodness_column
+            if self.less_than is not None or self.greater_than is not None:
+                if self.less_than is not None:
+                    query = query.filter(measure_column < self.less_than)
+                if self.greater_than is not None:
+                    query = query.filter(measure_column > self.greater_than)
+            if self.word_filter is not None and self.word_filter.text:
+                filter_regex = self.word_filter.generate_expression(posix=True)
+                query = query.filter(Word.word.op("~")(filter_regex))
+            if count_only:
+                try:
+                    return query.count()
+                except psycopg2.errors.InvalidRegularExpression:
+                    return 0
+            if self.sort_index is not None and self.sort_index + 6 <= len(columns) - 1:
+                sort_column = columns[self.sort_index + 6]
+                if self.sort_desc:
+                    sort_column = sort_column.desc()
+                query = query.order_by(sort_column, Utterance.id, PhoneInterval.begin)
+            else:
+                if self.word_mode:
+                    query = query.order_by(duration_column, Utterance.id, WordInterval.id)
+                else:
+                    query = query.order_by(duration_column, Utterance.id, PhoneInterval.begin)
+            query = query.limit(self.limit).offset(self.current_offset)
+            try:
+                for i, u in enumerate(query):
+                    if self.stopped is not None and self.stopped.is_set():
+                        return
+                    phone_interval_id = u[0]
+                    utterance_id = u[1]
+                    file_id = u[2]
+                    speaker_id = u[3]
+                    begin = u[4]
+                    end = u[5]
+                    file_name = u[6]
+                    indices.append(phone_interval_id)
+                    reversed_indices[phone_interval_id] = i
+                    file_indices.append(file_id)
+                    speaker_indices.append(speaker_id)
+
+                    utterance_ids.append(utterance_id)
+                    utterance_name = f"{file_name} ({begin:.3f}-{end:.3f})"
+                    data.append([utterance_name, *u[7:]])
+                    if self.progress_callback is not None:
+                        self.progress_callback.increment_progress(1)
+
+            except psycopg2.errors.InvalidRegularExpression:
+                pass
+        return data, indices, utterance_ids, file_indices, speaker_indices, reversed_indices
 
 
-class SpeakerUtterancesWorker(Worker):
+class SpeakerDiarizationWorker(Worker):
     def __init__(
         self,
         session,
@@ -1642,8 +1710,8 @@ class SpeakerUtterancesWorker(Worker):
         speaker_plda: SpeakerPlda = None,
         limit: int = 100,
         inverted: bool = False,
+        utterance_based: bool = False,
         text_filter: TextFilterQuery = None,
-        in_speakers: bool = False,
         **kwargs,
     ):
         super().__init__(use_mp=use_mp, **kwargs)
@@ -1657,8 +1725,8 @@ class SpeakerUtterancesWorker(Worker):
         self.speaker_plda = speaker_plda
         self.limit = limit
         self.inverted = inverted
+        self.utterance_based = utterance_based
         self.text_filter = text_filter
-        self.in_speakers = in_speakers
 
         if isinstance(self.metric, str):
             self.metric = DistanceMetric[self.metric]
@@ -1684,6 +1752,8 @@ class SpeakerUtterancesWorker(Worker):
                     and self.speaker_plda is None
                 ):
                     speaker_plda = load_speaker_plda(session, self.plda, minimum_count=2)
+                elif self.speaker_plda is not None:
+                    speaker_plda = self.speaker_plda
 
             if self.reference_utterance_id is not None:
                 utterance_query = (
@@ -2098,7 +2168,6 @@ class SpeakerUtterancesWorker(Worker):
                     query = query.filter(
                         c.utterance_ivector_column.cosine_distance(ivector) <= self.threshold
                     )
-
                 if count_only:
                     return query.count()
                 if self.text_filter is None or not self.text_filter.text:
@@ -2147,7 +2216,304 @@ class SpeakerUtterancesWorker(Worker):
                             distance,
                         ]
                     )
-            elif self.in_speakers:
+            else:
+                query = (
+                    session.query(
+                        Utterance.id,
+                        File.id,
+                        File.name,
+                        Utterance.begin,
+                        Utterance.end,
+                        c.utterance_ivector_column,
+                        Speaker.name,
+                        Speaker.id,
+                        Speaker.num_utterances,
+                    )
+                    .join(Utterance.file)
+                    .join(Utterance.speaker)
+                    .filter(c.utterance_ivector_column != None)  # noqa
+                    .filter(Speaker.num_utterances == 1)
+                )
+                if self.text_filter is not None and self.text_filter.text:
+                    filter_regex = self.text_filter.generate_expression(posix=True)
+                    query = query.filter(Utterance.text.op("~")(filter_regex))
+                if count_only:
+                    return query.count()
+                query = query.order_by(sqlalchemy.func.random())
+
+                if self.threshold is None:
+                    query = query.limit(self.limit).offset(self.kwargs.get("current_offset", 0))
+                # else:
+                #    query = query.limit(limit*100)
+                for (
+                    utt_id,
+                    file_id,
+                    file_name,
+                    begin,
+                    end,
+                    ivector,
+                    speaker_name,
+                    speaker_id,
+                    speaker_num_utterances,
+                ) in query:
+                    if self.stopped is not None and self.stopped.is_set():
+                        break
+                    if self.metric is DistanceMetric.plda:
+                        kaldi_ivector = DoubleVector()
+                        kaldi_ivector.from_numpy(ivector)
+                        ivector_normalize_length(kaldi_ivector)
+                        kaldi_ivector = self.plda.transform_ivector(kaldi_ivector, 1)
+                        index, distance = self.plda.classify_utterance(
+                            kaldi_ivector, speaker_plda.test_ivectors, speaker_plda.counts
+                        )
+                        suggested_name = speaker_plda.suggested_names[index]
+                        suggested_count = speaker_plda.counts[index]
+                        suggested_id = speaker_plda.suggested_ids[index]
+                        if suggested_id == speaker_id:
+                            continue
+                        if self.threshold is not None and distance < self.threshold:
+                            continue
+                    else:
+                        if self.utterance_based:
+                            sub_query = (
+                                session.query(
+                                    Speaker.id,
+                                    Speaker.name,
+                                    Speaker.num_utterances,
+                                    c.speaker_ivector_column.cosine_distance(ivector).label(
+                                        "distance"
+                                    ),
+                                )
+                                .join(Speaker.utterances)
+                                .filter(
+                                    Speaker.id != speaker_id,
+                                )
+                                .order_by(c.utterance_ivector_column.cosine_distance(ivector))
+                                .limit(100)
+                                .subquery()
+                            )
+
+                            suggested_speaker_query = (
+                                session.query(
+                                    sub_query.c.id,
+                                    sub_query.c.name,
+                                    sub_query.c.num_utterances,
+                                    sub_query.c.distance,
+                                )
+                                .group_by(
+                                    sub_query.c.id,
+                                    sub_query.c.name,
+                                    sub_query.c.num_utterances,
+                                    sub_query.c.distance,
+                                )
+                                .order_by(sqlalchemy.func.count(sub_query.c.id).desc())
+                            )
+
+                        else:
+                            suggested_speaker_query = session.query(
+                                Speaker.id,
+                                Speaker.name,
+                                Speaker.num_utterances,
+                                c.speaker_ivector_column.cosine_distance(ivector),
+                            ).filter(
+                                Speaker.id != speaker_id,
+                            )
+                            suggested_speaker_query = suggested_speaker_query.order_by(
+                                c.speaker_ivector_column.cosine_distance(ivector)
+                            ).limit(5)
+                        r = suggested_speaker_query.all()
+                        if not r:
+                            continue
+                        suggested_id = []
+                        suggested_name = []
+                        suggested_count = []
+                        distance = []
+                        for s_id, s_name, s_count, d in r:
+                            suggested_id.append(s_id)
+                            suggested_name.append(s_name)
+                            suggested_count.append(s_count)
+                            distance.append(d)
+                        if len(suggested_id) == 1:
+                            suggested_id = suggested_id[0]
+                            suggested_name = suggested_name[0]
+                            suggested_count = suggested_count[0]
+                            distance = distance[0]
+                        if self.threshold is not None:
+                            if isinstance(distance, list) and distance[0] > self.threshold:
+                                continue
+                            elif (
+                                not isinstance(distance, list)
+                                and distance is not None
+                                and distance > self.threshold
+                            ):
+                                continue
+                        if distance is None:
+                            continue
+                    if self.progress_callback is not None:
+                        self.progress_callback.increment_progress(1)
+
+                    utterance_ids.append(utt_id)
+                    suggested_indices.append(suggested_id)
+                    speaker_indices.append(speaker_id)
+                    utterance_name = f"{file_name} ({begin:.3f}-{end:.3f})"
+                    data.append(
+                        [
+                            utterance_name,
+                            suggested_name,
+                            suggested_count,
+                            speaker_name,
+                            speaker_num_utterances,
+                            distance,
+                        ]
+                    )
+                    if len(data) >= self.limit:
+                        break
+            d = np.array([x[-1] if not isinstance(x[-1], list) else x[-1][0] for x in data])
+            if self.metric is DistanceMetric.plda:
+                d *= -1
+            indices = np.argsort(d)
+            utterance_ids = [utterance_ids[x] for x in indices]
+            suggested_indices = [suggested_indices[x] for x in indices]
+            speaker_indices = [speaker_indices[x] for x in indices]
+            data = [data[x] for x in indices]
+        return data, utterance_ids, suggested_indices, speaker_indices
+
+
+class SpeakerComparisonWorker(Worker):
+    def __init__(
+        self,
+        session,
+        use_mp=False,
+        speaker_id: int = None,
+        alternate_speaker_id: int = None,
+        reference_utterance_id: int = None,
+        threshold: float = None,
+        metric: typing.Union[str, DistanceMetric] = DistanceMetric.cosine,
+        plda: Plda = None,
+        speaker_plda: SpeakerPlda = None,
+        limit: int = 100,
+        inverted: bool = False,
+        text_filter: TextFilterQuery = None,
+        **kwargs,
+    ):
+        super().__init__(use_mp=use_mp, **kwargs)
+        self.session = session
+        self.speaker_id = speaker_id
+        self.alternate_speaker_id = alternate_speaker_id
+        self.reference_utterance_id = reference_utterance_id
+        self.threshold = threshold
+        self.metric = metric
+        self.plda = plda
+        self.speaker_plda = speaker_plda
+        self.limit = limit
+        self.inverted = inverted
+        self.text_filter = text_filter
+
+        if isinstance(self.metric, str):
+            self.metric = DistanceMetric[self.metric]
+        if self.metric is DistanceMetric.plda:
+            if self.plda is None:
+                self.metric = DistanceMetric.cosine
+
+    def _run(self):
+        count_only = self.kwargs.get("count", False)
+        if not count_only and self.progress_callback is not None:
+            self.progress_callback.update_total(self.limit)
+
+        with self.session() as session:
+            c = session.query(Corpus).first()
+            suggested_indices = []
+            speaker_indices = []
+            utterance_ids = []
+            data = []
+            if self.inverted or self.speaker_id is None:
+                if (
+                    self.metric is DistanceMetric.plda
+                    and not count_only
+                    and self.speaker_plda is None
+                ):
+                    speaker_plda = load_speaker_plda(session, self.plda, minimum_count=2)
+                elif self.speaker_plda is not None:
+                    speaker_plda = self.speaker_plda
+            found_set = set()
+            if self.speaker_id is not None:
+                query = session.query(
+                    Speaker.name, c.speaker_ivector_column, Speaker.num_utterances
+                )
+                if isinstance(self.speaker_id, int):
+                    query = query.filter(Speaker.id == self.speaker_id)
+                else:
+                    query = query.filter(Speaker.name == self.speaker_id)
+                r = query.first()
+                if r is None:
+                    return data, utterance_ids, suggested_indices
+                suggested_name, ivector, utt_count = r
+
+                if self.metric is DistanceMetric.plda:
+                    kaldi_speaker_ivector = DoubleVector()
+                    kaldi_speaker_ivector.from_numpy(ivector)
+                    kaldi_speaker_ivector = self.plda.transform_ivector(
+                        kaldi_speaker_ivector, utt_count
+                    )
+                query = session.query(
+                    Speaker.id,
+                    Speaker.name,
+                    Speaker.num_utterances,
+                    c.speaker_ivector_column,
+                    c.speaker_ivector_column.cosine_distance(ivector),
+                ).filter(Speaker.id != self.speaker_id)
+                if self.alternate_speaker_id is not None:
+                    query = query.filter(Speaker.id == self.alternate_speaker_id)
+                if self.threshold is not None:
+                    query = query.filter(
+                        c.speaker_ivector_column.cosine_distance(ivector) <= self.threshold
+                    )
+
+                if count_only:
+                    return query.count()
+                query = query.limit(self.limit).offset(self.kwargs.get("current_offset", 0))
+                for (
+                    original_id,
+                    speaker_name,
+                    original_count,
+                    original_ivector,
+                    distance,
+                ) in query:
+                    if self.stopped is not None and self.stopped.is_set():
+                        session.rollback()
+                        return
+                    if distance is None:
+                        continue
+                    if (self.speaker_id, original_id) in found_set:
+                        continue
+                    if self.progress_callback is not None:
+                        self.progress_callback.increment_progress(1)
+                    if self.metric is DistanceMetric.plda:
+                        kaldi_utterance_ivector = DoubleVector()
+                        kaldi_utterance_ivector.from_numpy(original_ivector)
+                        ivector_normalize_length(kaldi_utterance_ivector)
+                        kaldi_utterance_ivector = self.plda.transform_ivector(
+                            kaldi_utterance_ivector, original_count
+                        )
+                        distance = self.plda.LogLikelihoodRatio(
+                            kaldi_speaker_ivector, utt_count, kaldi_utterance_ivector
+                        )
+                    utterance_ids.append(None)
+                    suggested_indices.append(self.speaker_id)
+                    speaker_indices.append(original_id)
+                    found_set.add((self.speaker_id, original_id))
+                    utterance_name = ""
+                    data.append(
+                        [
+                            utterance_name,
+                            suggested_name,
+                            utt_count,
+                            speaker_name,
+                            original_count,
+                            distance,
+                        ]
+                    )
+            else:
                 query = (
                     session.query(
                         Speaker.id, c.speaker_ivector_column, Speaker.name, Speaker.num_utterances
@@ -2209,7 +2575,15 @@ class SpeakerUtterancesWorker(Worker):
                             continue
                     if self.progress_callback is not None:
                         self.progress_callback.increment_progress(1)
-
+                    if suggested_count < num_utterances:
+                        speaker_id, suggested_id = suggested_id, speaker_id
+                        speaker_name, suggested_name = suggested_name, speaker_name
+                        num_utterances, suggested_count = suggested_count, num_utterances
+                    if (speaker_id, suggested_id) in found_set:
+                        continue
+                    if (suggested_id, speaker_id) in found_set:
+                        continue
+                    found_set.add((speaker_id, suggested_id))
                     utterance_ids.append(None)
                     suggested_indices.append(suggested_id)
                     speaker_indices.append(speaker_id)
@@ -2221,107 +2595,6 @@ class SpeakerUtterancesWorker(Worker):
                             suggested_count,
                             speaker_name,
                             num_utterances,
-                            distance,
-                        ]
-                    )
-                    if len(data) >= self.limit:
-                        break
-            else:
-                query = (
-                    session.query(
-                        Utterance.id,
-                        File.id,
-                        File.name,
-                        Utterance.begin,
-                        Utterance.end,
-                        c.utterance_ivector_column,
-                        Speaker.name,
-                        Speaker.id,
-                        Speaker.num_utterances,
-                    )
-                    .join(Utterance.file)
-                    .join(Utterance.speaker)
-                    .filter(c.utterance_ivector_column != None)  # noqa
-                    .filter(Speaker.num_utterances == 1)
-                )
-                if self.text_filter is not None and self.text_filter.text:
-                    filter_regex = self.text_filter.generate_expression(posix=True)
-                    query = query.filter(Utterance.text.op("~")(filter_regex))
-                if count_only:
-                    return query.count()
-                if self.text_filter is None or not self.text_filter.text:
-                    # query = query.order_by(c.utterance_ivector_column.cosine_distance(c.speaker_ivector_column).desc())
-                    query = query.order_by(sqlalchemy.func.random())
-                    # query = query.order_by(Utterance.duration.desc())
-
-                if self.threshold is None:
-                    query = query.limit(self.limit).offset(self.kwargs.get("current_offset", 0))
-                # else:
-                #    query = query.limit(limit*100)
-                for (
-                    utt_id,
-                    file_id,
-                    file_name,
-                    begin,
-                    end,
-                    ivector,
-                    speaker_name,
-                    speaker_id,
-                    speaker_num_utterances,
-                ) in query:
-                    if self.stopped is not None and self.stopped.is_set():
-                        break
-                    if self.metric is DistanceMetric.plda:
-                        kaldi_ivector = DoubleVector()
-                        kaldi_ivector.from_numpy(ivector)
-                        ivector_normalize_length(kaldi_ivector)
-                        kaldi_ivector = self.plda.transform_ivector(kaldi_ivector, 1)
-                        index, distance = self.plda.classify_utterance(
-                            kaldi_ivector, speaker_plda.test_ivectors, speaker_plda.counts
-                        )
-                        suggested_name = speaker_plda.suggested_names[index]
-                        suggested_count = speaker_plda.counts[index]
-                        suggested_id = speaker_plda.suggested_ids[index]
-                        if suggested_id == speaker_id:
-                            continue
-                        if self.threshold is not None and distance < self.threshold:
-                            continue
-                    else:
-                        suggested_speaker_query = session.query(
-                            Speaker.id,
-                            Speaker.name,
-                            Speaker.num_utterances,
-                            c.speaker_ivector_column.cosine_distance(ivector),
-                        ).filter(
-                            Speaker.id != speaker_id,
-                            # Speaker.num_utterances <= 200
-                        )
-                        suggested_speaker_query = suggested_speaker_query.order_by(
-                            c.speaker_ivector_column.cosine_distance(ivector)
-                        ).limit(1)
-                        r = suggested_speaker_query.first()
-                        if r is None:
-                            continue
-                        suggested_id, suggested_name, suggested_count, distance = r
-                        if self.threshold is not None:
-                            if distance is not None and distance > self.threshold:
-                                continue
-                        if distance is None:
-                            continue
-                    if self.progress_callback is not None:
-                        self.progress_callback.increment_progress(1)
-
-                    utterance_ids.append(utt_id)
-                    suggested_indices.append(suggested_id)
-                    speaker_indices.append(speaker_id)
-                    utterance_name = f"{file_name} ({begin:.3f}-{end:.3f})"
-                    data.append(
-                        [
-                            utterance_name,
-                            suggested_name,
-                            suggested_count,
-                            speaker_name,
-                            speaker_num_utterances,
                             distance,
                         ]
                     )
@@ -2846,11 +3119,13 @@ class FileUtterancesWorker(Worker):
             .options(
                 selectinload(Utterance.phone_intervals).options(
                     joinedload(PhoneInterval.phone, innerjoin=True),
-                    joinedload(PhoneInterval.workflow, innerjoin=True),
+                ),
+                selectinload(Utterance.reference_phone_intervals).options(
+                    joinedload(ReferencePhoneInterval.phone, innerjoin=True),
                 ),
                 selectinload(Utterance.word_intervals).options(
                     joinedload(WordInterval.word, innerjoin=True),
-                    joinedload(WordInterval.workflow, innerjoin=True),
+                    joinedload(WordInterval.pronunciation, innerjoin=True),
                 ),
                 joinedload(Utterance.speaker, innerjoin=True),
             )
@@ -3146,45 +3421,77 @@ class WaveformWorker(Worker):  # pragma: no cover
 
 
 class SpeakerTierWorker(Worker):  # pragma: no cover
-    def __init__(self, session, file_id, *args, query_alignment=False):
+    def __init__(
+        self,
+        session,
+        file_id,
+        *args,
+        query_alignment=False,
+        utterance_id=None,
+        begin=None,
+        end=None,
+    ):
         super().__init__("Generating speaker tier", *args)
         self.query_alignment = query_alignment
         self.session = session
         self.file_id = file_id
+        self.utterance_id = utterance_id
+        self.begin = begin
+        self.end = end
         self.settings = AnchorSettings()
 
     def run(self):
         if self.session is None:
             return
         with self.session() as session:
-            show_phones = (
-                self.settings.value(self.settings.TIER_ALIGNED_PHONES_VISIBLE)
-                or self.settings.value(self.settings.TIER_TRANSCRIBED_PHONES_VISIBLE)
-                or self.settings.value(self.settings.TIER_REFERENCE_PHONES_VISIBLE)
-            )
-            show_words = self.settings.value(
-                self.settings.TIER_ALIGNED_WORDS_VISIBLE
-            ) or self.settings.value(self.settings.TIER_TRANSCRIBED_WORDS_VISIBLE)
+            file = session.get(File, self.file_id)
+            show_phones = self.settings.value(
+                self.settings.TIER_ALIGNED_PHONES_VISIBLE
+            ) or self.settings.value(self.settings.TIER_REFERENCE_PHONES_VISIBLE)
+            show_words = self.settings.value(self.settings.TIER_ALIGNED_WORDS_VISIBLE)
             utterances = session.query(Utterance)
             if self.query_alignment:
                 if show_phones:
                     utterances = utterances.options(
                         selectinload(Utterance.phone_intervals).options(
                             joinedload(PhoneInterval.phone, innerjoin=True),
-                            joinedload(PhoneInterval.workflow, innerjoin=True),
-                        )
+                        ),
+                        selectinload(Utterance.reference_phone_intervals).options(
+                            joinedload(ReferencePhoneInterval.phone, innerjoin=True),
+                        ),
                     )
                 if show_words:
                     utterances = utterances.options(
                         selectinload(Utterance.word_intervals).options(
                             joinedload(WordInterval.word, innerjoin=True),
-                            joinedload(WordInterval.workflow, innerjoin=True),
                         ),
                     )
-            utterances = utterances.filter(Utterance.file_id == self.file_id).order_by(
-                Utterance.begin
-            )
-            self.signals.result.emit((utterances.all(), self.file_id))
+            utterances = utterances.filter(
+                Utterance.file_id == self.file_id,
+            ).order_by(Utterance.begin)
+
+            if self.utterance_id is not None:
+                utterances = utterances.filter(Utterance.id == self.utterance_id)
+            if file.duration > 500 and self.begin is not None and self.end is not None:
+                cached_begin = self.begin - 30
+                cached_end = self.end + 30
+                utterances = utterances.filter(
+                    Utterance.end >= cached_begin,
+                    Utterance.begin <= cached_end,
+                )
+            else:
+                cached_begin = None
+                cached_end = None
+            utterances = utterances.all()
+            if (
+                file.duration > 500
+                and self.begin is not None
+                and self.end is not None
+                and utterances
+            ):
+                cached_begin = min(cached_begin, utterances[0].begin)
+                cached_end = max(cached_end, utterances[-1].end)
+            self.signals.result.emit((utterances, self.file_id, cached_begin, cached_end))
 
 
 class SpectrogramWorker(Worker):  # pragma: no cover
@@ -3592,10 +3899,7 @@ class LoadReferenceWorker(FunctionWorker):  # pragma: no cover
         self.settings.sync()
         try:
             with self.corpus.session() as session:
-                session.query(PhoneInterval).filter(
-                    PhoneInterval.workflow_id == CorpusWorkflow.id,
-                    CorpusWorkflow.workflow_type == WorkflowType.reference,
-                ).delete(synchronize_session=False)
+                session.query(ReferencePhoneInterval).delete(synchronize_session=False)
                 session.query(CorpusWorkflow).filter(
                     CorpusWorkflow.workflow_type == WorkflowType.reference
                 ).delete(synchronize_session=False)
@@ -3794,8 +4098,8 @@ class ImportIvectorExtractorWorker(FunctionWorker):  # pragma: no cover
         if not self.model_path:
             return
         try:
-            if str(self.model_path) == "speechbrain":
-                model = "speechbrain"
+            if str(self.model_path) in {"speechbrain", "pyannote"}:
+                model = str(self.model_path)
             else:
                 model = IvectorExtractorModel(self.model_path)
         except Exception:
@@ -3832,36 +4136,20 @@ class AlignUtteranceWorker(FunctionWorker):  # pragma: no cover
                     )
                     .get(self.utterance_id)
                 )
-                workflow = self.corpus_model.corpus.get_latest_workflow_run(
-                    WorkflowType.online_alignment, session
-                )
-
-                alignment_workflows = [
-                    x
-                    for x, in session.query(CorpusWorkflow.id).filter(
-                        CorpusWorkflow.workflow_type.in_(
-                            [WorkflowType.online_alignment, WorkflowType.alignment]
-                        )
-                    )
-                ]
                 session.query(PhoneInterval).filter(
                     PhoneInterval.utterance_id == utterance.id
-                ).filter(PhoneInterval.workflow_id.in_(alignment_workflows)).delete(
-                    synchronize_session=False
-                )
+                ).delete(synchronize_session=False)
                 session.flush()
                 session.query(WordInterval).filter(
                     WordInterval.utterance_id == utterance.id
-                ).filter(WordInterval.workflow_id.in_(alignment_workflows)).delete(
-                    synchronize_session=False
-                )
+                ).delete(synchronize_session=False)
                 session.flush()
                 ctm = align_utterance_online(
                     self.corpus_model.acoustic_model,
                     utterance.to_kalpy(),
                     self.corpus_model.align_lexicon_compiler,
                 )
-                update_utterance_intervals(session, utterance, workflow.id, ctm)
+                update_utterance_intervals(session, utterance, ctm)
         except Exception:
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
@@ -4081,12 +4369,8 @@ class AlignmentWorker(FunctionWorker):  # pragma: no cover
                     )
                 ]
 
-                session.query(PhoneInterval).filter(
-                    PhoneInterval.workflow_id.in_(alignment_workflows),
-                ).delete(synchronize_session=False)
-                session.query(WordInterval).filter(
-                    WordInterval.workflow_id.in_(alignment_workflows)
-                ).delete(synchronize_session=False)
+                session.query(PhoneInterval).delete(synchronize_session=False)
+                session.query(WordInterval).delete(synchronize_session=False)
                 session.query(CorpusWorkflow).filter(
                     CorpusWorkflow.id.in_(alignment_workflows)
                 ).delete(synchronize_session=False)
@@ -4163,7 +4447,7 @@ class ComputeIvectorWorker(FunctionWorker):  # pragma: no cover
         self.settings.sync()
         diarizer = SpeakerDiarizer(
             ivector_extractor_path=self.corpus_model.ivector_extractor.source
-            if self.corpus_model.ivector_extractor != "speechbrain"
+            if self.corpus_model.ivector_extractor not in {"speechbrain", "pyannote"}
             else self.corpus_model.ivector_extractor,
             corpus_directory=self.corpus_model.corpus.corpus_directory,
             cuda=self.settings.value(self.settings.CUDA),
@@ -4174,6 +4458,25 @@ class ComputeIvectorWorker(FunctionWorker):  # pragma: no cover
             if self.reset:
                 logger.info("Resetting ivectors...")
                 self.corpus_model.corpus.reset_features()
+            else:
+                time.sleep(1.0)
+                with self.corpus_model.corpus.session() as session:
+                    logger.debug("Dropping indexes...")
+                    session.execute(
+                        sqlalchemy.text("DROP INDEX IF EXISTS utterance_xvector_index;")
+                    )
+                    session.execute(sqlalchemy.text("DROP INDEX IF EXISTS speaker_xvector_index;"))
+                    session.execute(
+                        sqlalchemy.text("DROP INDEX IF EXISTS utterance_ivector_index;")
+                    )
+                    session.execute(sqlalchemy.text("DROP INDEX IF EXISTS speaker_ivector_index;"))
+                    session.execute(
+                        sqlalchemy.text("DROP INDEX IF EXISTS utterance_plda_vector_index;")
+                    )
+                    session.execute(
+                        sqlalchemy.text("DROP INDEX IF EXISTS speaker_plda_vector_index;")
+                    )
+                    session.commit()
             diarizer.inspect_database()
             diarizer.initialize_jobs()
             diarizer.corpus_output_directory = self.corpus_model.corpus.corpus_output_directory
@@ -4217,7 +4520,7 @@ class ComputePldaWorker(FunctionWorker):  # pragma: no cover
         self.settings.sync()
         diarizer = SpeakerDiarizer(
             ivector_extractor_path=self.ivector_extractor.source
-            if self.ivector_extractor != "speechbrain"
+            if self.ivector_extractor not in {"speechbrain", "pyannote"}
             else self.ivector_extractor,
             corpus_directory=self.corpus.corpus_directory,
             cuda=self.settings.value(self.settings.CUDA),
@@ -4266,7 +4569,7 @@ class ClusterUtterancesWorker(FunctionWorker):  # pragma: no cover
         self.parameters["expected_num_speakers"] = self.corpus.num_speakers
         diarizer = SpeakerDiarizer(
             ivector_extractor_path=self.ivector_extractor.source
-            if self.ivector_extractor != "speechbrain"
+            if self.ivector_extractor not in {"speechbrain", "pyannote"}
             else self.ivector_extractor,
             corpus_directory=self.corpus.corpus_directory,
             cuda=self.settings.value(self.settings.CUDA),
@@ -4319,7 +4622,7 @@ class ClassifySpeakersWorker(FunctionWorker):  # pragma: no cover
         self.settings.sync()
         diarizer = SpeakerDiarizer(
             ivector_extractor_path=self.ivector_extractor.source
-            if self.ivector_extractor != "speechbrain"
+            if self.ivector_extractor not in {"speechbrain", "pyannote"}
             else self.ivector_extractor,
             corpus_directory=self.corpus.corpus_directory,  # score_threshold = 0.5,
             cluster=False,
@@ -4424,16 +4727,8 @@ class TranscriptionWorker(FunctionWorker):  # pragma: no cover
         )
         try:
             with self.corpus.session() as session:
-                session.query(PhoneInterval).filter(
-                    PhoneInterval.workflow_id == CorpusWorkflow.id
-                ).filter(CorpusWorkflow.workflow_type == WorkflowType.transcription).delete(
-                    synchronize_session="fetch"
-                )
-                session.query(WordInterval).filter(
-                    WordInterval.workflow_id == CorpusWorkflow.id
-                ).filter(CorpusWorkflow.workflow_type == WorkflowType.transcription).delete(
-                    synchronize_session="fetch"
-                )
+                session.query(PhoneInterval).delete(synchronize_session="fetch")
+                session.query(WordInterval).delete(synchronize_session="fetch")
                 session.query(CorpusWorkflow).filter(
                     CorpusWorkflow.workflow_type == WorkflowType.transcription
                 ).delete()
@@ -4487,20 +4782,8 @@ class ValidationWorker(FunctionWorker):  # pragma: no cover
         )
         try:
             with self.corpus.session() as session:
-                session.query(PhoneInterval).filter(
-                    PhoneInterval.workflow_id == CorpusWorkflow.id
-                ).filter(
-                    CorpusWorkflow.workflow_type == WorkflowType.per_speaker_transcription
-                ).delete(
-                    synchronize_session="fetch"
-                )
-                session.query(WordInterval).filter(
-                    WordInterval.workflow_id == CorpusWorkflow.id
-                ).filter(
-                    CorpusWorkflow.workflow_type == WorkflowType.per_speaker_transcription
-                ).delete(
-                    synchronize_session="fetch"
-                )
+                session.query(PhoneInterval).delete(synchronize_session="fetch")
+                session.query(WordInterval).delete(synchronize_session="fetch")
                 session.query(CorpusWorkflow).filter(
                     CorpusWorkflow.workflow_type == WorkflowType.per_speaker_transcription
                 ).delete()

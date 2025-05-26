@@ -15,7 +15,7 @@ from montreal_forced_aligner.config import MfaConfiguration, get_temporary_direc
 from montreal_forced_aligner.corpus import AcousticCorpus
 from montreal_forced_aligner.data import Language, WorkflowType
 from montreal_forced_aligner.db import CorpusWorkflow
-from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_SPEECHBRAIN
+from montreal_forced_aligner.diarization.speaker_diarizer import FOUND_PYANNOTE, FOUND_SPEECHBRAIN
 from montreal_forced_aligner.exceptions import DatabaseError
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
@@ -33,6 +33,7 @@ import anchor.db
 from anchor import workers
 from anchor.models import (
     AcousticModelTableModel,
+    AlignmentAnalysisModel,
     CorpusModel,
     CorpusSelectionModel,
     CorpusTableModel,
@@ -52,7 +53,7 @@ from anchor.ui_corpus_manager import Ui_CorpusManagerDialog
 from anchor.ui_error_dialog import Ui_ErrorDialog
 from anchor.ui_main_window import Ui_MainWindow
 from anchor.ui_preferences import Ui_PreferencesDialog
-from anchor.widgets import MediaPlayer, ProgressWidget
+from anchor.widgets import MediaPlayer, ProgressWidget, ScrollableMenuStyle
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -104,6 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_indicator = ProgressWidget()
         self.status_indicator.setFixedWidth(self.ui.statusbar.height())
         self.ui.statusbar.addPermanentWidget(self.status_indicator, 0)
+
         self.settings = AnchorSettings()
         self.settings.themeUpdated.connect(self.refresh_style_sheets)
         self.style_hints = QtGui.QGuiApplication.styleHints()
@@ -122,6 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.languageModelDockWidget)
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.speakerDockWidget)
         self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.diarizationDockWidget)
+        self.tabifyDockWidget(self.ui.utteranceDockWidget, self.ui.alignmentAnalysisDockWidget)
         self.media_player = MediaPlayer(self)
         self.media_player.playbackStateChanged.connect(self.handleAudioState)
         self.media_player.audioReady.connect(self.file_loaded)
@@ -143,6 +146,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "Counting speaker results": None,
             "Counting diarization results": None,
             "Diarizing utterances": None,
+            "Counting alignment analysis results": None,
+            "Analyzing alignments": None,
             "Recalculating speaker ivectors": None,
             "Finding duplicates": None,
             "Querying utterances": None,
@@ -421,17 +426,20 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Counting utterance results":
             worker = workers.QueryUtterancesWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
+        elif function in {"Analyzing alignments", "Counting alignment analysis results"}:
+            worker = workers.AlignmentAnalysisWorker(self.corpus_model.session, **extra_args[0])
+            worker.signals.result.connect(finished_function)
         elif function == "Diarizing utterances":
             worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Diarizing speakers":
-            worker = workers.SpeakerUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker = workers.SpeakerComparisonWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Counting utterance diarization results":
             worker = workers.SpeakerDiarizationWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Counting speaker diarization results":
-            worker = workers.SpeakerUtterancesWorker(self.corpus_model.session, **extra_args[0])
+            worker = workers.SpeakerComparisonWorker(self.corpus_model.session, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Merging speakers":
             self.set_application_state("loading")
@@ -532,12 +540,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_utterances_model = FileUtterancesModel(self)
         self.speaker_model = SpeakerModel(self)
         self.diarization_model = DiarizationModel(self)
+        self.alignment_analysis_model = AlignmentAnalysisModel(self)
 
         self.file_utterances_model.set_corpus_model(self.corpus_model)
 
         self.corpus_model.databaseSynced.connect(self.handle_changes_synced)
         self.corpus_model.runFunction.connect(self.execute_runnable)
         self.diarization_model.runFunction.connect(self.execute_runnable)
+        self.alignment_analysis_model.runFunction.connect(self.execute_runnable)
         self.corpus_model.lockCorpus.connect(self.anchor_lock_corpus)
         self.corpus_model.statusUpdate.connect(self.update_status_message)
         self.corpus_model.unlockCorpus.connect(self.anchor_unlock_corpus)
@@ -551,6 +561,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.corpus_model.set_dictionary_model(self.dictionary_model)
         self.speaker_model.set_corpus_model(self.corpus_model)
         self.diarization_model.set_corpus_model(self.corpus_model)
+        self.alignment_analysis_model.set_corpus_model(self.corpus_model)
         self.oov_model.set_corpus_model(self.corpus_model)
         self.selection_model = CorpusSelectionModel(self.corpus_model)
         self.file_selection_model = FileSelectionModel(self.file_utterances_model)
@@ -575,6 +586,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.languageModelWidget.set_models(self.corpus_model)
         self.ui.dictionaryWidget.set_models(self.dictionary_model)
         self.ui.diarizationWidget.set_models(self.diarization_model, self.file_selection_model)
+        self.ui.alignmentAnalysisWidget.set_models(
+            self.alignment_analysis_model, self.file_selection_model
+        )
         self.ui.oovWidget.set_models(self.oov_model)
         self.file_selection_model.currentUtteranceChanged.connect(self.change_utterance)
         self.file_selection_model.currentUtteranceChanged.connect(
@@ -665,7 +679,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             if (
                 not self.corpus_model.corpus.has_alignments()
-                or not self.corpus_model.corpus.has_alignments(WorkflowType.reference)
+                or not self.corpus_model.corpus.has_alignments()
             ):
                 self.ui.evaluateAlignmentsAct.setEnabled(False)
             # if self.corpus_model.corpus.alignment_done:
@@ -776,6 +790,10 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.settings.setValue(
             AnchorSettings.DIARIZATION_VISIBLE, self.ui.diarizationDockWidget.isVisible()
+        )
+        self.settings.setValue(
+            AnchorSettings.ALIGNMENT_ANALYSIS_VISIBLE,
+            self.ui.alignmentAnalysisDockWidget.isVisible(),
         )
         self.settings.setValue(AnchorSettings.GEOMETRY, self.saveGeometry())
         self.settings.setValue(AnchorSettings.WINDOW_STATE, self.saveState())
@@ -925,6 +943,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.menuWindow.addAction(self.ui.alignmentDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.transcriptionDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.diarizationDockWidget.toggleViewAction())
+        self.ui.menuWindow.addAction(self.ui.alignmentAnalysisDockWidget.toggleViewAction())
 
         self.merge_all_action = QtGui.QAction(self)
         self.merge_all_action.setObjectName("merge_all_action")
@@ -1062,6 +1081,41 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_status_message(
             f"Found {duplicate_count} duplicate files, see {duplicate_path}."
         )
+
+    def refresh_local_dictionaries(self):
+        for a in self.ui.mfaDictionaryMenu.actions():
+            self.dictionary_action_group.removeAction(a)
+        self.ui.mfaDictionaryMenu.clear()
+        with sqlalchemy.orm.Session(self.db_engine) as session:
+            current_corpus = (
+                session.query(anchor.db.AnchorCorpus)
+                .options(
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.acoustic_model),
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.language_model),
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.dictionary),
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.ivector_extractor),
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.g2p_model),
+                    sqlalchemy.orm.joinedload(anchor.db.AnchorCorpus.sad_model),
+                )
+                .filter(anchor.db.AnchorCorpus.current == True)  # noqa
+                .first()
+            )
+            for m in (
+                session.query(anchor.db.Dictionary)
+                .filter_by(available_locally=True)
+                .order_by(anchor.db.Dictionary.last_used.desc())
+            ):
+                a = QtGui.QAction(text=f"{m.path} [{m.name}]", parent=self)
+                a.setData(m.id)
+                if (
+                    current_corpus is not None
+                    and current_corpus.dictionary is not None
+                    and current_corpus.dictionary == m
+                ):
+                    a.setChecked(True)
+                a.triggered.connect(self.change_dictionary)
+                self.dictionary_action_group.addAction(a)
+                self.ui.mfaDictionaryMenu.addAction(a)
 
     def refresh_model_actions(self):
         self.ui.menuLanguage.clear()
@@ -1226,6 +1280,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     session.flush()
                     session.commit()
                 a = QtGui.QAction(text="speechbrain", parent=self)
+                a.setData(m.id)
+                a.triggered.connect(self.change_ivector_extractor)
+                self.ui.ivectorExtractorMenu.addAction(a)
+                self.ivector_action_group.addAction(a)
+            if FOUND_PYANNOTE:
+                m = (
+                    session.query(anchor.db.IvectorExtractor)
+                    .filter(anchor.db.IvectorExtractor.path == "pyannote")
+                    .first()
+                )
+                if m is None:
+                    m = anchor.db.IvectorExtractor(
+                        name="pyannote", path="pyannote", available_locally=True
+                    )
+                    session.add(m)
+                    session.flush()
+                    session.commit()
+                a = QtGui.QAction(text="pyannote", parent=self)
                 a.setData(m.id)
                 a.triggered.connect(self.change_ivector_extractor)
                 self.ui.ivectorExtractorMenu.addAction(a)
@@ -1406,6 +1478,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.corpus_model.has_per_speaker_transcribed_alignments = True
 
     def finalize_load_corpus(self, corpus: AcousticCorpus):
+        from montreal_forced_aligner.db import Dictionary
+
         if corpus is None:
             self.set_application_state("unloaded")
         self.corpus = corpus
@@ -1414,6 +1488,7 @@ class MainWindow(QtWidgets.QMainWindow):
             plda_path = self.corpus_model.corpus.output_directory.joinpath(
                 "speaker_diarization"
             ).joinpath("plda")
+            self.corpus_model.corpus.create_new_current_workflow(WorkflowType.reference)
             if plda_path.exists():
                 self.corpus_model.plda = read_kaldi_object(Plda, plda_path)
                 self.corpus_model.runFunction.emit(
@@ -1430,6 +1505,33 @@ class MainWindow(QtWidgets.QMainWindow):
                 c = session.query(anchor.db.AnchorCorpus).filter_by(current=True).first()
                 if c.custom_mapping_path:
                     self.dictionary_model.set_custom_mapping(c.custom_mapping_path)
+                dictionaries = self.corpus_model.session.query(Dictionary).all()
+                refresh_dictionaries = c.dictionary_id is None and dictionaries
+                if refresh_dictionaries:
+                    for d in dictionaries:
+                        dictionary_path = d.path
+                        if not os.path.exists(dictionary_path):
+                            continue
+                        self.settings.setValue(
+                            AnchorSettings.DEFAULT_DICTIONARY_DIRECTORY,
+                            os.path.dirname(dictionary_path),
+                        )
+                        d = (
+                            session.query(anchor.db.Dictionary)
+                            .filter_by(path=dictionary_path)
+                            .first()
+                        )
+                        if not d:
+                            d_name = os.path.splitext(os.path.basename(dictionary_path))[0]
+                            d = anchor.db.Dictionary(
+                                name=d_name, path=dictionary_path, available_locally=True
+                            )
+                            session.add(d)
+                        c.dictionary = d
+                    session.commit()
+            if refresh_dictionaries:
+                self.refresh_local_dictionaries()
+            self.check_actions()
 
     def finalize_reload_corpus(self):
         self.set_application_state("loaded")
@@ -1709,6 +1811,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.alignmentDockWidget.setVisible(False)
             self.ui.languageModelDockWidget.setVisible(False)
             self.ui.diarizationDockWidget.setVisible(False)
+            self.ui.alignmentAnalysisDockWidget.setVisible(False)
             self.ui.toolBar.setVisible(False)
 
             self.ui.utteranceDetailWidget.setVisible(False)
@@ -1760,6 +1863,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.diarizationDockWidget.setVisible(
                 self.settings.value(AnchorSettings.DIARIZATION_VISIBLE)
             )
+            self.ui.alignmentAnalysisDockWidget.setVisible(
+                self.settings.value(AnchorSettings.ALIGNMENT_ANALYSIS_VISIBLE)
+            )
             self.ui.toolBar.setVisible(True)
 
             self.ui.utteranceDetailWidget.setVisible(True)
@@ -1795,6 +1901,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.speakerDockWidget.setVisible(False)
             self.ui.utteranceDetailWidget.setVisible(False)
             self.ui.diarizationDockWidget.setVisible(False)
+            self.ui.alignmentAnalysisDockWidget.setVisible(False)
 
             self.ui.changeTemporaryDirectoryAct.setEnabled(True)
             self.ui.openPreferencesAct.setEnabled(True)
