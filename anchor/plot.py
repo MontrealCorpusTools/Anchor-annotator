@@ -12,7 +12,14 @@ import pyqtgraph as pg
 import sqlalchemy
 from Bio import pairwise2
 from montreal_forced_aligner.data import CtmInterval
-from montreal_forced_aligner.db import Speaker, Utterance
+from montreal_forced_aligner.db import (
+    PhoneInterval,
+    Pronunciation,
+    Speaker,
+    Utterance,
+    Word,
+    WordInterval,
+)
 from montreal_forced_aligner.dictionary.mixins import (
     DEFAULT_PUNCTUATION,
     DEFAULT_WORD_BREAK_MARKERS,
@@ -188,15 +195,18 @@ class UtteranceClusterView(pg.PlotWidget):
             pen=pg.mkPen(self.settings.value(self.settings.MAIN_TEXT_COLOR)),
             labelTextColor=self.settings.value(self.settings.MAIN_TEXT_COLOR),
         )
+        self.pen_colormap = pg.ColorMap(None, [0.0, 1.0])
+        self.pens = []
         self.legend_item.changeCluster.connect(self.change_cluster)
         self.legend_item.setParentItem(self.getPlotItem())
         self.legend_item.setFont(self.settings.font)
         self.selected_indices = set()
         # self.addItem(self.legend_item)
-        self.selected_pen = pg.mkPen(self.settings.value(self.settings.MAIN_TEXT_COLOR), width=2)
+        self.selected_pen = pg.mkPen(
+            self.settings.value(self.settings.PRIMARY_LIGHT_COLOR), width=2
+        )
         self.updated_pen = pg.mkPen(self.settings.value(self.settings.MAIN_TEXT_COLOR), width=2)
         self.hover_pen = pg.mkPen(self.settings.value(self.settings.ACCENT_LIGHT_COLOR), width=2)
-        self.base_pen = pg.mkPen(self.settings.value(self.settings.PRIMARY_DARK_COLOR), width=1)
         self.selection_timer = QtCore.QTimer()
         self.selection_timer.setInterval(300)
         self.selection_timer.timeout.connect(self.send_selection_update)
@@ -253,6 +263,8 @@ class UtteranceClusterView(pg.PlotWidget):
         if ev.button() == QtCore.Qt.MouseButton.LeftButton:
             utterance_id = int(self.speaker_model.utterance_ids[index])
             utterance = self.corpus_model.session.query(Utterance).get(utterance_id)
+            if utterance is None:
+                return
             self.selection_model.set_current_file(
                 utterance.file_id,
                 utterance.begin,
@@ -260,6 +272,7 @@ class UtteranceClusterView(pg.PlotWidget):
                 utterance.id,
                 utterance.speaker_id,
                 force_update=True,
+                single_utterance=False,
             )
         else:
             brush_indices = list(self.brushes.keys())
@@ -301,6 +314,7 @@ class UtteranceClusterView(pg.PlotWidget):
             self.brushes[x if x in self.speaker_model.current_speakers else -1]
             for x in self.speaker_model.cluster_labels
         ]
+        self.pens = [pg.mkPen(x, width=2) for x in self.speaker_model.distances]
         xmin, xmax = np.min(self.speaker_model.mds[:, 0]), np.max(self.speaker_model.mds[:, 0])
         ymin, ymax = np.min(self.speaker_model.mds[:, 1]), np.max(self.speaker_model.mds[:, 1])
         xrange = xmax - xmin
@@ -328,7 +342,7 @@ class UtteranceClusterView(pg.PlotWidget):
             pos=self.speaker_model.mds,
             size=10,
             brush=brushes,
-            pen=self.base_pen,
+            pen=self.pens,
             hoverPen=self.hover_pen,
             hoverable=True,
         )
@@ -360,7 +374,7 @@ class UtteranceClusterView(pg.PlotWidget):
             elif i in self.updated_indices:
                 pens.append(self.updated_pen)
             else:
-                pens.append(self.base_pen)
+                pens.append(self.pens[i])
         self.scatter_item.setPen(pens)
 
 
@@ -528,6 +542,7 @@ class UtteranceView(QtWidgets.QWidget):
             t.set_models(corpus_model, selection_model, dictionary_model)
         self.audio_plot.set_models(self.selection_model)
         self.selection_model.viewChanged.connect(self.update_plot)
+        self.selection_model.searchTermChanged.connect(self.set_search_term)
         # self.corpus_model.utteranceTextUpdated.connect(self.refresh_utterance_text)
         self.selection_model.resetView.connect(self.reset_plot)
         self.file_model.utterancesReady.connect(self.finalize_loading_utterances)
@@ -558,7 +573,6 @@ class UtteranceView(QtWidgets.QWidget):
         if self.file_model.file is None:
             return
         scroll_to = None
-
         self.speaker_tiers = {}
         self.speaker_tier_items = {}
         self.speaker_tier_layout.clear()
@@ -683,25 +697,14 @@ class UtteranceView(QtWidgets.QWidget):
         self.extra_tiers["Normalized text"] = "normalized_text"
         self.extra_tiers["Transcription"] = "transcription_text"
         if self.corpus_model.has_alignments and "Words" not in self.extra_tiers:
-            self.extra_tiers["Words"] = "aligned_word_intervals"
-            self.extra_tiers["Phones"] = "aligned_phone_intervals"
+            self.extra_tiers["Words"] = "word_intervals"
+            self.extra_tiers["Phones"] = "phone_intervals"
         if self.corpus_model.has_reference_alignments and "Reference" not in self.extra_tiers:
             self.extra_tiers["Reference"] = "reference_phone_intervals"
-        if (
-            self.corpus_model.has_transcribed_alignments
-            and "Transcription" not in self.extra_tiers
-        ):
-            self.extra_tiers["Transcribed words"] = "transcribed_word_intervals"
-            self.extra_tiers["Transcribed phones"] = "transcribed_phone_intervals"
-        if (
-            self.corpus_model.has_per_speaker_transcribed_alignments
-            and "Transcription" not in self.extra_tiers
-        ):
-            self.extra_tiers["Transcribed words"] = "per_speaker_transcribed_word_intervals"
-            self.extra_tiers["Transcribed phones"] = "per_speaker_transcribed_phone_intervals"
 
-    def set_search_term(self):
-        term = self.corpus_model.text_filter
+    def set_search_term(self, term: TextFilterQuery = None):
+        if term is None:
+            term = self.corpus_model.text_filter
         if not term:
             return
         self.search_term = term
@@ -766,6 +769,7 @@ class UtteranceView(QtWidgets.QWidget):
 
 class UtteranceLine(pg.InfiniteLine):
     hoverChanged = QtCore.Signal(object)
+    snapModeChanged = QtCore.Signal(object)
 
     def __init__(
         self, *args, movingPen=None, view_min=None, view_max=None, initial=True, **kwargs
@@ -798,6 +802,7 @@ class UtteranceLine(pg.InfiniteLine):
 
     def mouseDragEvent(self, ev):
         if self.movable and ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.snapModeChanged.emit(ev.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier)
             if ev.isStart() and (
                 (self.initial and self.pos().x() - self.mapToParent(ev.buttonDownPos()).x() < 0)
                 or (
@@ -1702,41 +1707,244 @@ class MfaRegion(pg.LinearRegionItem):
         return br
 
 
+class IntervalLine(pg.InfiniteLine):
+    hoverChanged = QtCore.Signal(object, object)
+
+    def __init__(
+        self,
+        pos,
+        index=None,
+        index_count=None,
+        pen=None,
+        movingPen=None,
+        hoverPen=None,
+        bottom_point: float = 0,
+        top_point: float = 1,
+        bound_min=None,
+        bound_max=None,
+        movable=True,
+    ):
+        super().__init__(
+            pos,
+            angle=90,
+            span=(bottom_point, top_point),
+            pen=pen,
+            hoverPen=hoverPen,
+            movable=movable,
+        )
+        self.index = index
+        self.index_count = index_count
+        self.initial = index <= 0
+        self.final = index >= index_count - 1
+        self.bound_min = bound_min
+        self.bound_max = bound_max
+        self.movingPen = movingPen
+        self.bounding_width = 0.1
+        if self.movable:
+            self.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
+
+    def setMouseHover(self, hover):
+        if hover and self.movable:
+            self.setCursor(QtCore.Qt.CursorShape.SizeHorCursor)
+        elif self.movable:
+            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
+        self.hoverChanged.emit(hover, self)
+        super().setMouseHover(hover)
+
+    def _computeBoundingRect(self):
+        # br = UIGraphicsItem.boundingRect(self)
+        vr = self.viewRect()  # bounds of containing ViewBox mapped to local coords.
+        if vr is None:
+            return QtCore.QRectF()
+
+        # add a 4-pixel radius around the line for mouse interaction.
+        px = self.pixelLength(
+            direction=pg.Point(1, 0), ortho=True
+        )  # get pixel length orthogonal to the line
+        if px is None:
+            px = 0
+        pw = max(self.pen.width() / 2, self.hoverPen.width() / 2)
+        w = max(self.bounding_width, self._maxMarkerSize + pw) + 5
+        w = w * px
+        br = QtCore.QRectF(vr)
+        br.setBottom(-w)
+        br.setTop(w)
+
+        left = self.span[0]
+        right = self.span[1]
+
+        br.setLeft(left)
+        br.setRight(right)
+        br = br.normalized()
+
+        vs = self.getViewBox().size()
+
+        if self._bounds != br or self._lastViewSize != vs:
+            self._bounds = br
+            self._lastViewSize = vs
+            self.prepareGeometryChange()
+
+        self._endPoints = (left, right)
+        self._lastViewRect = vr
+
+        return self._bounds
+
+    def hoverEvent(self, ev):
+        if (
+            (not ev.isExit())
+            and self.movable
+            # and (
+            #    (self.initial and self.pos().x() - self.mapToParent(ev.pos()).x() < 0)
+            #    or (not self.initial and self.pos().x() - self.mapToParent(ev.pos()).x() > 0)
+            # )
+            and ev.acceptDrags(QtCore.Qt.MouseButton.LeftButton)
+        ):
+            self.setMouseHover(True)
+        else:
+            self.setMouseHover(False)
+
+    def mouseDragEvent(self, ev):
+        if self.movable and ev.button() == QtCore.Qt.MouseButton.LeftButton:
+            if ev.isStart():
+                self.moving = True
+                self._boundingRect = None
+                self.currentPen = self.movingPen
+                self.cursorOffset = self.pos() - self.mapToParent(ev.buttonDownPos())
+                self.startPosition = self.pos()
+            ev.accept()
+
+            if not self.moving:
+                return
+            p = self.cursorOffset + self.mapToParent(ev.pos())
+            p.setY(self.startPosition.y())
+            if p.x() >= self.bound_max - 0.01:
+                p.setX(self.bound_max - 0.01)
+            if p.x() <= self.bound_min + 0.01:
+                p.setX(self.bound_min + 0.01)
+            self.setPos(p)
+            self.sigDragged.emit(self)
+            if ev.isFinish():
+                self.currentPen = self.pen
+                self.moving = False
+                self.sigPositionChangeFinished.emit(self)
+
+
 class IntervalTier(pg.GraphicsObject):
     highlightRequested = QtCore.Signal(object)
 
     def __init__(
         self,
-        parent,
-        utterance: CtmInterval,
-        intervals: typing.List[CtmInterval],
+        parent: UtteranceRegion,
+        utterance: Utterance,
+        intervals: typing.List[typing.Union[CtmInterval, PhoneInterval, WordInterval]],
         selection_model: FileSelectionModel,
-        top_point,
-        bottom_point,
-        word=False,
+        top_point: float,
+        bottom_point: float,
+        lookup: typing.Optional[str] = None,
+        movable: bool = False,
     ):
         super().__init__()
         self.setParentItem(parent)
         self.intervals = intervals
-        self.word = word
+        self.lookup = lookup
+        self.settings = AnchorSettings()
+        self.plot_theme = self.settings.plot_theme
+        self.anchor = pg.Point((0.5, 0.5))
+        self.plot_text_font = self.settings.font
+        self.movable = movable
+
+        self.background_color = self.plot_theme.background_color
+        self.hover_line_color = self.plot_theme.hover_line_color
+        self.moving_line_color = self.plot_theme.moving_line_color
+        self.break_line_color = self.plot_theme.break_line_color
+        self.text_color = self.plot_theme.text_color
+        self.selected_interval_color = self.plot_theme.selected_interval_color
+        self.highlight_interval_color = self.plot_theme.break_line_color
+        self.highlight_text_color = self.plot_theme.background_color
+
+        self.top_point = top_point
+        self.bottom_point = bottom_point
+        self.selection_model = selection_model
+        self.utterance = utterance
+        self.lines = []
+        self.selected = []
+
+        self._boundingRectCache = None
+        self._cached_pixel_size = None
+
+        self.hoverPen = pg.mkPen(self.hover_line_color, width=3)
+        self.movingPen = pg.mkPen(
+            self.moving_line_color, width=3, style=QtCore.Qt.PenStyle.DashLine
+        )
+        self.border_pen = pg.mkPen(self.break_line_color, width=3)
+        self.border_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
+        self.text_pen = pg.mkPen(self.text_color)
+        self.text_brush = pg.mkBrush(self.text_color)
+        self.highlight_text_pen = pg.mkPen(self.highlight_text_color)
+        self.highlight_text_brush = pg.mkBrush(self.highlight_text_color)
+        self.search_term = None
+        self.search_regex = None
+        self.update_intervals(self.utterance)
+
+    def refresh_boundaries(self, interval_id, new_time):
+        for index, interval in enumerate(self.intervals):
+            if interval.id == interval_id:
+                try:
+                    self.lines[index].setPos(new_time)
+                except IndexError:
+                    pass
+                break
+        self.refresh_tier()
+
+    def update_intervals(self, utterance):
+        self.intervals = sorted(
+            getattr(utterance, self.lookup, self.intervals), key=lambda x: x.begin
+        )
+        for line in self.lines:
+            if line.scene() is not None:
+                line.scene().removeItem(line)
+        self.lines = []
+        bound_min = self.utterance.begin
+        for i, interval in enumerate(self.intervals):
+            if i == 0:
+                continue
+
+            line = IntervalLine(
+                interval.begin,
+                index=i - 1,
+                index_count=len(self.intervals) - 1,
+                bound_min=bound_min,
+                bound_max=interval.end,
+                bottom_point=self.bottom_point,
+                top_point=self.top_point,
+                pen=self.border_pen,
+                movingPen=self.movingPen,
+                hoverPen=self.hoverPen,
+                movable=self.movable,
+            )
+            line.setZValue(30)
+            line.setParentItem(self)
+            # line.sigPositionChanged.connect(self._lineMoved)
+            self.lines.append(line)
+            bound_min = interval.begin
+        self.refresh_tier()
+
+    def refresh_tier(self):
+        self.regenerate_text_boxes()
+        self.update()
+
+    def regenerate_text_boxes(self):
         self.array = pg.Qt.internals.PrimitiveArray(QtCore.QRectF, 4)
         self.selected_array = pg.Qt.internals.PrimitiveArray(QtCore.QRectF, 4)
         self.array.resize(len(self.intervals))
         self.selected = []
-        self.settings = AnchorSettings()
-        self.plot_theme = self.settings.plot_theme
         memory = self.array.ndarray()
-        self.anchor = pg.Point((0.5, 0.5))
-        if self.word:
-            self.plot_text_font = self.settings.font
-        else:
-            self.plot_text_font = self.settings.small_font
 
         fm = QtGui.QFontMetrics(self.plot_text_font)
-        for i, interval in enumerate(intervals):
+        for i, interval in enumerate(self.intervals):
             memory[i, 0] = interval.begin
             memory[i, 2] = interval.end - interval.begin
-            if interval.label not in self.parentItem().painter_path_cache[self.word]:
+            if interval.label not in self.parentItem().painter_path_cache:
                 symbol = QtGui.QPainterPath()
 
                 symbol.addText(0, 0, self.plot_text_font, interval.label)
@@ -1747,46 +1955,28 @@ class IntervalTier(pg.GraphicsObject):
 
                 # translating
                 tr.translate(-br.x() - br.width() / 2.0, fm.height() / 2.0)
-                self.parentItem().painter_path_cache[self.word][interval.label] = tr.map(symbol)
+                self.parentItem().painter_path_cache[interval.label] = tr.map(symbol)
 
-        memory[:, 1] = bottom_point
-        memory[:, 3] = top_point - bottom_point
-        self.top_point = top_point
-        self.bottom_point = bottom_point
-        self.selection_model = selection_model
-        self.utterance = utterance
-
-        self.background_color = self.plot_theme.background_color
-        self.hover_line_color = self.plot_theme.hover_line_color
-        self.moving_line_color = self.plot_theme.moving_line_color
-
-        self.break_line_color = self.plot_theme.break_line_color
-        self.text_color = self.plot_theme.text_color
-        self.selected_interval_color = self.plot_theme.selected_interval_color
-        self.highlight_interval_color = self.plot_theme.break_line_color
-        self.highlight_text_color = self.plot_theme.background_color
-        self.text_pen = pg.mkPen(self.text_color)
-        self.text_brush = pg.mkBrush(self.text_color)
-        self.highlight_text_pen = pg.mkPen(self.highlight_text_color)
-        self.highlight_text_brush = pg.mkBrush(self.highlight_text_color)
-        self.border_pen = pg.mkPen(self.break_line_color, width=1)
-        self.border_pen.setCapStyle(QtCore.Qt.PenCapStyle.FlatCap)
-        self.search_term = None
-        self.search_regex = None
+        memory[:, 1] = self.bottom_point
+        memory[:, 3] = self.top_point - self.bottom_point
 
     def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
         if e.button() == QtCore.Qt.MouseButton.LeftButton:
+            if any(line.mouseHovering for line in self.lines):
+                e.ignore()
+                return
             time = e.pos().x()
+
+            margin = 21 * self._cached_pixel_size[0]
+            if time <= self.utterance.begin + margin or time >= self.utterance.end - margin:
+                e.ignore()
+                return
             memory = self.array.ndarray()
             if memory.shape[0] > 0:
                 index = np.searchsorted(memory[:, 0], time) - 1
-                self.selection_model.select_audio(
-                    self.intervals[index].begin, self.intervals[index].end
-                )
-                if self.word:
-                    self.highlightRequested.emit(
-                        TextFilterQuery(self.intervals[index].label, word=True)
-                    )
+                interval = self.intervals[index]
+                self.selection_model.select_audio(interval.begin, interval.end)
+                self.highlightRequested.emit(TextFilterQuery(interval.label, word=True))
                 e.accept()
                 return
 
@@ -1814,9 +2004,10 @@ class IntervalTier(pg.GraphicsObject):
         vb = self.getViewBox()
         px = vb.viewPixelSize()
         inst = self.array.instances()
+        br = self.boundingRect()
         painter.save()
         painter.setPen(self.border_pen)
-        painter.drawRects(inst)
+        painter.drawRect(br)
         painter.restore()
         total_time = self.selection_model.max_time - self.selection_model.min_time
         if self.selected:
@@ -1847,29 +2038,313 @@ class IntervalTier(pg.GraphicsObject):
             painter.setPen(text_pen)
             painter.setBrush(text_brush)
             painter.translate(x, (self.top_point + self.bottom_point) / 2)
-            path = self.parentItem().painter_path_cache[self.word][interval.label]
+            path = self.parentItem().painter_path_cache[interval.label]
             painter.scale(px[0], -px[1])
             painter.drawPath(path)
             painter.restore()
 
     def boundingRect(self):
-        return QtCore.QRectF(
+        br = QtCore.QRectF(
             self.utterance.begin,
             self.bottom_point,
             self.utterance.end - self.utterance.begin,
             abs(self.top_point - self.bottom_point),
         )
+        vb = self.getViewBox()
+        self._cached_pixel_size = vb.viewPixelSize()
+        if self._boundingRectCache != br:
+            self._boundingRectCache = br
+            self.prepareGeometryChange()
+        return br
 
 
-class UtteranceRegion(MfaRegion):
-    lookUpWord = QtCore.Signal(object)
-    createWord = QtCore.Signal(object)
-    transcribeRequested = QtCore.Signal(object)
+class WordIntervalTier(IntervalTier):
+    wordPronunciationChanged = QtCore.Signal(object, object)
 
     def __init__(
         self,
         parent,
-        utterance: workers.UtteranceData,
+        utterance: Utterance,
+        intervals: typing.List[WordInterval],
+        selection_model: FileSelectionModel,
+        top_point,
+        bottom_point,
+        lookup=None,
+    ):
+        super().__init__(
+            parent, utterance, intervals, selection_model, top_point, bottom_point, lookup=lookup
+        )
+
+    def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
+        if e.button() == QtCore.Qt.MouseButton.RightButton:
+            time = e.pos().x()
+            memory = self.array.ndarray()
+            if memory.shape[0] > 0:
+                index = np.searchsorted(memory[:, 0], time) - 1
+                interval = self.intervals[index]
+                self.selection_model.select_audio(interval.begin, interval.end)
+                self.highlightRequested.emit(TextFilterQuery(interval.label, word=True))
+                menu = self.construct_context_menu(interval)
+                menu.exec_(e.screenPos())
+                e.accept()
+                return
+
+        return super().mousePressEvent(e)
+
+    def construct_context_menu(self, word_interval: WordInterval):
+        menu = QtWidgets.QMenu()
+        change_pronunciation_menu = QtWidgets.QMenu("Change pronunciation")
+        parent: UtteranceRegion = self.parentItem()
+        pronunciations = (
+            parent.corpus_model.session.query(Pronunciation)
+            .filter(
+                Pronunciation.word_id == word_interval.word_id,
+            )
+            .all()
+        )
+        for pron in pronunciations:
+            if pron.id == word_interval.pronunciation_id:
+                continue
+            a = QtGui.QAction(menu)
+            a.setText(pron.pronunciation)
+            a.triggered.connect(
+                lambda triggered, x=word_interval, y=pron: self.update_pronunciation(x, y)
+            )
+            change_pronunciation_menu.addAction(a)
+        menu.addMenu(change_pronunciation_menu)
+        change_pronunciation_menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
+        return menu
+
+    def update_pronunciation(self, word_interval, pronunciation):
+        self.wordPronunciationChanged.emit(word_interval, pronunciation)
+
+
+class PhoneIntervalTier(IntervalTier):
+    draggingLine = QtCore.Signal(object)
+    lineDragFinished = QtCore.Signal(object)
+    phoneBoundaryChanged = QtCore.Signal(object, object, object)
+    phoneIntervalChanged = QtCore.Signal(object, object)
+    phoneIntervalInserted = QtCore.Signal(object, object, object, object, object, object)
+    phoneIntervalDeleted = QtCore.Signal(object, object, object, object)
+    deleteReferenceAlignments = QtCore.Signal()
+
+    def __init__(
+        self,
+        parent,
+        utterance: Utterance,
+        intervals: typing.List[CtmInterval],
+        selection_model: FileSelectionModel,
+        top_point,
+        bottom_point,
+        lookup=None,
+    ):
+        super().__init__(
+            parent,
+            utterance,
+            intervals,
+            selection_model,
+            top_point,
+            bottom_point,
+            lookup=lookup,
+            movable=True,
+        )
+
+    def update_intervals(self, utterance):
+        self.intervals = sorted(
+            getattr(utterance, self.lookup, self.intervals), key=lambda x: x.begin
+        )
+        for line in self.lines:
+            if line.scene() is not None:
+                line.scene().removeItem(line)
+        self.lines = []
+        bound_min = self.utterance.begin
+        for i, interval in enumerate(self.intervals):
+            if i == 0:
+                continue
+
+            line = IntervalLine(
+                interval.begin,
+                index=i - 1,
+                index_count=len(self.intervals) - 1,
+                bound_min=bound_min,
+                bound_max=interval.end,
+                bottom_point=self.bottom_point,
+                top_point=self.top_point,
+                pen=self.border_pen,
+                movingPen=self.movingPen,
+                hoverPen=self.hoverPen,
+                movable=self.movable,
+            )
+            line.setZValue(30)
+            line.setParentItem(self)
+            line.sigPositionChangeFinished.connect(self.lineMoveFinished)
+            # line.sigPositionChanged.connect(self._lineMoved)
+            self.lines.append(line)
+            bound_min = interval.begin
+            line.sigPositionChanged.connect(self.draggingLine.emit)
+            line.sigPositionChangeFinished.connect(self.lineDragFinished.emit)
+            line.hoverChanged.connect(self.update_hover)
+        self.refresh_tier()
+
+    def update_hover(self, hovered, time):
+        if hovered:
+            self.draggingLine.emit(time)
+        else:
+            self.lineDragFinished.emit(time)
+
+    def lineMoveFinished(self):
+        sender: IntervalLine = self.sender()
+        self.phoneBoundaryChanged.emit(
+            self.intervals[sender.index], self.intervals[sender.index + 1], sender.pos().x()
+        )
+        if sender.index != 0:
+            self.lines[sender.index - 1].bound_max = sender.pos().x()
+        if sender.index != len(self.lines) - 1:
+            self.lines[sender.index + 1].bound_min = sender.pos().x()
+        self.regenerate_text_boxes()
+        self.update()
+
+    def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
+        if e.button() == QtCore.Qt.MouseButton.RightButton:
+            time = e.pos().x()
+            memory = self.array.ndarray()
+            if memory.shape[0] > 0:
+                index = np.searchsorted(memory[:, 0], time) - 1
+                interval = self.intervals[index]
+                self.selection_model.select_audio(interval.begin, interval.end)
+                self.highlightRequested.emit(TextFilterQuery(interval.label, word=True))
+                initial = (time - interval.begin) < (interval.end - time)
+                menu = self.construct_context_menu(index, interval, initial)
+                menu.exec_(e.screenPos())
+                e.accept()
+                return
+
+        return super().mousePressEvent(e)
+
+    def update_phone(self, phone_interval, phone):
+        self.phoneIntervalChanged.emit(phone_interval, phone)
+
+    def insert_phone_interval(self, index: int, initial: bool):
+        previous_interval = None
+        following_interval = None
+        if initial:
+            following_interval = self.intervals[index]
+            word_interval_id = following_interval.word_interval_id
+            if index > 0:
+                previous_interval = self.intervals[index - 1]
+            begin = following_interval.begin
+            end = (following_interval.begin + following_interval.end) / 2
+        else:
+            previous_interval = self.intervals[index]
+            word_interval_id = previous_interval.word_interval_id
+            if index < len(self.intervals) - 1:
+                following_interval = self.intervals[index + 1]
+            begin = (previous_interval.begin + previous_interval.end) / 2
+            end = previous_interval.end
+        self.phoneIntervalInserted.emit(
+            previous_interval, following_interval, word_interval_id, begin, end, self.lookup
+        )
+
+    def insert_silence_interval(self, index: int, initial: bool):
+        previous_interval = None
+        following_interval = None
+        if initial:
+            following_interval = self.intervals[index]
+            if index > 0:
+                previous_interval = self.intervals[index - 1]
+            begin = following_interval.begin
+            end = (following_interval.begin + following_interval.end) / 2
+        else:
+            previous_interval = self.intervals[index]
+            if index < len(self.intervals) - 1:
+                following_interval = self.intervals[index + 1]
+            begin = (previous_interval.begin + previous_interval.end) / 2
+            end = previous_interval.end
+        self.phoneIntervalInserted.emit(
+            previous_interval, following_interval, None, begin, end, self.lookup
+        )
+
+    def delete_phone_interval(self, index: int, initial: bool):
+        previous_interval = None
+        interval = self.intervals[index]
+        following_interval = None
+        if index > 0:
+            previous_interval = self.intervals[index - 1]
+        if index < len(self.intervals) - 1:
+            following_interval = self.intervals[index + 1]
+        if initial:
+            time_point = interval.end
+        else:
+            time_point = interval.begin
+        self.phoneIntervalDeleted.emit(interval, previous_interval, following_interval, time_point)
+
+    def delete_reference(self):
+        self.deleteReferenceAlignments.emit()
+
+    def construct_context_menu(self, index, phone_interval: CtmInterval, initial=True):
+        menu = QtWidgets.QMenu()
+        change_phone_menu = QtWidgets.QMenu("Change phone")
+        for phone_label, phone in self.parentItem().corpus_model.phones.items():
+            if phone_label == phone_interval.label:
+                continue
+            a = QtGui.QAction(menu)
+            a.setText(phone_label)
+            a.triggered.connect(
+                lambda triggered, x=phone_interval, y=phone: self.update_phone(x, y)
+            )
+            change_phone_menu.addAction(a)
+        menu.addMenu(change_phone_menu)
+        if self.lookup.startswith("reference"):
+            a = QtGui.QAction(menu)
+            a.setText("Delete reference alignments")
+            a.triggered.connect(self.delete_reference)
+            menu.addAction(a)
+        else:
+            a = QtGui.QAction(menu)
+            a.setText("Insert silence")
+            a.triggered.connect(
+                lambda triggered, x=index, y=initial: self.insert_silence_interval(x, y)
+            )
+            menu.addAction(a)
+
+            a = QtGui.QAction(menu)
+            a.setText("Insert interval")
+            a.triggered.connect(
+                lambda triggered, x=index, y=initial: self.insert_phone_interval(x, y)
+            )
+            menu.addAction(a)
+
+            a = QtGui.QAction(menu)
+            a.setText("Delete interval")
+            a.triggered.connect(
+                lambda triggered, x=index, y=initial: self.delete_phone_interval(x, y)
+            )
+            menu.addAction(a)
+        change_phone_menu.setStyleSheet(self.settings.menu_style_sheet)
+        menu.setStyleSheet(self.settings.menu_style_sheet)
+        return menu
+
+
+class UtteranceRegion(MfaRegion):
+    phoneBoundaryChanged = QtCore.Signal(object, object, object, object)
+    phoneIntervalChanged = QtCore.Signal(object, object, object)
+    wordPronunciationChanged = QtCore.Signal(object, object, object)
+    phoneIntervalInserted = QtCore.Signal(object, object, object, object, object)
+    phoneIntervalDeleted = QtCore.Signal(object, object, object, object, object)
+    deleteReferenceAlignments = QtCore.Signal(object)
+    lookUpWord = QtCore.Signal(object)
+    createWord = QtCore.Signal(object)
+    transcribeRequested = QtCore.Signal(object)
+    draggingLine = QtCore.Signal(object)
+    lineDragFinished = QtCore.Signal(object)
+    wordBoundariesChanged = QtCore.Signal(object, object)
+    phoneTiersChanged = QtCore.Signal(object)
+
+    def __init__(
+        self,
+        parent,
+        utterance: typing.Union[workers.UtteranceData, Utterance],
         corpus_model: CorpusModel,
         file_model: FileUtterancesModel,
         dictionary_model: DictionaryTableModel,
@@ -1931,15 +2406,18 @@ class UtteranceRegion(MfaRegion):
                 **lineKwds,
             ),
         ]
-
+        self.snap_mode = False
+        self.initial_line_moving = False
         for line in self.lines:
             line.setZValue(30)
             line.setParentItem(self)
             line.sigPositionChangeFinished.connect(self.lineMoveFinished)
+            line.hoverChanged.connect(self.popup)
+            line.sigPositionChanged.connect(self.draggingLine.emit)
+            line.sigPositionChangeFinished.connect(self.lineDragFinished.emit)
+            line.snapModeChanged.connect(self.update_snap_mode)
         self.lines[0].sigPositionChanged.connect(self._line0Moved)
         self.lines[1].sigPositionChanged.connect(self._line1Moved)
-        self.lines[0].hoverChanged.connect(self.popup)
-        self.lines[1].hoverChanged.connect(self.popup)
 
         self.corpus_model.utteranceTextUpdated.connect(self.update_text_from_model)
         self.original_text = self.item.text
@@ -1955,7 +2433,7 @@ class UtteranceRegion(MfaRegion):
             search_term=search_term,
             speaker_id=utterance.speaker_id,
         )
-
+        self._painter_path_cache = {}
         self.text_edit = self.text_item.text_edit
         self.text_edit.gainedFocus.connect(self.select_self)
         self.text_edit.menuRequested.connect(self.generate_text_edit_menu)
@@ -1972,6 +2450,7 @@ class UtteranceRegion(MfaRegion):
         self.normalized_text = None
         self.transcription_text = None
         i = -1
+        self.file_model.phoneTierChanged.connect(self.update_phone_tiers)
         for tier_name, lookup in self.extra_tiers.items():
             if not visible_tiers[tier_name]:
                 continue
@@ -2013,9 +2492,10 @@ class UtteranceRegion(MfaRegion):
                 self.transcription_text.text_edit.menuRequested.connect(
                     self.generate_text_edit_menu
                 )
-                self.normalized_text.text_edit.textChanged.connect(
-                    self.update_transcription_highlight
-                )
+                if self.normalized_text is not None:
+                    self.normalized_text.text_edit.textChanged.connect(
+                        self.update_transcription_highlight
+                    )
                 self.transcription_text.text_edit.textChanged.connect(
                     self.update_transcription_highlight
                 )
@@ -2047,28 +2527,42 @@ class UtteranceRegion(MfaRegion):
                         min_confidence = interval.confidence
                     if max_confidence is None or interval.confidence > max_confidence:
                         max_confidence = interval.confidence
-                interval_tier = IntervalTier(
+                interval_tier = PhoneIntervalTier(
                     self,
                     self.item,
                     intervals,
                     self.selection_model,
                     top_point=tier_top_point,
                     bottom_point=tier_bottom_point,
-                    word=False,
+                    lookup=lookup,
                 )
+                interval_tier.draggingLine.connect(self.draggingLine.emit)
+                interval_tier.lineDragFinished.connect(self.lineDragFinished.emit)
+                interval_tier.phoneBoundaryChanged.connect(self.change_phone_boundaries)
+                interval_tier.phoneIntervalChanged.connect(self.change_phone_interval)
+                interval_tier.phoneIntervalDeleted.connect(self.delete_phone_interval)
+                interval_tier.phoneIntervalInserted.connect(self.insert_phone_interval)
+                self.phoneTiersChanged.connect(interval_tier.update_intervals)
+                if lookup.startswith("reference"):
+                    interval_tier.deleteReferenceAlignments.connect(
+                        self.delete_reference_alignments
+                    )
                 self.extra_tier_intervals[tier_name].append(interval_tier)
 
             elif "word_intervals" in lookup:
-                interval_tier = IntervalTier(
+                interval_tier = WordIntervalTier(
                     self,
                     self.item,
                     intervals,
                     self.selection_model,
                     top_point=tier_top_point,
                     bottom_point=tier_bottom_point,
-                    word=True,
+                    lookup=lookup,
                 )
+                self.wordBoundariesChanged.connect(interval_tier.refresh_boundaries)
                 interval_tier.highlightRequested.connect(self.set_search_term)
+                interval_tier.wordPronunciationChanged.connect(self.change_word_pronunciation)
+                self.phoneTiersChanged.connect(interval_tier.update_intervals)
                 if self.transcription_text is not None:
                     interval_tier.highlightRequested.connect(
                         self.transcription_text.highlighter.setSearchTerm
@@ -2105,6 +2599,25 @@ class UtteranceRegion(MfaRegion):
         self.show()
         self.available_speakers = available_speakers
 
+    def update_snap_mode(self, snap_mode):
+        self.snap_mode = snap_mode
+
+    def _line0Moved(self):
+        self.lineMoved(0)
+        self.initial_line_moving = True
+
+    def _line1Moved(self):
+        self.lineMoved(1)
+        self.initial_line_moving = False
+
+    def delete_reference_alignments(self):
+        self.deleteReferenceAlignments.emit(self.item)
+
+    def update_phone_tiers(self, utterance):
+        if utterance.id != self.item.id:
+            return
+        self.phoneTiersChanged.emit(utterance)
+
     def update_transcription_highlight(self):
         if self.item.normalized_text and self.item.transcription_text:
             alignment = pairwise2.align.globalms(
@@ -2131,6 +2644,8 @@ class UtteranceRegion(MfaRegion):
 
     @property
     def painter_path_cache(self):
+        if self.parentItem() is None:
+            return self._painter_path_cache
         return self.parentItem().painter_path_cache
 
     def update_edit_fields(self):
@@ -2140,6 +2655,7 @@ class UtteranceRegion(MfaRegion):
             self.normalized_text.text_item.update_times(begin, end)
         if self.transcription_text is not None:
             self.transcription_text.text_item.update_times(begin, end)
+        self.phoneTiersChanged.emit(self.item)
 
     def change_editing(self, editable: bool):
         self.lines[0].movable = editable
@@ -2389,6 +2905,95 @@ class UtteranceRegion(MfaRegion):
             self.text_edit.setTextCursor(cursor)
             self.text_edit.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.update()
+
+    def change_phone_boundaries(
+        self, first_phone_interval, second_phone_interval, new_time: float
+    ):
+        self.phoneBoundaryChanged.emit(
+            self.item, first_phone_interval, second_phone_interval, new_time
+        )
+        if first_phone_interval.word_interval_id != second_phone_interval.word_interval_id:
+            self.wordBoundariesChanged.emit(first_phone_interval.word_interval_id, new_time)
+
+    def change_phone_interval(self, phone_interval, new_phone_id):
+        self.phoneIntervalChanged.emit(self.item, phone_interval, new_phone_id)
+
+    def change_word_pronunciation(self, word_interval, pronunciation):
+        self.wordPronunciationChanged.emit(self.item, word_interval, pronunciation)
+
+    def delete_phone_interval(self, interval, previous_interval, following_interval, time_point):
+        self.phoneIntervalDeleted.emit(
+            self.item, interval, previous_interval, following_interval, time_point
+        )
+        if (
+            previous_interval is None
+            or following_interval is None
+            or previous_interval.word_interval_id != following_interval.word_interval_id
+        ):
+            self.wordBoundariesChanged.emit(previous_interval.word_interval_id, time_point)
+
+    def insert_phone_interval(
+        self,
+        previous_interval,
+        following_interval,
+        word_interval_id,
+        begin=None,
+        end=None,
+        lookup="phone_intervals",
+    ):
+        if begin is None:
+            begin = (
+                (previous_interval.begin + previous_interval.end) / 2
+                if previous_interval is not None
+                else self.item.begin
+            )
+        if end is None:
+            end = (
+                (following_interval.begin + following_interval.end) / 2
+                if following_interval is not None
+                else self.item.end
+            )
+        inserting_word_interval = word_interval_id is None and not lookup.startswith("reference")
+        word_interval = None
+        if inserting_word_interval:
+            previous_word_interval_id = (
+                previous_interval.word_interval_id if previous_interval is not None else None
+            )
+            following_word_interval_id = (
+                following_interval.word_interval_id if following_interval is not None else None
+            )
+            at_word_boundary = previous_word_interval_id != following_word_interval_id
+            if not at_word_boundary:
+                return
+            word_interval_id = self.corpus_model.corpus.get_next_primary_key(WordInterval)
+            word = self.corpus_model.corpus.session.get(Word, 1)
+            word_interval = WordInterval(
+                id=word_interval_id,
+                word=word,
+                begin=begin,
+                end=end,
+            )
+        elif not lookup.startswith("reference"):
+            for x in self.item.word_intervals:
+                if x.id == word_interval_id:
+                    word_interval = x
+                    break
+        next_pk = self.corpus_model.corpus.get_next_primary_key(PhoneInterval)
+        phone_interval = PhoneInterval(
+            id=next_pk,
+            phone=self.corpus_model.phones["sil"],
+            begin=begin,
+            end=end,
+            word_interval=word_interval,
+            word_interval_id=word_interval_id,
+        )
+        self.phoneIntervalInserted.emit(
+            self.item,
+            phone_interval,
+            previous_interval,
+            following_interval,
+            word_interval if inserting_word_interval else None,
+        )
 
     def save_changes(self):
         text = self.text_edit.toPlainText()
@@ -2830,7 +3435,7 @@ class SpeakerTier(pg.GraphicsObject):
         self.selection_model.selectionChanged.connect(self.update_select)
         self.selection_model.model().utterancesReady.connect(self.refresh)
         self.available_speakers = {}
-        self.painter_path_cache = {True: {}, False: {}}
+        self.painter_path_cache = {}
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
@@ -2953,10 +3558,8 @@ class SpeakerTier(pg.GraphicsObject):
             )
             reg.sigRegionChanged.connect(self.check_utterance_bounds)
             reg.sigRegionChangeFinished.connect(self.update_utterance)
-            reg.lines[0].sigPositionChanged.connect(self.draggingLine.emit)
-            reg.lines[0].sigPositionChangeFinished.connect(self.lineDragFinished.emit)
-            reg.lines[1].sigPositionChanged.connect(self.draggingLine.emit)
-            reg.lines[0].sigPositionChangeFinished.connect(self.lineDragFinished.emit)
+            reg.draggingLine.connect(self.draggingLine.emit)
+            reg.sigRegionChangeFinished.connect(self.lineDragFinished.emit)
             reg.undoRequested.connect(self.corpus_model.undoRequested.emit)
             reg.undoRequested.connect(self.corpus_model.undoRequested.emit)
             reg.redoRequested.connect(self.corpus_model.redoRequested.emit)
@@ -2964,11 +3567,51 @@ class SpeakerTier(pg.GraphicsObject):
             reg.audioSelected.connect(self.selection_model.select_audio)
             reg.viewRequested.connect(self.selection_model.set_view_times)
             reg.textEdited.connect(self.update_utterance_text)
+            reg.phoneBoundaryChanged.connect(self.update_phone_boundaries)
+            reg.phoneIntervalChanged.connect(self.update_phone_interval)
+            reg.wordPronunciationChanged.connect(self.update_word_pronunciation)
+            reg.phoneIntervalInserted.connect(self.insert_phone_interval)
+            reg.phoneIntervalDeleted.connect(self.delete_phone_interval)
+            reg.deleteReferenceAlignments.connect(self.delete_reference_alignments)
             reg.transcribeRequested.connect(self.corpus_model.transcribeRequested.emit)
             reg.selectRequested.connect(self.selection_model.update_select)
             self.visible_utterances[u.id] = reg
 
         self.show()
+
+    def delete_reference_alignments(self, utterance: Utterance):
+        self.selection_model.model().delete_reference_alignments(utterance)
+
+    def update_phone_boundaries(
+        self, utterance: Utterance, first_phone_interval, second_phone_interval, new_time: float
+    ):
+        self.selection_model.model().update_phone_boundaries(
+            utterance, first_phone_interval, second_phone_interval, new_time
+        )
+
+    def update_phone_interval(self, utterance: Utterance, phone_interval, phone_id):
+        self.selection_model.model().update_phone_interval(utterance, phone_interval, phone_id)
+
+    def update_word_pronunciation(
+        self, utterance: Utterance, word_interval: WordInterval, pronunciation: Pronunciation
+    ):
+        self.selection_model.model().update_word_pronunciation(
+            utterance, word_interval, pronunciation
+        )
+
+    def insert_phone_interval(
+        self, utterance: Utterance, interval, previous_interval, following_interval, word_interval
+    ):
+        self.selection_model.model().insert_phone_interval(
+            utterance, interval, previous_interval, following_interval, word_interval
+        )
+
+    def delete_phone_interval(
+        self, utterance: Utterance, interval, previous_interval, following_interval, time_point
+    ):
+        self.selection_model.model().delete_phone_interval(
+            utterance, interval, previous_interval, following_interval, time_point
+        )
 
     def update_utterance_text(self, utterance, new_text):
         self.selection_model.model().update_utterance_text(utterance, text=new_text)
@@ -2982,7 +3625,7 @@ class SpeakerTier(pg.GraphicsObject):
                 r.setSelected(False)
 
     def check_utterance_bounds(self):
-        reg = self.sender()
+        reg: UtteranceRegion = self.sender()
         with QtCore.QSignalBlocker(reg):
             beg, end = reg.getRegion()
             if self.settings.right_to_left:
@@ -3005,16 +3648,35 @@ class SpeakerTier(pg.GraphicsObject):
                 ):
                     reg.setRegion([beg, self.selection_model.model().file.duration])
                     return
-            for r in self.visible_utterances.values():
+            prev_r = None
+            for r in sorted(self.visible_utterances.values(), key=lambda x: x.item_min):
                 if r.item.id == reg.item.id:
+                    if reg.initial_line_moving and reg.snap_mode and prev_r is not None:
+                        other_begin, other_end = prev_r.getRegion()
+                        prev_r.setRegion([other_begin, beg])
+                        break
                     continue
                 other_begin, other_end = r.getRegion()
                 if other_begin <= beg < other_end or beg <= other_begin < other_end < end:
-                    reg.setRegion([other_end, end])
+                    if reg.initial_line_moving and reg.snap_mode:
+                        r.setRegion([other_begin, beg])
+                    else:
+                        reg.setRegion([other_end, end])
                     break
                 if other_begin < end <= other_end or end > other_begin > other_end > beg:
-                    reg.setRegion([beg, other_begin])
+                    if (
+                        False
+                        and not reg.initial_line_moving
+                        and reg.snap_mode
+                        and prev_r is not None
+                        and prev_r.item.id == reg.item.id
+                    ):
+                        r.setRegion([end, other_end])
+                    else:
+                        reg.setRegion([beg, other_begin])
                     break
+                prev_r = r
+
             reg.update_edit_fields()
         reg.select_self()
         reg.update()

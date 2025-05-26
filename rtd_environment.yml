@@ -13,6 +13,4 @@ dependencies:
   - librosa
   - pydata-sphinx-theme
   - sphinx-design
-  - kalpy
-  - kaldi =*=cpu*
   - pip

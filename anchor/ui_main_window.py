@@ -3,7 +3,7 @@
 ################################################################################
 ## Form generated from reading UI file 'main_window.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.7.2
+## Created by: Qt User Interface Compiler version 6.7.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -57,6 +57,7 @@ from PySide6.QtWidgets import (
 import anchor.resources_rc
 from anchor.widgets import (
     AcousticModelWidget,
+    AlignmentAnalysisWidget,
     AlignmentWidget,
     DiarizationWidget,
     DictionaryWidget,
@@ -77,7 +78,7 @@ class Ui_MainWindow(object):
             MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1448, 974)
         icon = QIcon()
-        icon.addFile(":/anchor-yellow.svg", QSize(), QIcon.Mode.Normal, QIcon.State.Off)
+        icon.addFile(":/anchor-yellow.svg", QSize(), QIcon.Normal, QIcon.Off)
         MainWindow.setWindowIcon(icon)
         MainWindow.setStyleSheet("")
         MainWindow.setAnimated(True)
@@ -312,7 +313,6 @@ class Ui_MainWindow(object):
         self.menuCorpus.setObjectName("menuCorpus")
         self.loadRecentCorpusMenu = QMenu(self.menuCorpus)
         self.loadRecentCorpusMenu.setObjectName("loadRecentCorpusMenu")
-        self.loadRecentCorpusMenu.setMaximumSize(QSize(200, 400))
         self.menuEdit = QMenu(self.menubar)
         self.menuEdit.setObjectName("menuEdit")
         self.menuDictionary = QMenu(self.menubar)
@@ -321,7 +321,6 @@ class Ui_MainWindow(object):
         self.mfaDictionaryMenu.setObjectName("mfaDictionaryMenu")
         self.menuDownload_dictionary = QMenu(self.menuDictionary)
         self.menuDownload_dictionary.setObjectName("menuDownload_dictionary")
-        self.menuDownload_dictionary.setMaximumSize(QSize(200, 400))
         self.menuWindow = QMenu(self.menubar)
         self.menuWindow.setObjectName("menuWindow")
         self.menuModels = QMenu(self.menubar)
@@ -336,16 +335,12 @@ class Ui_MainWindow(object):
         self.languageModelMenu.setObjectName("languageModelMenu")
         self.menuDownload_acoustic_model = QMenu(self.menuModels)
         self.menuDownload_acoustic_model.setObjectName("menuDownload_acoustic_model")
-        self.menuDownload_acoustic_model.setMaximumSize(QSize(200, 400))
         self.menuDownload_ivector_extractor = QMenu(self.menuModels)
         self.menuDownload_ivector_extractor.setObjectName("menuDownload_ivector_extractor")
-        self.menuDownload_ivector_extractor.setMaximumSize(QSize(200, 400))
         self.menuDownload_language_model = QMenu(self.menuModels)
         self.menuDownload_language_model.setObjectName("menuDownload_language_model")
-        self.menuDownload_language_model.setMaximumSize(QSize(200, 400))
         self.menuDownload_G2P_model = QMenu(self.menuModels)
         self.menuDownload_G2P_model.setObjectName("menuDownload_G2P_model")
-        self.menuDownload_G2P_model.setMaximumSize(QSize(200, 400))
         self.vadModelMenu = QMenu(self.menuModels)
         self.vadModelMenu.setObjectName("vadModelMenu")
         self.menuAlignment = QMenu(self.menubar)
@@ -441,6 +436,14 @@ class Ui_MainWindow(object):
         self.diarizationWidget.setObjectName("diarizationWidget")
         self.diarizationDockWidget.setWidget(self.diarizationWidget)
         MainWindow.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.diarizationDockWidget)
+        self.alignmentAnalysisDockWidget = QDockWidget(MainWindow)
+        self.alignmentAnalysisDockWidget.setObjectName("alignmentAnalysisDockWidget")
+        self.alignmentAnalysisWidget = AlignmentAnalysisWidget()
+        self.alignmentAnalysisWidget.setObjectName("alignmentAnalysisWidget")
+        self.alignmentAnalysisDockWidget.setWidget(self.alignmentAnalysisWidget)
+        MainWindow.addDockWidget(
+            Qt.DockWidgetArea.LeftDockWidgetArea, self.alignmentAnalysisDockWidget
+        )
 
         self.menubar.addAction(self.menuCorpus.menuAction())
         self.menubar.addAction(self.menuEdit.menuAction())
@@ -804,6 +807,9 @@ class Ui_MainWindow(object):
         self.oovDockWidget.setWindowTitle(QCoreApplication.translate("MainWindow", "OOVs", None))
         self.diarizationDockWidget.setWindowTitle(
             QCoreApplication.translate("MainWindow", "Diarization", None)
+        )
+        self.alignmentAnalysisDockWidget.setWindowTitle(
+            QCoreApplication.translate("MainWindow", "Alignment analysis", None)
         )
 
     # retranslateUi
