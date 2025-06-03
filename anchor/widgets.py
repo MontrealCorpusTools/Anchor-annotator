@@ -679,7 +679,7 @@ class UtteranceListWidget(QtWidgets.QWidget):  # pragma: no cover
 
         layout.addWidget(self.table_widget)
         self.pagination_toolbar = PaginationWidget()
-        self.pagination_toolbar.pageRequested.connect(self.table_widget.scrollToTop())
+        self.pagination_toolbar.pageRequested.connect(self.table_widget.scrollToTop)
         layout.addWidget(self.pagination_toolbar)
         self.setLayout(layout)
         self.dictionary = None
@@ -2858,7 +2858,7 @@ class DiarizationWidget(QtWidgets.QWidget):
         self.current_page = 0
         self.num_pages = 0
         self.pagination_toolbar = PaginationWidget()
-        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop())
+        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop)
         layout.addWidget(self.pagination_toolbar)
         self.setLayout(layout)
         self.table.referenceUtteranceSelected.connect(self.update_reference_utterance)
@@ -3049,7 +3049,7 @@ class OovWidget(QtWidgets.QWidget):
         dict_layout.addWidget(self.toolbar)
         dict_layout.addWidget(self.table)
         self.pagination_toolbar = PaginationWidget()
-        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop())
+        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop)
         dict_layout.addWidget(self.pagination_toolbar)
 
         self.setLayout(dict_layout)
@@ -3109,7 +3109,7 @@ class DictionaryWidget(QtWidgets.QWidget):
         dict_layout.addWidget(self.toolbar)
         dict_layout.addWidget(self.table)
         self.pagination_toolbar = PaginationWidget()
-        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop())
+        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop)
         dict_layout.addWidget(self.pagination_toolbar)
 
         self.setLayout(dict_layout)
@@ -3254,7 +3254,7 @@ class SpeakerWidget(QtWidgets.QWidget):
         self.current_page = 0
         self.num_pages = 0
         self.pagination_toolbar = PaginationWidget()
-        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop())
+        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop)
         speaker_layout.addWidget(self.pagination_toolbar)
         self.tool_bar_wrapper = QtWidgets.QVBoxLayout()
         self.tool_bar = QtWidgets.QToolBar()
