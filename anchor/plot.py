@@ -11,10 +11,11 @@ import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
 from Bio import pairwise2
-from montreal_forced_aligner.data import CtmInterval
 from montreal_forced_aligner.db import (
     PhoneInterval,
     Pronunciation,
+    ReferencePhoneInterval,
+    ReferenceWordInterval,
     Speaker,
     Utterance,
     Word,
@@ -699,8 +700,12 @@ class UtteranceView(QtWidgets.QWidget):
         if self.corpus_model.has_alignments and "Words" not in self.extra_tiers:
             self.extra_tiers["Words"] = "word_intervals"
             self.extra_tiers["Phones"] = "phone_intervals"
-        if self.corpus_model.has_reference_alignments and "Reference" not in self.extra_tiers:
-            self.extra_tiers["Reference"] = "reference_phone_intervals"
+        if (
+            self.corpus_model.has_reference_alignments
+            and "Reference phones" not in self.extra_tiers
+        ):
+            self.extra_tiers["Reference words"] = "reference_word_intervals"
+            self.extra_tiers["Reference phones"] = "reference_phone_intervals"
 
     def set_search_term(self, term: TextFilterQuery = None):
         if term is None:
@@ -1229,7 +1234,7 @@ class IntervalTextRegion(pg.GraphicsObject):
 
     def __init__(
         self,
-        interval: CtmInterval,
+        interval,
         color,
         top_point,
         height,
@@ -1549,7 +1554,7 @@ class MfaRegion(pg.LinearRegionItem):
 
     def __init__(
         self,
-        item: CtmInterval,
+        item,
         corpus_model: CorpusModel,
         file_model: FileUtterancesModel,
         dictionary_model: typing.Optional[DictionaryTableModel],
@@ -1836,7 +1841,7 @@ class IntervalTier(pg.GraphicsObject):
         self,
         parent: UtteranceRegion,
         utterance: Utterance,
-        intervals: typing.List[typing.Union[CtmInterval, PhoneInterval, WordInterval]],
+        intervals: typing.List[typing.Union[PhoneInterval, WordInterval]],
         selection_model: FileSelectionModel,
         top_point: float,
         bottom_point: float,
@@ -2060,6 +2065,7 @@ class IntervalTier(pg.GraphicsObject):
 
 class WordIntervalTier(IntervalTier):
     wordPronunciationChanged = QtCore.Signal(object, object)
+    wordChanged = QtCore.Signal(object, object)
 
     def __init__(
         self,
@@ -2091,32 +2097,53 @@ class WordIntervalTier(IntervalTier):
 
         return super().mousePressEvent(e)
 
-    def construct_context_menu(self, word_interval: WordInterval):
+    def construct_context_menu(
+        self, word_interval: typing.Union[WordInterval, ReferenceWordInterval]
+    ):
         menu = QtWidgets.QMenu()
-        change_pronunciation_menu = QtWidgets.QMenu("Change pronunciation")
-        parent: UtteranceRegion = self.parentItem()
-        pronunciations = (
-            parent.corpus_model.session.query(Pronunciation)
-            .filter(
-                Pronunciation.word_id == word_interval.word_id,
+        a = QtGui.QAction(menu)
+        a.setText("Change word...")
+        a.triggered.connect(lambda triggered, x=word_interval: self.change_word(x))
+        menu.addAction(a)
+        if isinstance(word_interval, WordInterval):
+            change_pronunciation_menu = QtWidgets.QMenu("Change pronunciation")
+            parent: UtteranceRegion = self.parentItem()
+            pronunciations = (
+                parent.corpus_model.session.query(Pronunciation)
+                .filter(
+                    Pronunciation.word_id == word_interval.word_id,
+                )
+                .all()
             )
-            .all()
-        )
-        for pron in pronunciations:
-            if pron.id == word_interval.pronunciation_id:
-                continue
-            a = QtGui.QAction(menu)
-            a.setText(pron.pronunciation)
-            a.triggered.connect(
-                lambda triggered, x=word_interval, y=pron: self.update_pronunciation(x, y)
-            )
-            change_pronunciation_menu.addAction(a)
-        menu.addMenu(change_pronunciation_menu)
-        change_pronunciation_menu.setStyleSheet(self.settings.menu_style_sheet)
+            for pron in pronunciations:
+                if pron.id == word_interval.pronunciation_id:
+                    continue
+                a = QtGui.QAction(menu)
+                a.setText(pron.pronunciation)
+                a.triggered.connect(
+                    lambda triggered, x=word_interval, y=pron: self.update_pronunciation(x, y)
+                )
+                change_pronunciation_menu.addAction(a)
+            menu.addMenu(change_pronunciation_menu)
+            change_pronunciation_menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.setStyleSheet(self.settings.menu_style_sheet)
         return menu
 
-    def update_pronunciation(self, word_interval, pronunciation):
+    def change_word(self, word_interval: typing.Union[WordInterval, ReferenceWordInterval]):
+        from anchor.widgets import WordQueryDialog
+
+        parent: UtteranceRegion = self.parentItem()
+
+        dialog = WordQueryDialog(parent.corpus_model)
+        if dialog.exec_():
+            word = dialog.word_dropdown.current_text()
+            self.wordChanged.emit(word_interval, word)
+
+    def update_pronunciation(
+        self,
+        word_interval: typing.Union[WordInterval, ReferenceWordInterval],
+        pronunciation: Pronunciation,
+    ):
         self.wordPronunciationChanged.emit(word_interval, pronunciation)
 
 
@@ -2133,7 +2160,7 @@ class PhoneIntervalTier(IntervalTier):
         self,
         parent,
         utterance: Utterance,
-        intervals: typing.List[CtmInterval],
+        intervals: typing.List[PhoneInterval, ReferencePhoneInterval],
         selection_model: FileSelectionModel,
         top_point,
         bottom_point,
@@ -2282,10 +2309,17 @@ class PhoneIntervalTier(IntervalTier):
     def delete_reference(self):
         self.deleteReferenceAlignments.emit()
 
-    def construct_context_menu(self, index, phone_interval: CtmInterval, initial=True):
+    def construct_context_menu(
+        self,
+        index,
+        phone_interval: typing.Union[PhoneInterval, ReferencePhoneInterval],
+        initial=True,
+    ):
         menu = QtWidgets.QMenu()
         change_phone_menu = QtWidgets.QMenu("Change phone")
-        for phone_label, phone in self.parentItem().corpus_model.phones.items():
+        for phone_label, phone in sorted(
+            self.parentItem().corpus_model.phones.items(), key=lambda x: x[0]
+        ):
             if phone_label == phone_interval.label:
                 continue
             a = QtGui.QAction(menu)
@@ -2295,31 +2329,26 @@ class PhoneIntervalTier(IntervalTier):
             )
             change_phone_menu.addAction(a)
         menu.addMenu(change_phone_menu)
+        a = QtGui.QAction(menu)
+        a.setText("Insert silence/word")
+        a.triggered.connect(
+            lambda triggered, x=index, y=initial: self.insert_silence_interval(x, y)
+        )
+        menu.addAction(a)
+
+        a = QtGui.QAction(menu)
+        a.setText("Insert interval")
+        a.triggered.connect(lambda triggered, x=index, y=initial: self.insert_phone_interval(x, y))
+        menu.addAction(a)
+
+        a = QtGui.QAction(menu)
+        a.setText("Delete interval")
+        a.triggered.connect(lambda triggered, x=index, y=initial: self.delete_phone_interval(x, y))
+        menu.addAction(a)
         if self.lookup.startswith("reference"):
             a = QtGui.QAction(menu)
             a.setText("Delete reference alignments")
             a.triggered.connect(self.delete_reference)
-            menu.addAction(a)
-        else:
-            a = QtGui.QAction(menu)
-            a.setText("Insert silence")
-            a.triggered.connect(
-                lambda triggered, x=index, y=initial: self.insert_silence_interval(x, y)
-            )
-            menu.addAction(a)
-
-            a = QtGui.QAction(menu)
-            a.setText("Insert interval")
-            a.triggered.connect(
-                lambda triggered, x=index, y=initial: self.insert_phone_interval(x, y)
-            )
-            menu.addAction(a)
-
-            a = QtGui.QAction(menu)
-            a.setText("Delete interval")
-            a.triggered.connect(
-                lambda triggered, x=index, y=initial: self.delete_phone_interval(x, y)
-            )
             menu.addAction(a)
         change_phone_menu.setStyleSheet(self.settings.menu_style_sheet)
         menu.setStyleSheet(self.settings.menu_style_sheet)
@@ -2330,6 +2359,7 @@ class UtteranceRegion(MfaRegion):
     phoneBoundaryChanged = QtCore.Signal(object, object, object, object)
     phoneIntervalChanged = QtCore.Signal(object, object, object)
     wordPronunciationChanged = QtCore.Signal(object, object, object)
+    wordChanged = QtCore.Signal(object, object, object)
     phoneIntervalInserted = QtCore.Signal(object, object, object, object, object)
     phoneIntervalDeleted = QtCore.Signal(object, object, object, object, object)
     deleteReferenceAlignments = QtCore.Signal(object)
@@ -2344,7 +2374,7 @@ class UtteranceRegion(MfaRegion):
     def __init__(
         self,
         parent,
-        utterance: typing.Union[workers.UtteranceData, Utterance],
+        utterance: Utterance,
         corpus_model: CorpusModel,
         file_model: FileUtterancesModel,
         dictionary_model: DictionaryTableModel,
@@ -2520,13 +2550,14 @@ class UtteranceRegion(MfaRegion):
             )
             cmap.linearize()
             if "phone_intervals" in lookup:
-                for interval in intervals:
-                    if interval.confidence is None:
-                        continue
-                    if min_confidence is None or interval.confidence < min_confidence:
-                        min_confidence = interval.confidence
-                    if max_confidence is None or interval.confidence > max_confidence:
-                        max_confidence = interval.confidence
+                if lookup != "reference_phone_intervals":
+                    for interval in intervals:
+                        if interval.confidence is None:
+                            continue
+                        if min_confidence is None or interval.confidence < min_confidence:
+                            min_confidence = interval.confidence
+                        if max_confidence is None or interval.confidence > max_confidence:
+                            max_confidence = interval.confidence
                 interval_tier = PhoneIntervalTier(
                     self,
                     self.item,
@@ -2562,6 +2593,7 @@ class UtteranceRegion(MfaRegion):
                 self.wordBoundariesChanged.connect(interval_tier.refresh_boundaries)
                 interval_tier.highlightRequested.connect(self.set_search_term)
                 interval_tier.wordPronunciationChanged.connect(self.change_word_pronunciation)
+                interval_tier.wordChanged.connect(self.change_word)
                 self.phoneTiersChanged.connect(interval_tier.update_intervals)
                 if self.transcription_text is not None:
                     interval_tier.highlightRequested.connect(
@@ -2918,6 +2950,9 @@ class UtteranceRegion(MfaRegion):
     def change_phone_interval(self, phone_interval, new_phone_id):
         self.phoneIntervalChanged.emit(self.item, phone_interval, new_phone_id)
 
+    def change_word(self, word_interval, word):
+        self.wordChanged.emit(self.item, word_interval, word)
+
     def change_word_pronunciation(self, word_interval, pronunciation):
         self.wordPronunciationChanged.emit(self.item, word_interval, pronunciation)
 
@@ -2953,7 +2988,7 @@ class UtteranceRegion(MfaRegion):
                 if following_interval is not None
                 else self.item.end
             )
-        inserting_word_interval = word_interval_id is None and not lookup.startswith("reference")
+        inserting_word_interval = word_interval_id is None
         word_interval = None
         if inserting_word_interval:
             previous_word_interval_id = (
@@ -2965,28 +3000,56 @@ class UtteranceRegion(MfaRegion):
             at_word_boundary = previous_word_interval_id != following_word_interval_id
             if not at_word_boundary:
                 return
-            word_interval_id = self.corpus_model.corpus.get_next_primary_key(WordInterval)
-            word = self.corpus_model.corpus.session.get(Word, 1)
-            word_interval = WordInterval(
-                id=word_interval_id,
-                word=word,
-                begin=begin,
-                end=end,
-            )
+            if not lookup.startswith("reference"):
+                word_interval_id = self.corpus_model.corpus.get_next_primary_key(WordInterval)
+                word = self.corpus_model.corpus.session.get(Word, 1)
+                word_interval = WordInterval(
+                    id=word_interval_id,
+                    word=word,
+                    begin=begin,
+                    end=end,
+                )
+            else:
+                word_interval_id = self.corpus_model.corpus.get_next_primary_key(
+                    ReferenceWordInterval
+                )
+                word = self.corpus_model.corpus.session.get(Word, 1)
+                word_interval = ReferenceWordInterval(
+                    id=word_interval_id,
+                    word=word,
+                    begin=begin,
+                    end=end,
+                )
         elif not lookup.startswith("reference"):
             for x in self.item.word_intervals:
                 if x.id == word_interval_id:
                     word_interval = x
                     break
-        next_pk = self.corpus_model.corpus.get_next_primary_key(PhoneInterval)
-        phone_interval = PhoneInterval(
-            id=next_pk,
-            phone=self.corpus_model.phones["sil"],
-            begin=begin,
-            end=end,
-            word_interval=word_interval,
-            word_interval_id=word_interval_id,
-        )
+        else:
+            for x in self.item.reference_word_intervals:
+                if x.id == word_interval_id:
+                    word_interval = x
+                    break
+        if not lookup.startswith("reference"):
+            next_pk = self.corpus_model.corpus.get_next_primary_key(PhoneInterval)
+            phone_interval = PhoneInterval(
+                id=next_pk,
+                phone=self.corpus_model.phones["sil"],
+                begin=begin,
+                end=end,
+                word_interval=word_interval,
+                word_interval_id=word_interval_id,
+            )
+        else:
+            next_pk = self.corpus_model.corpus.get_next_primary_key(ReferencePhoneInterval)
+            phone_interval = ReferencePhoneInterval(
+                id=next_pk,
+                phone=self.corpus_model.phones["sil"],
+                begin=begin,
+                end=end,
+                word_interval=word_interval,
+                word_interval_id=word_interval_id,
+            )
         self.phoneIntervalInserted.emit(
             self.item,
             phone_interval,
@@ -3570,6 +3633,7 @@ class SpeakerTier(pg.GraphicsObject):
             reg.phoneBoundaryChanged.connect(self.update_phone_boundaries)
             reg.phoneIntervalChanged.connect(self.update_phone_interval)
             reg.wordPronunciationChanged.connect(self.update_word_pronunciation)
+            reg.wordChanged.connect(self.update_word)
             reg.phoneIntervalInserted.connect(self.insert_phone_interval)
             reg.phoneIntervalDeleted.connect(self.delete_phone_interval)
             reg.deleteReferenceAlignments.connect(self.delete_reference_alignments)
@@ -3598,6 +3662,11 @@ class SpeakerTier(pg.GraphicsObject):
         self.selection_model.model().update_word_pronunciation(
             utterance, word_interval, pronunciation
         )
+
+    def update_word(
+        self, utterance: Utterance, word_interval: WordInterval, word: typing.Union[Word, str]
+    ):
+        self.selection_model.model().update_word(utterance, word_interval, word)
 
     def insert_phone_interval(
         self, utterance: Utterance, interval, previous_interval, following_interval, word_interval

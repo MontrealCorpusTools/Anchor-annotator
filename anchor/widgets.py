@@ -508,10 +508,10 @@ class CompleterLineEdit(QtWidgets.QWidget):
 
     def update_completions(self, completions: dict[str, int]) -> None:
         self.completions = completions
-        model = QtCore.QStringListModel(list(self.completions.keys()))
+        model = QtCore.QStringListModel(sorted(self.completions.keys()))
         completer = QtWidgets.QCompleter(self)
-        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setModelSorting(QtWidgets.QCompleter.ModelSorting.CaseInsensitivelySortedModel)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseSensitive)
+        completer.setModelSorting(QtWidgets.QCompleter.ModelSorting.CaseSensitivelySortedModel)
         completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
         completer.popup().setUniformItemSizes(True)
         completer.popup().setLayoutMode(QtWidgets.QListView.LayoutMode.Batched)
@@ -519,6 +519,15 @@ class CompleterLineEdit(QtWidgets.QWidget):
         completer.popup().setStyleSheet(self.settings.completer_style_sheet)
         self.line_edit.setCompleter(completer)
         # self.line_edit.textChanged.connect(completer.setCompletionPrefix)
+
+
+class WordCompleterLineEdit(CompleterLineEdit):
+    def current_text(self):
+        if self.line_edit.text():
+            if self.line_edit.text() in self.completions:
+                return self.completions[self.line_edit.text()]
+            return self.line_edit.text()
+        return None
 
 
 class ClearableDropDown(QtWidgets.QWidget):
@@ -3421,6 +3430,33 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.speaker_dropdown.line_edit.returnPressed.connect(self.accept)
         self.speaker_dropdown.update_completions(corpus_model.speakers)
         layout.addWidget(self.speaker_dropdown)
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        self.setLayout(layout)
+        # self.speaker_dropdown.setFont(font)
+        # self.button_box.setFont(font)
+        # self.setStyleSheet(self.settings.style_sheet)
+        # self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+
+
+class WordQueryDialog(QtWidgets.QDialog):
+    def __init__(self, corpus_model: CorpusModel, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QtWidgets.QVBoxLayout()
+        self.setWindowTitle("Change word")
+        self.setWindowIcon(QtGui.QIcon(":anchor-yellow.svg"))
+        self.word_dropdown = WordCompleterLineEdit(self, corpus_model=corpus_model)
+        self.word_dropdown.line_edit.setPlaceholderText("")
+        self.word_dropdown.line_edit.returnPressed.connect(self.accept)
+        self.word_dropdown.update_completions(corpus_model.words)
+        layout.addWidget(self.word_dropdown)
         self.button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel

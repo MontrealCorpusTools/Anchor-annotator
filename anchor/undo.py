@@ -231,6 +231,10 @@ class SplitUtteranceCommand(FileCommand):
             make_transient(x)
         for x in self.merged_utterance.word_intervals:
             make_transient(x)
+        for x in self.merged_utterance.reference_phone_intervals:
+            make_transient(x)
+        for x in self.merged_utterance.reference_word_intervals:
+            make_transient(x)
         session.add(self.merged_utterance)
         for u in self.split_utterances:
             session.delete(u)
@@ -419,6 +423,12 @@ class UpdateUtteranceTimesCommand(FileCommand):
         if self.utterance.word_intervals:
             self.utterance.word_intervals[0].begin = begin
             self.utterance.word_intervals[-1].end = end
+        if self.utterance.reference_phone_intervals:
+            self.utterance.reference_phone_intervals[0].begin = begin
+            self.utterance.reference_phone_intervals[-1].end = end
+        if self.utterance.reference_word_intervals:
+            self.utterance.reference_word_intervals[0].begin = begin
+            self.utterance.reference_word_intervals[-1].end = end
         session.merge(self.utterance)
 
     def _redo(self, session) -> None:
@@ -484,8 +494,12 @@ class UpdatePhoneBoundariesCommand(FileCommand):
             self.first_phone_interval.word_interval_id
             != self.second_phone_interval.word_interval_id
         )
-        if self.at_word_boundary:
-            for wi in utterance.word_intervals:
+        if True or self.at_word_boundary:
+            if isinstance(self.first_phone_interval, PhoneInterval):
+                word_intervals = utterance.word_intervals
+            else:
+                word_intervals = utterance.reference_word_intervals
+            for wi in word_intervals:
                 if self.first_word_interval is not None and self.second_word_interval is not None:
                     break
                 if wi.id == first_phone_interval.word_interval_id:
@@ -553,6 +567,12 @@ class DeletePhoneIntervalCommand(FileCommand):
         file_model: FileUtterancesModel,
     ):
         super().__init__(file_model)
+        self.word_interval_lookup = "word_intervals"
+        self.phone_interval_lookup = "phone_intervals"
+        self.using_reference = not isinstance(phone_interval, PhoneInterval)
+        if self.using_reference:
+            self.word_interval_lookup = "reference_word_intervals"
+            self.phone_interval_lookup = "reference_phone_intervals"
         self.utterance = utterance
         self.old_manual_alignments = utterance.manual_alignments
         self.phone_interval = phone_interval
@@ -575,7 +595,7 @@ class DeletePhoneIntervalCommand(FileCommand):
             else None
         )
         self.word_interval = None
-        for wi in self.utterance.word_intervals:
+        for wi in getattr(self.utterance, self.word_interval_lookup):
             if wi.id == self.phone_interval.word_interval_id:
                 self.word_interval = wi
                 break
@@ -586,7 +606,7 @@ class DeletePhoneIntervalCommand(FileCommand):
 
         self.at_word_boundary = previous_word_interval_id != following_word_interval_id
         if self.at_word_boundary:
-            for wi in utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 if self.first_word_interval is not None and self.second_word_interval is not None:
                     break
                 if wi.id == previous_word_interval_id:
@@ -594,12 +614,12 @@ class DeletePhoneIntervalCommand(FileCommand):
                 if wi.id == following_word_interval_id:
                     self.second_word_interval = wi
         elif not self.has_previous:
-            for wi in utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 if wi.id == following_word_interval_id:
                     self.second_word_interval = wi
                     break
         elif not self.has_following:
-            for wi in utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 if wi.id == previous_word_interval_id:
                     self.first_word_interval = wi
                     break
@@ -644,20 +664,20 @@ class DeletePhoneIntervalCommand(FileCommand):
             session.merge(self.following_phone_interval)
 
         phone_intervals = []
-        for pi in self.utterance.phone_intervals:
+        for pi in getattr(self.utterance, self.phone_interval_lookup):
             if pi.id == self.phone_interval.id:
                 continue
             session.merge(pi)
             phone_intervals.append(pi)
-        self.utterance.phone_intervals = phone_intervals
+        setattr(self.utterance, self.phone_interval_lookup, phone_intervals)
         if self.single_phone_word:
             word_intervals = []
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 if wi.id == self.word_interval.id:
                     continue
                 session.merge(wi)
                 word_intervals.append(wi)
-            self.utterance.word_intervals = word_intervals
+            setattr(self.utterance, self.word_interval_lookup, word_intervals)
         if not self.old_manual_alignments:
             self.utterance.manual_alignments = True
         session.merge(self.utterance)
@@ -665,19 +685,27 @@ class DeletePhoneIntervalCommand(FileCommand):
     def _undo(self, session) -> None:
         if self.single_phone_word:
             word_intervals = []
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 session.merge(wi)
                 word_intervals.append(wi)
             make_transient(self.word_interval)
             word_intervals.append(self.word_interval)
-            self.utterance.word_intervals = sorted(word_intervals, key=lambda x: x.begin)
+            setattr(
+                self.utterance,
+                self.word_interval_lookup,
+                sorted(word_intervals, key=lambda x: x.begin),
+            )
         phone_intervals = []
-        for pi in self.utterance.phone_intervals:
+        for pi in getattr(self.utterance, self.phone_interval_lookup):
             session.merge(pi)
             phone_intervals.append(pi)
         make_transient(self.phone_interval)
         phone_intervals.append(self.phone_interval)
-        self.utterance.phone_intervals = sorted(phone_intervals, key=lambda x: x.begin)
+        setattr(
+            self.utterance,
+            self.phone_interval_lookup,
+            sorted(phone_intervals, key=lambda x: x.begin),
+        )
         session.merge(self.utterance)
 
         if not self.old_manual_alignments:
@@ -712,6 +740,12 @@ class InsertPhoneIntervalCommand(FileCommand):
         word_interval: WordInterval = None,
     ):
         super().__init__(file_model)
+        self.word_interval_lookup = "word_intervals"
+        self.phone_interval_lookup = "phone_intervals"
+        self.using_reference = not isinstance(phone_interval, PhoneInterval)
+        if self.using_reference:
+            self.word_interval_lookup = "reference_word_intervals"
+            self.phone_interval_lookup = "reference_phone_intervals"
         self.utterance = utterance
         self.old_manual_alignments = utterance.manual_alignments
         self.phone_interval = phone_interval
@@ -742,7 +776,7 @@ class InsertPhoneIntervalCommand(FileCommand):
         )
         self.previous_word_interval_end = None
         self.following_word_interval_begin = None
-        for wi in self.utterance.word_intervals:
+        for wi in getattr(self.utterance, self.word_interval_lookup):
             if (
                 self.previous_word_interval_id is not None
                 and wi.id == self.previous_word_interval_id
@@ -763,7 +797,7 @@ class InsertPhoneIntervalCommand(FileCommand):
     def _redo(self, session) -> None:
         word_intervals = []
         if self.word_interval is not None:
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 session.merge(wi)
                 if wi.id == self.previous_word_interval_id:
                     wi.end = self.phone_interval.begin
@@ -773,7 +807,7 @@ class InsertPhoneIntervalCommand(FileCommand):
             make_transient(self.word_interval)
             word_intervals.append(self.word_interval)
         else:
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 session.merge(wi)
                 if self.initial_word_boundary:
                     if wi.id == self.previous_word_interval_id:
@@ -786,9 +820,13 @@ class InsertPhoneIntervalCommand(FileCommand):
                     elif wi.id == self.phone_interval.word_interval_id:
                         wi.end = self.phone_interval.end
                 word_intervals.append(wi)
-        self.utterance.word_intervals = sorted(word_intervals, key=lambda x: x.begin)
+        setattr(
+            self.utterance,
+            self.word_interval_lookup,
+            sorted(word_intervals, key=lambda x: x.begin),
+        )
         phone_intervals = []
-        for pi in self.utterance.phone_intervals:
+        for pi in getattr(self.utterance, self.phone_interval_lookup):
             session.merge(pi)
             if self.has_previous and pi.id == self.previous_phone_interval.id:
                 pi.end = self.phone_interval.begin
@@ -799,14 +837,18 @@ class InsertPhoneIntervalCommand(FileCommand):
         self.phone_interval.utterance_id = self.utterance.id
         phone_intervals.append(self.phone_interval)
 
-        self.utterance.phone_intervals = sorted(phone_intervals, key=lambda x: x.begin)
+        setattr(
+            self.utterance,
+            self.phone_interval_lookup,
+            sorted(phone_intervals, key=lambda x: x.begin),
+        )
         if not self.old_manual_alignments:
             self.utterance.manual_alignments = True
         session.merge(self.utterance)
 
     def _undo(self, session) -> None:
         phone_intervals = []
-        for pi in self.utterance.phone_intervals:
+        for pi in getattr(self.utterance, self.phone_interval_lookup):
             if pi.id == self.phone_interval.id:
                 continue
             session.merge(pi)
@@ -815,16 +857,16 @@ class InsertPhoneIntervalCommand(FileCommand):
             if self.has_following and pi.id == self.following_phone_interval.id:
                 pi.begin = self.old_time_boundary
             phone_intervals.append(pi)
-        self.utterance.phone_intervals = phone_intervals
+        setattr(self.utterance, self.phone_interval_lookup, phone_intervals)
         word_intervals = []
         if self.word_interval is not None:
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 if wi.id == self.word_interval.id:
                     continue
                 session.merge(wi)
                 word_intervals.append(wi)
         else:
-            for wi in self.utterance.word_intervals:
+            for wi in getattr(self.utterance, self.word_interval_lookup):
                 session.merge(wi)
                 if self.initial_word_boundary:
                     if wi.id == self.previous_word_interval_id:
@@ -837,7 +879,7 @@ class InsertPhoneIntervalCommand(FileCommand):
                     elif wi.id == self.phone_interval.word_interval_id:
                         wi.end = self.following_word_interval_begin
                 word_intervals.append(wi)
-        self.utterance.word_intervals = word_intervals
+        setattr(self.utterance, self.word_interval_lookup, word_intervals)
         session.merge(self.utterance)
         if not self.old_manual_alignments:
             self.utterance.manual_alignments = self.old_manual_alignments
@@ -931,6 +973,66 @@ class UpdateWordIntervalPronunciationCommand(FileCommand):
         super().update_data()
         self.corpus_model.changeCommandFired.emit()
         self.file_model.phoneTierChanged.emit(self.utterance)
+
+
+class UpdateWordIntervalWordCommand(FileCommand):
+    def __init__(
+        self,
+        utterance: Utterance,
+        word_interval: WordInterval,
+        word: typing.Union[Word, str],
+        file_model: FileUtterancesModel,
+    ):
+        super().__init__(file_model)
+        self.utterance = utterance
+        self.word_interval = word_interval
+        self.old_word = self.word_interval.word
+        self.new_word = word
+        self.need_words_refreshed = isinstance(word, str)
+
+        self.setText(
+            QtCore.QCoreApplication.translate(
+                "UpdateWordIntervalPronunciationCommand", "Update pronunciation for word interval"
+            )
+        )
+
+    def _redo(self, session) -> None:
+        session.merge(self.utterance)
+        if isinstance(self.new_word, str):
+            max_id, max_mapping_id = session.query(
+                sqlalchemy.func.max(Word.id), sqlalchemy.func.max(Word.mapping_id)
+            ).first()
+            dictionary_id = self.utterance.speaker.dictionary_id
+            if not dictionary_id:
+                dictionary_id = 1
+
+            self.new_word = Word(
+                id=max_id + 1,
+                mapping_id=max_mapping_id + 1,
+                word=self.new_word,
+                count=1,
+                dictionary_id=dictionary_id,
+                word_type=WordType.speech,
+            )
+            session.merge(self.new_word)
+
+        self.word_interval.word = self.new_word
+        self.word_interval.word_id = self.new_word.id
+        session.merge(self.word_interval)
+
+    def _undo(self, session) -> None:
+        session.merge(self.utterance)
+        self.word_interval.word = self.old_word
+        self.word_interval.word_id = self.old_word.id
+        session.merge(self.word_interval)
+
+    def update_data(self):
+        super().update_data()
+        self.corpus_model.changeCommandFired.emit()
+        self.file_model.phoneTierChanged.emit(self.utterance)
+        if self.need_words_refreshed:
+            self.corpus_model.refresh_words()
+            self.need_words_refreshed = False
 
 
 class UpdatePhoneIntervalCommand(FileCommand):

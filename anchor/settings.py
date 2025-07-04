@@ -243,7 +243,8 @@ class AnchorSettings(QtCore.QSettings):
             "Normalized text": AnchorSettings.TIER_NORMALIZED_VISIBLE,
             "Words": AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE,
             "Phones": AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE,
-            "Reference": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
+            "Reference words": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
+            "Reference phones": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
             "Transcription": AnchorSettings.TIER_TRANSCRIPTION_VISIBLE,
         }
 
@@ -278,7 +279,8 @@ class AnchorSettings(QtCore.QSettings):
             "Normalized text": self.value(AnchorSettings.TIER_NORMALIZED_VISIBLE),
             "Words": self.value(AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE),
             "Phones": self.value(AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE),
-            "Reference": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
+            "Reference words": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
+            "Reference phones": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
             "Transcription": self.value(AnchorSettings.TIER_TRANSCRIPTION_VISIBLE),
         }
 

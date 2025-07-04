@@ -1428,7 +1428,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.set_application_state("loading")
             self.ui.loadingScreen.setCorpusName(f"Loading {c.path}...")
             dictionary_path = None
-            if c.dictionary is not None:
+            if c.dictionary is not None and c.dictionary.path != ".":
                 dictionary_path = c.dictionary.path
         self.corpus_worker.set_params(c.path, dictionary_path)
         self.corpus_worker.start()

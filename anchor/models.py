@@ -418,6 +418,18 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         )
         self.corpus_model.set_file_modified(self.file.id)
 
+    def update_word(
+        self, utterance: Utterance, word_interval: WordInterval, word: typing.Union[Word, str]
+    ):
+        if not self.corpus_model.editable:
+            return
+        if isinstance(word, Word) and word_interval.word_id == word.id:
+            return
+        self.addCommand.emit(
+            undo.UpdateWordIntervalWordCommand(utterance, word_interval, word, self)
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
     def insert_phone_interval(
         self,
         utterance: Utterance,
@@ -2408,6 +2420,7 @@ class CorpusModel(TableModel):
         self.files = []
         self.speakers = {}
         self.phones = {}
+        self.words = {}
         self.speaker_id_mapping = {}
         self.utterances = None
         self.session: sqlalchemy.orm.scoped_session = None
@@ -2482,7 +2495,10 @@ class CorpusModel(TableModel):
 
     @property
     def has_dictionary(self):
-        if isinstance(self.corpus, AcousticCorpusWithPronunciations):
+        if (
+            isinstance(self.corpus, AcousticCorpusWithPronunciations)
+            and self.corpus.dictionary_model is not None
+        ):
             return True
         return False
 
@@ -2741,6 +2757,7 @@ class CorpusModel(TableModel):
             self.refresh_files()
             self.refresh_speakers()
             self.refresh_phones()
+            self.refresh_words()
             self.refresh_utterances()
             self.update_latest_alignment_workflow()
 
@@ -2800,6 +2817,13 @@ class CorpusModel(TableModel):
             )
             for p in phones:
                 self.phones[p.phone] = p
+
+    def refresh_words(self):
+        self.words = {}
+        with self.corpus.session() as session:
+            words = session.query(Word).order_by(Word.word).all()
+            for w in words:
+                self.words[w.word] = w
 
     def data(self, index, role):
         if not index.isValid():

@@ -39,7 +39,6 @@ from montreal_forced_aligner.corpus.acoustic_corpus import (
 )
 from montreal_forced_aligner.corpus.classes import FileData
 from montreal_forced_aligner.data import (
-    CtmInterval,
     DatasetType,
     DistanceMetric,
     Language,
@@ -59,6 +58,7 @@ from montreal_forced_aligner.db import (
     PhoneInterval,
     Pronunciation,
     ReferencePhoneInterval,
+    ReferenceWordInterval,
     SoundFile,
     Speaker,
     SpeakerOrdering,
@@ -106,26 +106,6 @@ if typing.TYPE_CHECKING:
     from anchor.models import CorpusModel, TextFilterQuery
 
 logger = logging.getLogger("anchor")
-
-
-@dataclassy.dataclass(slots=True)
-class UtteranceData:
-    id: int
-    begin: float
-    end: float
-    channel: int
-    text: str
-    normalized_text: str
-    transcription_text: str
-    speaker_id: int
-    file_id: int
-    reference_phone_intervals: typing.List[CtmInterval]
-    aligned_word_intervals: typing.List[CtmInterval]
-    aligned_phone_intervals: typing.List[CtmInterval]
-    transcribed_word_intervals: typing.List[CtmInterval]
-    transcribed_phone_intervals: typing.List[CtmInterval]
-    per_speaker_transcribed_word_intervals: typing.List[CtmInterval]
-    per_speaker_transcribed_phone_intervals: typing.List[CtmInterval]
 
 
 @dataclassy.dataclass
@@ -3127,6 +3107,9 @@ class FileUtterancesWorker(Worker):
                     joinedload(WordInterval.word, innerjoin=True),
                     joinedload(WordInterval.pronunciation, innerjoin=True),
                 ),
+                selectinload(Utterance.reference_word_intervals).options(
+                    joinedload(ReferenceWordInterval.word, innerjoin=True),
+                ),
                 joinedload(Utterance.speaker, innerjoin=True),
             )
             .filter(Utterance.file_id == self.file_id)
@@ -3466,6 +3449,11 @@ class SpeakerTierWorker(Worker):  # pragma: no cover
                             joinedload(WordInterval.word, innerjoin=True),
                         ),
                     )
+                    utterances = utterances.options(
+                        selectinload(Utterance.reference_word_intervals).options(
+                            joinedload(ReferenceWordInterval.word, innerjoin=True),
+                        ),
+                    )
             utterances = utterances.filter(
                 Utterance.file_id == self.file_id,
             ).order_by(Utterance.begin)
@@ -3751,7 +3739,9 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                 ).execution_options(logging_token="inspect_dataset_engine")
                 with sqlalchemy.orm.Session(engine) as session:
                     dictionary = (
-                        session.query(Dictionary.path).filter(Dictionary.path != "").first()
+                        session.query(Dictionary.path)
+                        .filter(Dictionary.path != "", Dictionary.path != ".")
+                        .first()
                     )
                     if dictionary is not None:
                         self.dictionary_path = dictionary[0]
@@ -3759,7 +3749,11 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                 pass
         try:
             if dataset_type is DatasetType.NONE:
-                if self.dictionary_path and os.path.exists(self.dictionary_path):
+                if (
+                    self.dictionary_path
+                    and os.path.exists(self.dictionary_path)
+                    and str(self.dictionary_path) != "."
+                ):
                     self.corpus = AcousticCorpusWithPronunciations(
                         corpus_directory=self.corpus_path, dictionary_path=self.dictionary_path
                     )
@@ -3767,13 +3761,16 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                     self.corpus.dictionary_setup()
                     self.corpus.write_lexicon_information(write_disambiguation=False)
                 else:
-                    self.corpus = AcousticCorpus(corpus_directory=self.corpus_path)
+                    self.corpus = AcousticCorpusWithPronunciations(
+                        corpus_directory=self.corpus_path
+                    )
                     self.corpus.initialize_database()
-                    self.corpus._load_corpus()
+                    self.corpus.create_default_dictionary()
 
             elif (
                 dataset_type is DatasetType.ACOUSTIC_CORPUS_WITH_DICTIONARY
                 and self.dictionary_path
+                and str(self.dictionary_path) != "."
                 and os.path.exists(self.dictionary_path)
             ):
                 self.corpus = AcousticCorpusWithPronunciations(
@@ -3781,8 +3778,9 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                 )
                 self.corpus.inspect_database()
             else:
-                self.corpus = AcousticCorpus(corpus_directory=self.corpus_path)
+                self.corpus = AcousticCorpusWithPronunciations(corpus_directory=self.corpus_path)
                 self.corpus.inspect_database()
+                self.corpus.create_default_dictionary()
             self.corpus._load_corpus()
             if self.dictionary_path and os.path.exists(self.dictionary_path):
                 self.corpus.initialize_jobs()
