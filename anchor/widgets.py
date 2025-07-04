@@ -27,6 +27,7 @@ from PySide6 import QtCore, QtGui, QtMultimedia, QtSvgWidgets, QtWidgets
 import anchor.resources_rc  # noqa
 from anchor.models import (
     AcousticModelTableModel,
+    AlignmentAnalysisModel,
     CorpusModel,
     CorpusSelectionModel,
     CorpusTableModel,
@@ -55,6 +56,13 @@ outside_column_ratio = 0.2
 outside_column_minimum = 250
 
 logger = logging.getLogger("anchor")
+
+
+class ScrollableMenuStyle(QtWidgets.QProxyStyle):
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QtWidgets.QStyle.StyleHint.SH_Menu_Scrollable:
+            return 0
+        return super().styleHint(hint, option, widget, returnData)
 
 
 class ErrorButtonBox(QtWidgets.QDialogButtonBox):
@@ -500,10 +508,10 @@ class CompleterLineEdit(QtWidgets.QWidget):
 
     def update_completions(self, completions: dict[str, int]) -> None:
         self.completions = completions
-        model = QtCore.QStringListModel(list(self.completions.keys()))
+        model = QtCore.QStringListModel(sorted(self.completions.keys()))
         completer = QtWidgets.QCompleter(self)
-        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
-        completer.setModelSorting(QtWidgets.QCompleter.ModelSorting.CaseInsensitivelySortedModel)
+        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseSensitive)
+        completer.setModelSorting(QtWidgets.QCompleter.ModelSorting.CaseSensitivelySortedModel)
         completer.setCompletionMode(QtWidgets.QCompleter.CompletionMode.PopupCompletion)
         completer.popup().setUniformItemSizes(True)
         completer.popup().setLayoutMode(QtWidgets.QListView.LayoutMode.Batched)
@@ -511,6 +519,15 @@ class CompleterLineEdit(QtWidgets.QWidget):
         completer.popup().setStyleSheet(self.settings.completer_style_sheet)
         self.line_edit.setCompleter(completer)
         # self.line_edit.textChanged.connect(completer.setCompletionPrefix)
+
+
+class WordCompleterLineEdit(CompleterLineEdit):
+    def current_text(self):
+        if self.line_edit.text():
+            if self.line_edit.text() in self.completions:
+                return self.completions[self.line_edit.text()]
+            return self.line_edit.text()
+        return None
 
 
 class ClearableDropDown(QtWidgets.QWidget):
@@ -1391,7 +1408,14 @@ class HeaderView(QtWidgets.QHeaderView):
 
     def generate_context_menu(self, location):
         menu = QtWidgets.QMenu()
+        menu.addSeparator()
         m: CorpusModel = self.model()
+        section_index = self.logicalIndexAt(location)
+        a = QtGui.QAction("Filter Nulls", self)
+        a.setCheckable(True)
+        a.setChecked(m.filter_nulls[section_index])
+        a.toggled.connect(lambda x, y=section_index: m.update_filter_nulls(x, y))
+        menu.addAction(a)
         for i in range(m.columnCount()):
             column_name = m.headerData(
                 i,
@@ -2260,7 +2284,7 @@ class SpeakerTableView(AnchorTableView):
         self.speaker_model: SpeakerModel = None
         self.view_delegate = ButtonDelegate("edit-find", self)
         self.edit_delegate = EditableDelegate(self)
-        self.speaker_delegate = SpeakerViewDelegate(self)
+        self.speaker_delegate = UtteranceCountDelegate(self)
         self.setItemDelegateForColumn(1, self.speaker_delegate)
         self.setItemDelegateForColumn(0, self.edit_delegate)
         self.setItemDelegateForColumn(4, self.view_delegate)
@@ -2495,7 +2519,7 @@ class TranscriberWidget(QtWidgets.QWidget):
         self.corpus_model.languageModelChanged.connect(self.refresh)
 
 
-class SpeakerViewDelegate(QtWidgets.QStyledItemDelegate):
+class UtteranceCountDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         from anchor.main import AnchorSettings
@@ -2512,16 +2536,56 @@ class SpeakerViewDelegate(QtWidgets.QStyledItemDelegate):
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> None:
         super().paint(painter, option, index)
+        m = index.model()
+        if not m.data(index, QtCore.Qt.ItemDataRole.DisplayRole):
+            return
         painter.save()
 
         r = option.rect
-        half_size = int(self.settings.icon_size / 2)
-        x = r.left() + r.width() - self.settings.icon_size
+        size = int(self.settings.icon_size / 2)
+        half_size = int(size / 2)
+        x = r.left() + r.width() - size
         y = r.top() + (r.height() / 2) - half_size
         options = QtWidgets.QStyleOptionViewItem(option)
-        options.rect = QtCore.QRect(x, y, self.settings.icon_size, self.settings.icon_size)
+        options.rect = QtCore.QRect(x, y, size, size)
         self.initStyleOption(options, index)
         icon = QtGui.QIcon.fromTheme("folder-open")
+        icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        painter.restore()
+
+
+class SpeakerCycleDelegate(QtWidgets.QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from anchor.main import AnchorSettings
+
+        self.settings = AnchorSettings()
+
+    def refresh_settings(self):
+        self.settings.sync()
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
+    ) -> None:
+        super().paint(painter, option, index)
+
+        m: DiarizationModel = index.model()
+        if hasattr(m, "can_cycle") and not m.can_cycle(index):
+            return
+        painter.save()
+        r = option.rect
+        size = int(self.settings.icon_size / 2)
+        half_size = int(size / 2)
+        x = r.left() + r.width() - size
+        y = r.top() + (r.height() / 2) - half_size
+        options = QtWidgets.QStyleOptionViewItem(option)
+        options.rect = QtCore.QRect(x, y, size, size)
+        self.initStyleOption(options, index)
+        icon = QtGui.QIcon.fromTheme("sync-synchronizing")
         icon.paint(painter, options.rect, QtCore.Qt.AlignmentFlag.AlignCenter)
 
         painter.restore()
@@ -2601,30 +2665,21 @@ class SpeakerClustersWidget(QtWidgets.QWidget):
         self.search_requested.emit(kaldi_ivector.numpy())
 
     def change_speaker(self):
-        if len(self.speaker_model.current_speakers) > 1:
-            if not self.plot_widget.updated_indices:
-                return
-            data = []
-            for index in self.plot_widget.updated_indices:
-                u_id = int(self.speaker_model.utterance_ids[index])
-                data.append(
-                    [
-                        u_id,
-                        self.speaker_model.utt2spk[u_id],
-                        int(self.speaker_model.cluster_labels[index]),
-                    ]
-                )
-            self.speaker_model.change_speakers(data, self.speaker_model.current_speakers[0])
-            self.plot_widget.updated_indices = set()
-            self.plot_widget.selected_indices = set()
-        else:
-            if not self.plot_widget.selected_indices:
-                return
-            indices = np.array(list(self.plot_widget.selected_indices))
-            utterance_ids = self.speaker_model.utterance_ids[indices].tolist()
-            self.speaker_model.change_speaker(
-                utterance_ids, self.speaker_model.current_speakers[0], 0
+        if not self.plot_widget.updated_indices:
+            return
+        data = []
+        for index in self.plot_widget.updated_indices:
+            u_id = int(self.speaker_model.utterance_ids[index])
+            data.append(
+                [
+                    u_id,
+                    self.speaker_model.utt2spk[u_id],
+                    int(self.speaker_model.cluster_labels[index]),
+                ]
             )
+        self.speaker_model.change_speakers(data, self.speaker_model.current_speakers[0])
+        self.plot_widget.updated_indices = set()
+        self.plot_widget.selected_indices = set()
 
     def set_models(
         self,
@@ -2648,11 +2703,13 @@ class DiarizationTable(AnchorTableView):
     def __init__(self, *args):
         super().__init__(*args)
         self.setSortingEnabled(False)
-        self.speaker_delegate = SpeakerViewDelegate(self)
-        self.button_delegate = ButtonDelegate(":compress.svg", self)
-        self.setItemDelegateForColumn(0, self.speaker_delegate)
+        self.count_delegate = UtteranceCountDelegate(self)
+        self.speaker_delegate = SpeakerCycleDelegate(self)
+        self.button_delegate = ButtonDelegate("format-justify-center", self)
+        self.setItemDelegateForColumn(0, self.count_delegate)
         self.setItemDelegateForColumn(1, self.speaker_delegate)
-        self.setItemDelegateForColumn(3, self.speaker_delegate)
+        self.setItemDelegateForColumn(2, self.count_delegate)
+        self.setItemDelegateForColumn(4, self.count_delegate)
         self.setItemDelegateForColumn(6, self.button_delegate)
         self.setItemDelegateForColumn(7, self.button_delegate)
         self.doubleClicked.connect(self.search_utterance)
@@ -2698,8 +2755,11 @@ class DiarizationTable(AnchorTableView):
             self.diarization_model.merge_speakers(index.row())
 
     def search_utterance(self, index: QtCore.QModelIndex):
-        if not index.isValid() or index.column() not in {0, 1, 3}:
+        if not index.isValid() or index.column() not in {0, 1, 2, 3, 4}:
             return
+        if index.column() == 1:
+            row = index.row()
+            self.diarization_model.change_suggested_speaker(row)
         if index.column() == 0:
             row = index.row()
             utterance_id = self.diarization_model.utterance_ids[row]
@@ -2718,8 +2778,12 @@ class DiarizationTable(AnchorTableView):
                     self.selection_model.clearSelection()
                     return
         else:
-            if index.column() == 1:
+            if index.column() in {1, 2}:
                 speaker_id = self.diarization_model.suggested_indices[index.row()]
+                if isinstance(speaker_id, list):
+                    speaker_id = speaker_id[
+                        self.diarization_model.selected_speaker_indices.get(index.row(), 0)
+                    ]
             else:
                 speaker_id = self.diarization_model.speaker_indices[index.row()]
             with self.diarization_model.corpus_model.corpus.session() as session:
@@ -2749,6 +2813,7 @@ class DiarizationTable(AnchorTableView):
             utterance_id,
             speaker_id,
             force_update=True,
+            single_utterance=False,
         )
 
 
@@ -2790,6 +2855,178 @@ class ThresholdWidget(QtWidgets.QLineEdit):
 
     def setValue(self, val):
         self.setText(f"{val:.4f}")
+
+
+class AlignmentAnalysisTable(AnchorTableView):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.alignment_analysis_model: typing.Optional[AlignmentAnalysisModel] = None
+        self.selection_model: typing.Optional[FileSelectionModel] = None
+        self.clicked.connect(self.search_utterance)
+
+    def set_models(self, model: AlignmentAnalysisModel, selection_model: FileSelectionModel):
+        self.alignment_analysis_model = model
+        self.selection_model = selection_model
+        self.setModel(model)
+        self.refresh_settings()
+
+    def search_utterance(self, index: QtCore.QModelIndex):
+        if not index.isValid():
+            return
+        row = index.row()
+        utterance_id = self.alignment_analysis_model.utterance_ids[row]
+        if utterance_id is None:
+            return
+        with self.alignment_analysis_model.corpus_model.corpus.session() as session:
+            try:
+                file_id, begin, end, speaker_id = (
+                    session.query(
+                        Utterance.file_id, Utterance.begin, Utterance.end, Utterance.speaker_id
+                    )
+                    .filter(Utterance.id == utterance_id)
+                    .first()
+                )
+            except TypeError:
+                self.selection_model.clearSelection()
+                return
+        word_index = self.alignment_analysis_model.createIndex(row, 5)
+        word = self.alignment_analysis_model.data(word_index)
+        self.selection_model.set_search_term(word)
+        self.selection_model.set_current_file(
+            file_id,
+            begin,
+            end,
+            utterance_id,
+            speaker_id,
+            force_update=True,
+            single_utterance=False,
+        )
+
+
+class AlignmentAnalysisWidget(QtWidgets.QWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        form_layout = QtWidgets.QFormLayout()
+        form_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        self.greater_than_edit = ThresholdWidget(self)
+        self.greater_than_edit.returnPressed.connect(self.search)
+        self.less_than_edit = ThresholdWidget(self)
+        self.less_than_edit.returnPressed.connect(self.search)
+        self.word_check = QtWidgets.QCheckBox()
+        self.search_box = SearchBox(self)
+        self.word_check.toggled.connect(self.switch_word_phone_mode)
+        form_layout.addRow(QtWidgets.QLabel("Search based on words"), self.word_check)
+        self.search_box_label = QtWidgets.QLabel("Search")
+        form_layout.addRow(self.search_box_label, self.search_box)
+        self.search_box.searchActivated.connect(self.search)
+        self.phone_dropdown = QtWidgets.QComboBox()
+        self.measure_dropdown = QtWidgets.QComboBox()
+        for m in ["Duration", "Log-likelihood"]:
+            self.measure_dropdown.addItem(m)
+        self.phone_dropdown_label = QtWidgets.QLabel("Phone")
+        form_layout.addRow(self.phone_dropdown_label, self.phone_dropdown)
+        form_layout.addRow(QtWidgets.QLabel("Measure"), self.measure_dropdown)
+        form_layout.addRow(QtWidgets.QLabel("Less than"), self.less_than_edit)
+        form_layout.addRow(QtWidgets.QLabel("Greater than"), self.greater_than_edit)
+        self.exclude_manual_check = QtWidgets.QCheckBox()
+        self.relative_duration_check = QtWidgets.QCheckBox()
+        form_layout.addRow(
+            QtWidgets.QLabel("Exclude manually aligned utterances"), self.exclude_manual_check
+        )
+        form_layout.addRow(QtWidgets.QLabel("Relative duration"), self.relative_duration_check)
+
+        self.clear_action = QtGui.QAction("Reset")
+        self.search_action = QtGui.QAction("Search")
+        self.search_action.triggered.connect(self.search)
+        self.clear_action.triggered.connect(self.clear_fields)
+        self.toolbar = QtWidgets.QToolBar()
+        self.toolbar.addAction(self.search_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.clear_action)
+        self.speaker_dropdown = CompleterLineEdit(self)
+        self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
+        self.speaker_dropdown.line_edit.returnPressed.connect(self.search)
+
+        form_layout.addRow("Speaker", self.speaker_dropdown)
+        form_widget.setLayout(form_layout)
+        layout.addWidget(form_widget)
+        layout.addWidget(self.toolbar)
+        self.table = AlignmentAnalysisTable(self)
+        layout.addWidget(self.table)
+        self.alignment_analysis_model: Optional[AlignmentAnalysisModel] = None
+        self.current_page = 0
+        self.num_pages = 0
+        self.pagination_toolbar = PaginationWidget()
+        self.pagination_toolbar.pageRequested.connect(self.table.scrollToTop)
+        layout.addWidget(self.pagination_toolbar)
+        self.setLayout(layout)
+
+    def switch_word_phone_mode(self, word_mode):
+        if word_mode:
+            self.phone_dropdown_label.setVisible(False)
+            self.phone_dropdown.setVisible(False)
+        else:
+            self.phone_dropdown_label.setVisible(True)
+            self.phone_dropdown.setVisible(True)
+
+    def set_models(self, model: AlignmentAnalysisModel, selection_model: FileSelectionModel):
+        self.alignment_analysis_model = model
+        self.alignment_analysis_model.corpus_model.corpusLoaded.connect(self.refresh)
+        self.table.set_models(model, selection_model)
+        self.alignment_analysis_model.resultCountChanged.connect(
+            self.pagination_toolbar.update_result_count
+        )
+        self.pagination_toolbar.offsetRequested.connect(self.alignment_analysis_model.set_offset)
+        self.pagination_toolbar.set_limit(self.alignment_analysis_model.limit)
+        self.alignment_analysis_model.corpus_model.speakersRefreshed.connect(
+            self.speaker_dropdown.update_completions
+        )
+
+    def refresh(self):
+        if self.alignment_analysis_model.corpus_model.corpus is not None:
+            validate_enabled = self.alignment_analysis_model.corpus_model.has_alignments
+            self.phone_dropdown.clear()
+            self.phone_dropdown.addItem("")
+            for p in self.alignment_analysis_model.corpus_model.phones.keys():
+                self.phone_dropdown.addItem(p)
+        else:
+            validate_enabled = False
+        self.search_action.setEnabled(validate_enabled)
+        self.clear_action.setEnabled(validate_enabled)
+        self.exclude_manual_check.setEnabled(validate_enabled)
+        self.phone_dropdown.setEnabled(validate_enabled)
+        self.measure_dropdown.setEnabled(validate_enabled)
+        self.less_than_edit.setEnabled(validate_enabled)
+        self.greater_than_edit.setEnabled(validate_enabled)
+        self.speaker_dropdown.setEnabled(validate_enabled)
+
+    def search(self):
+        self.table.selectionModel().clearSelection()
+        self.alignment_analysis_model.set_speaker_filter(self.speaker_dropdown.current_text())
+        self.alignment_analysis_model.set_word_mode(self.word_check.isChecked())
+        self.alignment_analysis_model.set_relative_duration(
+            self.relative_duration_check.isChecked()
+        )
+        if self.word_check.isChecked():
+            self.alignment_analysis_model.set_phone_filter(None)
+        else:
+            self.alignment_analysis_model.set_phone_filter(self.phone_dropdown.currentText())
+        self.alignment_analysis_model.set_word_filter(self.search_box.query())
+        self.alignment_analysis_model.set_less_than(self.less_than_edit.value())
+        self.alignment_analysis_model.set_greater_than(self.greater_than_edit.value())
+        self.alignment_analysis_model.set_measure(self.measure_dropdown.currentText())
+        self.alignment_analysis_model.set_exclude_manual(self.exclude_manual_check.isChecked())
+        self.pagination_toolbar.first_page()
+
+    def clear_fields(self):
+        self.speaker_dropdown.line_edit.clear()
+        self.phone_dropdown.setCurrentIndex(0)
+        self.measure_dropdown.setCurrentIndex(0)
+        self.less_than_edit.clear()
+        self.greater_than_edit.clear()
+        self.exclude_manual_check.setChecked(False)
 
 
 class DiarizationWidget(QtWidgets.QWidget):
@@ -2932,7 +3169,7 @@ class DiarizationWidget(QtWidgets.QWidget):
             self.threshold_edit.setEnabled(False)
         self.refresh_ivectors_action.setEnabled(validate_enabled)
 
-    def set_models(self, model: DiarizationModel, selection_model: CorpusSelectionModel):
+    def set_models(self, model: DiarizationModel, selection_model: FileSelectionModel):
         self.diarization_model = model
         self.diarization_model.corpus_model.corpusLoaded.connect(self.refresh)
         self.table.set_models(model, selection_model)
@@ -3190,9 +3427,36 @@ class SpeakerQueryDialog(QtWidgets.QDialog):
         self.setWindowIcon(QtGui.QIcon(":anchor-yellow.svg"))
         self.speaker_dropdown = CompleterLineEdit(self, corpus_model=corpus_model)
         self.speaker_dropdown.line_edit.setPlaceholderText("Filter by speaker")
-        self.speaker_dropdown.line_edit.returnPressed.connect(self.accept())
+        self.speaker_dropdown.line_edit.returnPressed.connect(self.accept)
         self.speaker_dropdown.update_completions(corpus_model.speakers)
         layout.addWidget(self.speaker_dropdown)
+        self.button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+        self.setLayout(layout)
+        # self.speaker_dropdown.setFont(font)
+        # self.button_box.setFont(font)
+        # self.setStyleSheet(self.settings.style_sheet)
+        # self.speaker_dropdown.setStyleSheet(self.settings.combo_box_style_sheet)
+
+
+class WordQueryDialog(QtWidgets.QDialog):
+    def __init__(self, corpus_model: CorpusModel, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.settings = AnchorSettings()
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
+        layout = QtWidgets.QVBoxLayout()
+        self.setWindowTitle("Change word")
+        self.setWindowIcon(QtGui.QIcon(":anchor-yellow.svg"))
+        self.word_dropdown = WordCompleterLineEdit(self, corpus_model=corpus_model)
+        self.word_dropdown.line_edit.setPlaceholderText("")
+        self.word_dropdown.line_edit.returnPressed.connect(self.accept)
+        self.word_dropdown.update_completions(corpus_model.words)
+        layout.addWidget(self.word_dropdown)
         self.button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel

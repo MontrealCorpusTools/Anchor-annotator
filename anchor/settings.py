@@ -68,6 +68,7 @@ class AnchorSettings(QtCore.QSettings):
     AM_VISIBLE = "anchor/MainWindow/acousticModelVisible"
     TRANSCRIPTION_VISIBLE = "anchor/MainWindow/transcriptionVisible"
     ALIGNMENT_VISIBLE = "anchor/MainWindow/alignmentVisible"
+    ALIGNMENT_ANALYSIS_VISIBLE = "anchor/MainWindow/alignmentAnalysisVisible"
     DIARIZATION_VISIBLE = "anchor/MainWindow/diarizationVisible"
 
     FONT = "anchor/theme/font"
@@ -136,8 +137,6 @@ class AnchorSettings(QtCore.QSettings):
     TIER_ALIGNED_WORDS_VISIBLE = "anchor/tier/aligned_words_visible"
     TIER_ALIGNED_PHONES_VISIBLE = "anchor/tier/aligned_phones_visible"
     TIER_REFERENCE_PHONES_VISIBLE = "anchor/tier/reference_phones_visible"
-    TIER_TRANSCRIBED_WORDS_VISIBLE = "anchor/tier/transcribed_words_visible"
-    TIER_TRANSCRIBED_PHONES_VISIBLE = "anchor/tier/transcribed_phones_visible"
 
     def __init__(self, *args):
         super(AnchorSettings, self).__init__(
@@ -215,14 +214,13 @@ class AnchorSettings(QtCore.QSettings):
             AnchorSettings.TRANSCRIPTION_VISIBLE: False,
             AnchorSettings.ALIGNMENT_VISIBLE: False,
             AnchorSettings.DIARIZATION_VISIBLE: False,
+            AnchorSettings.ALIGNMENT_ANALYSIS_VISIBLE: False,
             AnchorSettings.TIER_MAX_SPEAKERS: 2,
             AnchorSettings.TIER_NORMALIZED_VISIBLE: False,
             AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE: True,
             AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE: True,
             AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE: True,
             AnchorSettings.TIER_TRANSCRIPTION_VISIBLE: True,
-            AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE: True,
-            AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE: True,
             AnchorSettings.THEME_PRESET: "MFA",
             AnchorSettings.LANGUAGE: "unknown",
             AnchorSettings.VAD_MODEL: "kaldi",
@@ -245,10 +243,9 @@ class AnchorSettings(QtCore.QSettings):
             "Normalized text": AnchorSettings.TIER_NORMALIZED_VISIBLE,
             "Words": AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE,
             "Phones": AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE,
-            "Reference": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
+            "Reference words": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
+            "Reference phones": AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE,
             "Transcription": AnchorSettings.TIER_TRANSCRIPTION_VISIBLE,
-            "Transcribed words": AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE,
-            "Transcribed phones": AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE,
         }
 
     @property
@@ -282,10 +279,9 @@ class AnchorSettings(QtCore.QSettings):
             "Normalized text": self.value(AnchorSettings.TIER_NORMALIZED_VISIBLE),
             "Words": self.value(AnchorSettings.TIER_ALIGNED_WORDS_VISIBLE),
             "Phones": self.value(AnchorSettings.TIER_ALIGNED_PHONES_VISIBLE),
-            "Reference": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
+            "Reference words": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
+            "Reference phones": self.value(AnchorSettings.TIER_REFERENCE_PHONES_VISIBLE),
             "Transcription": self.value(AnchorSettings.TIER_TRANSCRIPTION_VISIBLE),
-            "Transcribed words": self.value(AnchorSettings.TIER_TRANSCRIBED_WORDS_VISIBLE),
-            "Transcribed phones": self.value(AnchorSettings.TIER_TRANSCRIBED_PHONES_VISIBLE),
         }
 
     def value(self, arg__1: str, defaultValue: Optional[Any] = ..., t: object = ...) -> Any:

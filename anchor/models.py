@@ -29,9 +29,12 @@ from montreal_forced_aligner.db import (
     File,
     Grapheme,
     Phone,
+    PhoneInterval,
+    Pronunciation,
     Speaker,
     Utterance,
     Word,
+    WordInterval,
 )
 from montreal_forced_aligner.g2p.generator import PyniniValidator
 from montreal_forced_aligner.models import (
@@ -114,7 +117,7 @@ class TableModel(QtCore.QAbstractTableModel):
         self.limit = 1
         self.text_filter = None
 
-    def set_text_filter(self, text_filter: TextFilterQuery):
+    def set_text_filter(self, text_filter: typing.Optional[TextFilterQuery]):
         if text_filter != self.text_filter:
             self.current_offset = 0
         self.text_filter = text_filter
@@ -180,6 +183,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
     waveformReady = QtCore.Signal()
     utterancesReady = QtCore.Signal()
     speakersChanged = QtCore.Signal()
+    phoneTierChanged = QtCore.Signal(object)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -191,8 +195,10 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self._speaker_indices = []
         self.reversed_indices = {}
         self.speaker_channel_mapping = {}
-        self.corpus_model: CorpusModel = None
+        self.corpus_model: typing.Optional[CorpusModel] = None
         self.closing = False
+        self.cached_begin = None
+        self.cached_end = None
 
         self.thread_pool = QtCore.QThreadPool()
         self.thread_pool.setMaxThreadCount(4)
@@ -209,12 +215,12 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
     def clean_up_for_close(self):
         self.closing = True
 
-    def set_file(self, file_id):
+    def set_file(self, file_id, utterance_id=None, begin=None, end=None):
         self.file = (
             self.corpus_model.session.query(File).options(joinedload(File.sound_file)).get(file_id)
         )
         self.y = None
-        self.get_utterances()
+        self.get_utterances(utterance_id, begin, end)
         waveform_worker = workers.WaveformWorker(self.file.sound_file.sound_file_path)
         waveform_worker.signals.result.connect(self.finalize_loading_wave_form)
         self.thread_pool.start(waveform_worker)
@@ -222,7 +228,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
     def finalize_loading_utterances(self, results):
         if self.closing:
             return
-        utterances, file_id = results
+        utterances, file_id, self.cached_begin, self.cached_end = results
         if file_id != self.file.id:
             return
         self.utterances = utterances
@@ -245,7 +251,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
         self.y = y
         self.waveformReady.emit()
 
-    def get_utterances(self):
+    def get_utterances(self, utterance_id=None, begin=None, end=None):
         parent_index = self.index(0, 0)
         self.beginRemoveRows(parent_index, 0, len(self.utterances))
         self.utterances = []
@@ -265,6 +271,9 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
                 or self.corpus_model.has_reference_alignments
                 or self.corpus_model.has_transcribed_alignments
             ),
+            utterance_id=utterance_id,
+            begin=begin,
+            end=end,
         )
         speaker_tier_worker.signals.result.connect(self.finalize_loading_utterances)
         self.thread_pool.start(speaker_tier_worker)
@@ -358,6 +367,107 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
     ):
         self.delete_table_utterances([merged_utterance])
         self.add_table_utterances(split_utterances)
+
+    def update_phone_boundaries(
+        self,
+        utterance: Utterance,
+        first_phone_interval: PhoneInterval,
+        second_phone_interval: PhoneInterval,
+        new_time: float,
+    ):
+        if not self.corpus_model.editable:
+            return
+        if first_phone_interval.end == new_time and second_phone_interval.begin == new_time:
+            return
+        self.addCommand.emit(
+            undo.UpdatePhoneBoundariesCommand(
+                utterance, first_phone_interval, second_phone_interval, new_time, self
+            )
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def delete_reference_alignments(self, utterance: Utterance):
+        if not self.corpus_model.editable:
+            return
+        self.addCommand.emit(undo.DeleteReferenceIntervalsCommand(utterance, self))
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def update_phone_interval(
+        self, utterance: Utterance, phone_interval: PhoneInterval, phone: Phone
+    ):
+        if not self.corpus_model.editable:
+            return
+        if phone_interval.phone_id == phone.id:
+            return
+        self.addCommand.emit(
+            undo.UpdatePhoneIntervalCommand(utterance, phone_interval, phone, self)
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def update_word_pronunciation(
+        self, utterance: Utterance, word_interval: WordInterval, pronunciation: Pronunciation
+    ):
+        if not self.corpus_model.editable:
+            return
+        if word_interval.pronunciation_id == pronunciation.id:
+            return
+        self.addCommand.emit(
+            undo.UpdateWordIntervalPronunciationCommand(
+                utterance, word_interval, pronunciation, self
+            )
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def update_word(
+        self, utterance: Utterance, word_interval: WordInterval, word: typing.Union[Word, str]
+    ):
+        if not self.corpus_model.editable:
+            return
+        if isinstance(word, Word) and word_interval.word_id == word.id:
+            return
+        self.addCommand.emit(
+            undo.UpdateWordIntervalWordCommand(utterance, word_interval, word, self)
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def insert_phone_interval(
+        self,
+        utterance: Utterance,
+        phone_interval,
+        previous_interval: PhoneInterval,
+        following_interval: PhoneInterval,
+        word_interval: WordInterval,
+    ):
+        if not self.corpus_model.editable:
+            return
+        self.addCommand.emit(
+            undo.InsertPhoneIntervalCommand(
+                utterance,
+                phone_interval,
+                previous_interval,
+                following_interval,
+                self,
+                word_interval,
+            )
+        )
+        self.corpus_model.set_file_modified(self.file.id)
+
+    def delete_phone_interval(
+        self,
+        utterance: Utterance,
+        phone_interval: PhoneInterval,
+        previous_interval: PhoneInterval,
+        following_interval: PhoneInterval,
+        time_point: float,
+    ):
+        if not self.corpus_model.editable:
+            return
+        self.addCommand.emit(
+            undo.DeletePhoneIntervalCommand(
+                utterance, phone_interval, previous_interval, following_interval, time_point, self
+            )
+        )
+        self.corpus_model.set_file_modified(self.file.id)
 
     def update_utterance_text(self, utterance: Utterance, text):
         if not self.corpus_model.editable:
@@ -472,7 +582,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             begin=beg,
             end=split_time,
             channel=utterance.channel,
-            text=" ".join(first_text),
+            text=" ".join(first_text) + " ",
             normalized_text=" ".join(first_text),
             oovs=" ".join(oovs),
         )
@@ -488,7 +598,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             begin=split_time,
             end=end,
             channel=utterance.channel,
-            text=" ".join(second_text),
+            text=" " + " ".join(second_text),
             normalized_text=" ".join(second_text),
             oovs=" ".join(oovs),
         )
@@ -528,8 +638,8 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
                 continue
             text += utt_text + " "
             normalized_text += old_utt.normalized_text + " "
-        text = text[:-1]
-        normalized_text = normalized_text[:-1]
+        text = re.sub(r"\s+", " ", text[:-1])
+        normalized_text = re.sub(r"\s+", " ", normalized_text[:-1])
         next_pk = self.corpus_model.corpus.get_next_primary_key(Utterance)
         oovs = set()
         for w in text.split():
@@ -579,6 +689,7 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
     selectionAudioChanged = QtCore.Signal(object)
     currentUtteranceChanged = QtCore.Signal(object)
     speakerRequested = QtCore.Signal(object)
+    searchTermChanged = QtCore.Signal(object)
 
     spectrogramReady = QtCore.Signal()
     waveformReady = QtCore.Signal()
@@ -631,6 +742,11 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             return
         begin_samp = int(self.min_time * self.model().file.sample_rate)
         end_samp = int(self.max_time * self.model().file.sample_rate)
+        if self.model().cached_begin is not None and (
+            self.min_time < self.model().cached_begin + 5
+            or self.max_time > self.model().cached_end - 5
+        ):
+            self.model().get_utterances(begin=self.min_time, end=self.max_time)
         if len(self.model().y.shape) > 1:
             y = self.model().y[begin_samp:end_samp, self.selected_channel]
         else:
@@ -890,23 +1006,44 @@ class FileSelectionModel(QtCore.QItemSelectionModel):
             and not self.min_time <= self.selected_max_time <= self.max_time
         ):
             self.selected_max_time = None
-        if not new_file:
-            self.view_change_timer.start()
+        self.view_change_timer.start()
 
     def send_selection_update(self):
         self.viewChanged.emit(self.min_time, self.max_time)
 
-    def set_current_file(self, file_id, begin, end, utterance_id, speaker_id, force_update=False):
+    def set_search_term(self, word):
+        query = TextFilterQuery(word, word=True)
+        self.searchTermChanged.emit(query)
+
+    def set_current_file(
+        self,
+        file_id,
+        begin,
+        end,
+        utterance_id,
+        speaker_id,
+        force_update=False,
+        single_utterance=False,
+    ):
         try:
-            new_file = self.model().file is None or self.model().file.id != file_id
+            new_file = (
+                self.model().file is None
+                or self.model().file.id != file_id
+                or self.model().file.duration >= 500
+            )
         except sqlalchemy.orm.exc.DetachedInstanceError:
+            new_file = True
+        if force_update and single_utterance:
             new_file = True
         self.requested_utterance_id = utterance_id
         self.selected_min_time = None
         self.selected_max_time = None
         if new_file:
             self.fileAboutToChange.emit()
-            self.model().set_file(file_id)
+            if single_utterance:
+                self.model().set_file(file_id, utterance_id=utterance_id)
+            else:
+                self.model().set_file(file_id, begin=begin, end=end)
             self.speakerRequested.emit(speaker_id)
         else:
             self.finalize_set_new_file()
@@ -1496,6 +1633,7 @@ class SpeakerModel(TableModel):
         self.mds = None
         self.perplexity = 30.0
         self.cluster_labels = None
+        self.distances = None
         self.ivectors = None
         self.utterance_ids = None
         self.alternate_speaker_ids = []
@@ -1623,10 +1761,11 @@ class SpeakerModel(TableModel):
     def finish_clustering(self, result, *args, **kwargs):
         if result is None:
             return
-        speaker_ids, c_labels = result
+        speaker_ids, c_labels, distances = result
         if speaker_ids != self.current_speakers:
             return
         self.cluster_labels = c_labels
+        self.distances = distances
         self.num_clusters = np.max(c_labels) + 1
         self.clustered.emit()
 
@@ -1656,6 +1795,7 @@ class SpeakerModel(TableModel):
     def change_current_speaker(self, speaker_id: typing.Union[int, typing.List[int]], reset=False):
         self.mds = None
         self.cluster_labels = None
+        self.distances = None
         if reset:
             self.current_speakers = []
         if isinstance(speaker_id, int):
@@ -1719,6 +1859,7 @@ class SpeakerModel(TableModel):
 
     def cluster_speaker_utterances(self):
         self.cluster_labels = None
+        self.distances = None
         self.num_clusters = None
         if self.corpus_model.corpus is None:
             return
@@ -1751,6 +1892,175 @@ class SpeakerModel(TableModel):
         self.runFunction.emit("Generating speaker MDS", self.finish_mds, [kwargs])
 
 
+class AlignmentAnalysisModel(TableModel):
+    def __init__(self, parent=None):
+        columns = [
+            "Utterance",
+            "Speaker",
+            "Phone",
+            "Duration",
+            "Log-likelihood",
+            "Word",
+        ]
+        super().__init__(columns, parent=parent)
+        self.settings = AnchorSettings()
+        self.utterance_ids = []
+        self.file_ids = []
+        self.speaker_ids = []
+        self.indices = []
+        self.reversed_indices = {}
+        self.corpus_model: Optional[CorpusModel] = None
+        self.set_limit(self.settings.value(self.settings.RESULTS_PER_PAGE))
+        self.speaker_filter = None
+        self.phone_filter = None
+        self.less_than = None
+        self.greater_than = None
+        self.measure = "duration"
+        self.exclude_manual = False
+        self.relative_duration = False
+        self.word_mode = False
+        self.sort_index = None
+        self.sort_order = None
+
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or index.column() > 5:
+            return None
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            d = self._data[index.row()][index.column()]
+            if index.column() in {3, 4}:
+                try:
+                    return float(d)
+                except TypeError:
+                    return "N/A"
+            return d
+        return super().data(index, role)
+
+    def set_less_than(self, less_than: float):
+        if less_than != self.less_than:
+            self.current_offset = 0
+        self.less_than = less_than
+
+    def set_greater_than(self, greater_than: float):
+        if greater_than != self.greater_than:
+            self.current_offset = 0
+        self.greater_than = greater_than
+
+    def set_exclude_manual(self, exclude_manual: bool):
+        if exclude_manual != self.exclude_manual:
+            self.current_offset = 0
+        self.exclude_manual = exclude_manual
+
+    def set_measure(self, measure: str):
+        measure = measure.lower() if measure == "Duration" else "phone_goodness"
+        if measure != self.measure:
+            self.current_offset = 0
+        self.measure = measure
+
+    def set_speaker_filter(self, speaker_id: typing.Union[int, str, None]):
+        if speaker_id and not isinstance(speaker_id, int):
+            current_speaker = (
+                self.corpus_model.corpus.session.query(Speaker)
+                .filter(Speaker.name == speaker_id)
+                .first()
+            )
+            speaker_id = current_speaker.id
+        if speaker_id != self.speaker_filter:
+            self.current_offset = 0
+        self.speaker_filter = speaker_id
+
+    def set_word_mode(self, word_mode):
+        if word_mode != self.word_mode:
+            self.current_offset = 0
+        self.word_mode = word_mode
+
+    def set_relative_duration(self, relative_duration):
+        if relative_duration != self.relative_duration:
+            self.current_offset = 0
+        self.relative_duration = relative_duration
+
+    def set_phone_filter(self, phone_id: typing.Union[int, str, None]):
+        if phone_id == "":
+            phone_id = None
+        if phone_id and not isinstance(phone_id, int):
+            phone_id = self.corpus_model.phones[phone_id].id
+        if phone_id != self.phone_filter:
+            self.current_offset = 0
+        self.phone_filter = phone_id
+
+    def set_word_filter(self, text_filter: typing.Optional[TextFilterQuery]):
+        if text_filter != self.text_filter:
+            self.current_offset = 0
+        self.text_filter = text_filter
+
+    def set_corpus_model(self, corpus_model: CorpusModel):
+        self.corpus_model = corpus_model
+        self.corpus_model.corpusLoading.connect(self.update_data)
+
+    def update_sort(self, column, order):
+        self.sort_index = column
+        self.sort_order = order
+        self.update_data()
+
+    def finish_update_data(self, result, *args, **kwargs):
+        self.layoutAboutToBeChanged.emit()
+        if result is None:
+            self._data = []
+            self.indices = []
+            self.utterance_ids = []
+            self.file_ids = []
+            self.speaker_ids = []
+            self.reversed_indices = {}
+        else:
+            (
+                self._data,
+                self.indices,
+                self.utterance_ids,
+                self.file_ids,
+                self.speaker_ids,
+                self.reversed_indices,
+            ) = result
+        self.layoutChanged.emit()
+        self.newResults.emit()
+
+    @property
+    def query_kwargs(self) -> typing.Dict[str, typing.Any]:
+        kwargs = {
+            "limit": self.limit,
+            "current_offset": self.current_offset,
+            "speaker_id": self.speaker_filter if isinstance(self.speaker_filter, int) else None,
+            "phone_id": self.phone_filter if isinstance(self.phone_filter, int) else None,
+            "word_filter": self.text_filter,
+            "word_mode": self.word_mode,
+            "less_than": self.less_than,
+            "greater_than": self.greater_than,
+            "measure": self.measure,
+            "relative_duration": self.relative_duration,
+            "exclude_manual": self.exclude_manual,
+        }
+        if self.sort_index is not None:
+            kwargs["sort_index"] = self.sort_index
+            kwargs["sort_desc"] = self.sort_order == QtCore.Qt.SortOrder.DescendingOrder
+        return kwargs
+
+    @property
+    def count_kwargs(self) -> typing.Dict[str, typing.Any]:
+        kwargs = self.query_kwargs
+        kwargs["count"] = True
+        return kwargs
+
+    def update_result_count(self):
+        self.runFunction.emit(
+            "Counting alignment analysis results",
+            self.finalize_result_count,
+            [self.count_kwargs],
+        )
+
+    def update_data(self):
+        if not self.corpus_model.has_alignments:
+            return
+        self.runFunction.emit("Analyzing alignments", self.finish_update_data, [self.query_kwargs])
+
+
 class DiarizationModel(TableModel):
     changeUtteranceSpeakerRequested = QtCore.Signal(object, object)
 
@@ -1781,22 +2091,26 @@ class DiarizationModel(TableModel):
         self.metric = "cosine"
         self.inverted = False
         self.in_speakers = False
+        self.selected_speaker_indices = {}
 
     def data(self, index, role=None):
         if not index.isValid() or index.column() > 5:
             return None
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            d = self._data[index.row()][index.column()]
+            if isinstance(d, list):
+                d = d[self.selected_speaker_indices.get(index.row(), 0)]
             if index.column() == 5:
                 try:
-                    return float(self._data[index.row()][index.column()])
+                    return float(d)
                 except TypeError:
                     return "N/A"
             elif index.column() in {2, 4}:
                 try:
-                    return int(self._data[index.row()][index.column()])
+                    return int(d)
                 except TypeError:
                     return "N/A"
-            return self._data[index.row()][index.column()]
+            return d
         return super().data(index, role)
 
     def set_threshold(self, threshold: float):
@@ -1858,10 +2172,18 @@ class DiarizationModel(TableModel):
                 self.alternate_speaker_filter = current_speaker.id
 
     def reassign_utterance(self, row: int):
+        if not self.corpus_model.editable:
+            return
         utterance_id = self.utterance_ids[row]
         if utterance_id is None:
             return
-        self.changeUtteranceSpeakerRequested.emit(utterance_id, self.suggested_indices[row])
+        speaker_id = self.suggested_indices[row]
+        if isinstance(speaker_id, list):
+            speaker_id = speaker_id[self.selected_speaker_indices.pop(row, 0)]
+        old_speaker_id = self.speaker_indices[row]
+        self.corpus_model.addCommand.emit(
+            undo.ChangeSpeakerCommand([utterance_id], old_speaker_id, speaker_id, self)
+        )
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
         self.utterance_ids.pop(row)
@@ -1869,6 +2191,20 @@ class DiarizationModel(TableModel):
         self.speaker_indices.pop(row)
 
         self.layoutChanged.emit()
+
+    def can_cycle(self, index):
+        return isinstance(self._data[index.row()][index.column()], list)
+
+    def change_suggested_speaker(self, row: int):
+        d = self._data[row][1]
+        if not isinstance(d, list):
+            return
+        ind = self.selected_speaker_indices.get(row, 0)
+        ind += 1
+        if ind > len(d) - 1:
+            ind = 0
+        self.selected_speaker_indices[row] = ind
+        self.dataChanged.emit(self.index(row, 1), self.index(row, 5))
 
     def merge_speakers(self, row: int):
         speaker_id = self.speaker_indices[row]
@@ -1878,7 +2214,10 @@ class DiarizationModel(TableModel):
                 undo.ChangeSpeakerCommand([utterance_id], speaker_id, 0, self)
             )
         else:
-            self.corpus_model.merge_speakers([self.suggested_indices[row], speaker_id])
+            suggested = self.suggested_indices[row]
+            if isinstance(suggested, list):
+                suggested = suggested[self.selected_speaker_indices.pop(row, 0)]
+            self.corpus_model.merge_speakers([suggested, speaker_id])
         self.layoutAboutToBeChanged.emit()
         self._data.pop(row)
         self.utterance_ids.pop(row)
@@ -1893,6 +2232,7 @@ class DiarizationModel(TableModel):
 
     def finish_update_data(self, result, *args, **kwargs):
         self.layoutAboutToBeChanged.emit()
+        self.selected_speaker_indices = {}
         if result is None:
             self._data = []
             self.utterance_ids = []
@@ -2016,11 +2356,13 @@ class CorpusModel(TableModel):
             "Log-likelihood",
             "Speech log-likelihood",
             "Phone duration deviation",
+            "SNR",
             "PER",
             "Overlap score",
             "Transcription",
             "WER",
             "Ivector distance",
+            "Diarization variance",
         ]
         super().__init__(header, parent=parent)
         self.oov_column = header.index("OOVs?")
@@ -2035,6 +2377,7 @@ class CorpusModel(TableModel):
             header.index("Log-likelihood"),
             header.index("Speech log-likelihood"),
             header.index("Phone duration deviation"),
+            header.index("SNR"),
         ]
         self.alignment_evaluation_header_indices = [
             header.index("PER"),
@@ -2046,7 +2389,9 @@ class CorpusModel(TableModel):
         ]
         self.diarization_header_indices = [
             header.index("Ivector distance"),
+            header.index("Diarization variance"),
         ]
+        self.filter_nulls = [False for _ in range(len(header))]
         self.sort_index = None
         self.sort_order = None
         self.file_filter = None
@@ -2074,6 +2419,8 @@ class CorpusModel(TableModel):
         self.unsaved_files = set()
         self.files = []
         self.speakers = {}
+        self.phones = {}
+        self.words = {}
         self.speaker_id_mapping = {}
         self.utterances = None
         self.session: sqlalchemy.orm.scoped_session = None
@@ -2092,6 +2439,11 @@ class CorpusModel(TableModel):
         self.has_transcript_verification_alignments = False
         self.latest_alignment_workflow = None
         self.language = None
+
+    def update_filter_nulls(self, toggled, header_index: int):
+        self.filter_nulls[header_index] = toggled
+        self.update_data()
+        self.update_result_count()
 
     def update_latest_alignment_workflow(self):
         with self.corpus.session() as session:
@@ -2143,7 +2495,10 @@ class CorpusModel(TableModel):
 
     @property
     def has_dictionary(self):
-        if isinstance(self.corpus, AcousticCorpusWithPronunciations):
+        if (
+            isinstance(self.corpus, AcousticCorpusWithPronunciations)
+            and self.corpus.dictionary_model is not None
+        ):
             return True
         return False
 
@@ -2332,7 +2687,8 @@ class CorpusModel(TableModel):
     def set_file_modified(self, file_id: typing.Union[int, typing.List[int]]):
         if isinstance(file_id, int):
             file_id = [file_id]
-        self.session.query(File).filter(File.id.in_(file_id)).update({File.modified: True})
+        data = {File.modified: True}
+        self.session.query(File).filter(File.id.in_(file_id)).update(data)
         self.session.commit()
 
     def set_speaker_modified(self, speaker_id: typing.Union[int, typing.List[int]]):
@@ -2400,6 +2756,8 @@ class CorpusModel(TableModel):
             self.corpusLoading.emit()
             self.refresh_files()
             self.refresh_speakers()
+            self.refresh_phones()
+            self.refresh_words()
             self.refresh_utterances()
             self.update_latest_alignment_workflow()
 
@@ -2446,6 +2804,26 @@ class CorpusModel(TableModel):
 
     def refresh_speakers(self):
         self.runFunction.emit("Loading speakers", self.finish_update_speakers, [])
+
+    def refresh_phones(self):
+        self.phones = {}
+        with self.corpus.session() as session:
+            phones = (
+                session.query(Phone)
+                .filter(
+                    Phone.phone_type.in_([PhoneType.non_silence, PhoneType.oov, PhoneType.silence])
+                )
+                .all()
+            )
+            for p in phones:
+                self.phones[p.phone] = p
+
+    def refresh_words(self):
+        self.words = {}
+        with self.corpus.session() as session:
+            words = session.query(Word).order_by(Word.word).all()
+            for w in words:
+                self.words[w.word] = w
 
     def data(self, index, role):
         if not index.isValid():
@@ -2530,6 +2908,7 @@ class CorpusModel(TableModel):
             "limit": self.limit,
             "current_offset": self.current_offset,
             "has_ivectors": self.corpus.has_any_ivectors(),
+            "filter_nulls": self.filter_nulls,
         }
         if self.sort_index is not None:
             kwargs["sort_index"] = self.sort_index

@@ -1,3 +1,4 @@
+import os
 import sys
 
 from montreal_forced_aligner import config

@@ -71,12 +71,6 @@
      <string>Corpus</string>
     </property>
     <widget class="QMenu" name="loadRecentCorpusMenu">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Load a recent corpus</string>
      </property>
@@ -115,12 +109,6 @@
      <addaction name="separator"/>
     </widget>
     <widget class="QMenu" name="menuDownload_dictionary">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Download dictionary</string>
      </property>
@@ -172,48 +160,24 @@
      <addaction name="separator"/>
     </widget>
     <widget class="QMenu" name="menuDownload_acoustic_model">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Download acoustic model</string>
      </property>
      <addaction name="separator"/>
     </widget>
     <widget class="QMenu" name="menuDownload_ivector_extractor">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Download ivector extractor</string>
      </property>
      <addaction name="separator"/>
     </widget>
     <widget class="QMenu" name="menuDownload_language_model">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Download language model</string>
      </property>
      <addaction name="separator"/>
     </widget>
     <widget class="QMenu" name="menuDownload_G2P_model">
-     <property name="maximumSize">
-      <size>
-       <width>200</width>
-       <height>400</height>
-      </size>
-     </property>
      <property name="title">
       <string>Download G2P model</string>
      </property>
@@ -430,6 +394,15 @@
     <number>1</number>
    </attribute>
    <widget class="DiarizationWidget" name="diarizationWidget"/>
+  </widget>
+  <widget class="QDockWidget" name="alignmentAnalysisDockWidget">
+   <property name="windowTitle">
+    <string>Alignment analysis</string>
+   </property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="AlignmentAnalysisWidget" name="alignmentAnalysisWidget"/>
   </widget>
   <action name="loadCorpusAct">
    <property name="text">
@@ -994,6 +967,12 @@
   </customwidget>
   <customwidget>
    <class>DiarizationWidget</class>
+   <extends>QWidget</extends>
+   <header>anchor.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>AlignmentAnalysisWidget</class>
    <extends>QWidget</extends>
    <header>anchor.widgets</header>
    <container>1</container>
