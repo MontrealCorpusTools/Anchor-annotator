@@ -448,12 +448,15 @@ class DeleteReferenceIntervalsCommand(FileCommand):
         super().__init__(file_model)
         self.utterance = utterance
         self.reference_intervals = None
+        self.reference_word_intervals = None
         self.reference_workflow = None
 
     def _redo(self, session) -> None:
         if self.reference_intervals is None:
             self.reference_intervals = self.utterance.reference_phone_intervals
+            self.reference_word_intervals = self.utterance.reference_word_intervals
         self.utterance.reference_phone_intervals = []
+        self.utterance.reference_word_intervals = []
         self.utterance.manual_alignments = False
         session.merge(self.utterance)
 
@@ -462,9 +465,16 @@ class DeleteReferenceIntervalsCommand(FileCommand):
         for pi in self.reference_intervals:
             make_transient(pi)
             reference_phone_intervals.append(pi)
+        reference_word_intervals = []
+        for wi in self.reference_word_intervals:
+            make_transient(wi)
+            reference_word_intervals.append(wi)
         self.utterance.manual_alignments = True
         self.utterance.reference_phone_intervals = sorted(
             reference_phone_intervals, key=lambda x: x.begin
+        )
+        self.utterance.reference_word_intervals = sorted(
+            reference_word_intervals, key=lambda x: x.begin
         )
         session.merge(self.utterance)
 
