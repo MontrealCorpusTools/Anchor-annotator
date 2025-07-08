@@ -55,6 +55,7 @@ from montreal_forced_aligner.db import (
     Dictionary2Job,
     File,
     Phone,
+    Job,
     PhoneInterval,
     Pronunciation,
     ReferencePhoneInterval,
@@ -3935,6 +3936,11 @@ class ImportDictionaryWorker(FunctionWorker):  # pragma: no cover
                 session.query(Word).delete()
                 session.query(Phone).delete()
                 session.execute(sqlalchemy.update(Speaker).values(dictionary_id=None))
+                session.flush()
+                d = session.query(Dictionary).filter(Dictionary.name=='.').first()
+                if d is not None:
+                    d.delete()
+                session.flush()
                 session.execute(
                     sqlalchemy.update(CorpusWorkflow).values(
                         done=False, alignments_collected=False, score=None
@@ -3945,8 +3951,12 @@ class ImportDictionaryWorker(FunctionWorker):  # pragma: no cover
                 session.commit()
             corpus.dictionary_setup()
             with corpus.session() as session:
+                d = session.query(Dictionary).filter(Dictionary.name==self.dictionary_path.stem).first()
+                jobs = session.query(Job).all()
+                for j in jobs:
+                    j.dictionaries = [d]
                 session.execute(
-                    sqlalchemy.update(Speaker).values(dictionary_id=corpus._default_dictionary_id)
+                    sqlalchemy.update(Speaker).values(dictionary_id=d.id)
                 )
                 session.commit()
             corpus.text_normalized = False

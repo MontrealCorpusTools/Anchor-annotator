@@ -1375,10 +1375,17 @@ class DictionaryTableModel(TableModel):
         self.g2p_generator: typing.Optional[PyniniValidator] = None
         self.word_sets = {}
         self.speaker_mapping = {}
-        self.phones = []
+
         self.graphemes = []
         self.reference_phone_set = set()
         self.custom_mapping = {}
+
+    @property
+    def phones(self):
+        phones = [x.phone for x in self.corpus_model.phones.values() if x.phone_type == PhoneType.non_silence]
+        if self.corpus_model.corpus.position_dependent_phones:
+            phones = sorted(set(x.rsplit("_", maxsplit=1)[0] for x in phones))
+        return phones
 
     def set_custom_mapping(self, path):
         with mfa_open(path, "r") as f:
@@ -1413,15 +1420,6 @@ class DictionaryTableModel(TableModel):
 
     def setup(self) -> None:
         self.refresh_dictionaries()
-        phones = [
-            x
-            for x, in self.corpus_model.session.query(Phone.phone).filter(
-                Phone.phone_type == PhoneType.non_silence
-            )
-        ]
-        if self.corpus_model.corpus.position_dependent_phones:
-            phones = sorted(set(x.rsplit("_", maxsplit=1)[0] for x in phones))
-        self.phones = phones
         specials = self.corpus_model.corpus.specials_set
         specials.update(
             [

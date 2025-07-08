@@ -765,9 +765,6 @@ class MainWindow(QtWidgets.QMainWindow):
             worker.stopped.set()
         self.file_utterances_model.clean_up_for_close()
         self.settings.setValue(
-            AnchorSettings.UTTERANCES_VISIBLE, self.ui.utteranceDockWidget.isVisible()
-        )
-        self.settings.setValue(
             AnchorSettings.DICTIONARY_VISIBLE, self.ui.dictionaryDockWidget.isVisible()
         )
         self.settings.setValue(
@@ -934,7 +931,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.corpus_undo_stack.cleanChanged.connect(self.corpus_changed)
         self.ui.lockEditAct.toggled.connect(self.undo_act.setDisabled)
         self.ui.lockEditAct.toggled.connect(self.redo_act.setDisabled)
-        self.ui.menuWindow.addAction(self.ui.utteranceDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.dictionaryDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.oovDockWidget.toggleViewAction())
         self.ui.menuWindow.addAction(self.ui.speakerDockWidget.toggleViewAction())
@@ -1217,6 +1213,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             for m in (
                 session.query(anchor.db.Dictionary)
+                .filter(anchor.db.Dictionary.path != '.')
                 .filter_by(available_locally=True)
                 .order_by(anchor.db.Dictionary.last_used.desc())
             ):
@@ -1839,7 +1836,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.titleScreen.setVisible(False)
 
             self.ui.utteranceDockWidget.setVisible(
-                self.settings.value(AnchorSettings.UTTERANCES_VISIBLE)
+                True
             )
             self.ui.dictionaryDockWidget.setVisible(
                 self.settings.value(AnchorSettings.DICTIONARY_VISIBLE)
@@ -1972,8 +1969,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 if dock_tab_bar.tabText(i) == "Utterances":
                     dock_tab_bar.setCurrentIndex(i)
                     break
-            else:
-                self.ui.utteranceDockWidget.toggleViewAction().trigger()
             self.ui.utteranceListWidget.search_box.setFocus()
             if search_term is not None:
                 self.ui.utteranceListWidget.search_box.setQuery(search_term)
@@ -1989,8 +1984,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 if dock_tab_bar.tabText(i) == "Utterances":
                     dock_tab_bar.setCurrentIndex(i)
                     break
-            else:
-                self.ui.utteranceDockWidget.toggleViewAction().trigger()
 
     def open_search_speaker(self, search_term=None, show=False):
         if search_term is not None:

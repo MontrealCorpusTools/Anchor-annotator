@@ -1732,7 +1732,7 @@ class IpaKeyboard(QtWidgets.QMenu):
     def __init__(self, phones, parent=None):
         super().__init__(parent)
         self.settings = AnchorSettings()
-        layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QHBoxLayout()
         self.scroll_area = QtWidgets.QScrollArea(self)
         self.scroll_area.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         widget = QtWidgets.QWidget(self)
@@ -1753,12 +1753,13 @@ class IpaKeyboard(QtWidgets.QMenu):
                 col_index = 0
                 row_index += 1
         layout.addWidget(self.scroll_area)
+        scroll_layout.setContentsMargins(0,0,0,0)
         widget.setLayout(scroll_layout)
         self.scroll_area.setWidget(widget)
         self.setLayout(layout)
         self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.scroll_area.setMinimumWidth(
-            widget.sizeHint().width() + self.scroll_area.verticalScrollBar().sizeHint().width()
+            widget.sizeHint().width() + self.scroll_area.verticalScrollBar().sizeHint().width() + 1
         )
         self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet(self.settings.keyboard_style_sheet)
@@ -1773,7 +1774,10 @@ class IpaKeyboard(QtWidgets.QMenu):
         self.inputPhone.emit(b.text(), True)
 
     def showEvent(self, event: QtGui.QShowEvent) -> None:
-        p = self.pos()
+        super().showEvent(event)
+        pos = self.parent().geometry().bottomLeft()
+        p = self.parent().mapToGlobal(pos)
+
         geo = self.geometry()
         new_pos = int(p.x() - (geo.width() / 2))
         self.move(new_pos, p.y())
@@ -1814,6 +1818,21 @@ class PronunciationField(QtWidgets.QTextEdit):
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
 
+class KeyboardWidget(QtWidgets.QPushButton):
+    def __init__(self, phones, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        keyboard_icon = QtGui.QIcon.fromTheme("input-keyboard")
+        self.setIcon(keyboard_icon)
+        self.keyboard = IpaKeyboard(phones, self)
+        self.setMenu(self.keyboard)
+
+        self.clicked.connect(self.showMenu)
+        
+    def showMenu(self):
+        self.menu().show()
+
+
 class PronunciationInput(QtWidgets.QToolBar):
     validationError = QtCore.Signal(object)
     returnPressed = QtCore.Signal()
@@ -1842,15 +1861,10 @@ class PronunciationInput(QtWidgets.QToolBar):
 
         self.cancel_action = QtGui.QAction(icon=cancel_icon, parent=self)
         self.cancel_action.triggered.connect(self.cancel)
-        keyboard_icon = QtGui.QIcon.fromTheme("input-keyboard")
 
-        self.keyboard_widget = QtWidgets.QPushButton(self)
-        self.keyboard_widget.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self.keyboard_widget.setIcon(keyboard_icon)
-        self.keyboard = IpaKeyboard(phones)
-        self.keyboard.installEventFilter(self)
-        self.keyboard.inputPhone.connect(self.add_phone)
-        self.keyboard_widget.setMenu(self.keyboard)
+        self.keyboard_widget = KeyboardWidget(phones, self)
+        self.keyboard_widget.keyboard.installEventFilter(self)
+        self.keyboard_widget.keyboard.inputPhone.connect(self.add_phone)
 
         self.addWidget(self.input)
         self.addWidget(self.keyboard_widget)
@@ -2033,14 +2047,14 @@ class EditableDelegate(QtWidgets.QStyledItemDelegate):
 
     def setEditorData(
         self,
-        editor: PronunciationInput,
+        editor: WordInput,
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> None:
         editor.setText(index.model().data(index, QtCore.Qt.ItemDataRole.EditRole))
 
     def setModelData(
         self,
-        editor: PronunciationInput,
+        editor: WordInput,
         model: DictionaryTableModel,
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> None:
@@ -2051,7 +2065,7 @@ class EditableDelegate(QtWidgets.QStyledItemDelegate):
 
     def updateEditorGeometry(
         self,
-        editor: PronunciationInput,
+        editor: WordInput,
         option: QtWidgets.QStyleOptionViewItem,
         index: typing.Union[QtCore.QModelIndex, QtCore.QPersistentModelIndex],
     ) -> None:
