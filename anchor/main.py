@@ -494,7 +494,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Exporting dictionary":
             self.set_application_state("loading")
             self.ui.loadingScreen.setCorpusName("Saving dictionary changes...")
-            worker = workers.ExportLexiconWorker(self.corpus_model.session, **extra_args[0])
+            worker = workers.ExportLexiconWorker(self.corpus_model.corpus, **extra_args[0])
             worker.signals.result.connect(finished_function)
         elif function == "Exporting files":
             worker = workers.ExportFilesWorker(self.corpus_model.session, *extra_args)
@@ -1464,15 +1464,14 @@ class MainWindow(QtWidgets.QMainWindow):
             for w in workflows:
                 if w.workflow_type is WorkflowType.alignment:
                     self.corpus_model.has_alignments = True
-                elif w.workflow_type is WorkflowType.reference:
+                elif w.workflow_type is WorkflowType.reference and w.alignments_collected:
                     self.corpus_model.has_reference_alignments = True
                 elif w.workflow_type is WorkflowType.transcription:
-                    self.corpus_model.has_transcribed_alignments = True
+                    self.corpus_model.has_transcriptions = True
                 elif w.workflow_type is WorkflowType.transcript_verification:
-                    self.corpus_model.has_transcribed_alignments = True
-                    self.corpus_model.has_transcript_verification_alignments = True
+                    self.corpus_model.has_transcriptions = True
                 elif w.workflow_type is WorkflowType.per_speaker_transcription:
-                    self.corpus_model.has_per_speaker_transcribed_alignments = True
+                    self.corpus_model.has_transcriptions = True
 
     def finalize_load_corpus(self, corpus: AcousticCorpus):
         from montreal_forced_aligner.db import Dictionary

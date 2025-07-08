@@ -3225,36 +3225,17 @@ class QueryDictionaryWorker(Worker):
 
 
 class ExportLexiconWorker(Worker):
-    def __init__(self, session, dictionary_id: int, use_mp=False, **kwargs):
+    def __init__(self, corpus: AcousticCorpusWithPronunciations, dictionary_id: int, use_mp=False, **kwargs):
         super().__init__(use_mp=use_mp, **kwargs)
-        self.session = session
+        self.corpus = corpus
         self.dictionary_id = dictionary_id
 
     def _run(self):
-        with self.session() as session:
+        with self.corpus.session() as session:
             dictionary_path = (
                 session.query(Dictionary.path).filter(Dictionary.id == self.dictionary_id).scalar()
             )
-            words = (
-                session.query(Word.word, Pronunciation.pronunciation)
-                .join(Pronunciation.word)
-                .filter(
-                    Word.dictionary_id == self.dictionary_id,
-                    Pronunciation.pronunciation != "",
-                    Word.word_type.in_(WordType.speech_types()),
-                )
-                .order_by(Word.word)
-            )
-
-            if self.progress_callback is not None:
-                self.progress_callback.update_total(words.count())
-            with open(dictionary_path, "w", encoding="utf8") as f:
-                for w, p in words:
-                    if self.stopped is not None and self.stopped.is_set():
-                        break
-                    f.write(f"{w}\t{p}\n")
-                    if self.progress_callback is not None:
-                        self.progress_callback.increment_progress(1)
+        self.corpus.export_lexicon(self.dictionary_id, dictionary_path, probability=True)
 
 
 class LoadSpeakersWorker(Worker):

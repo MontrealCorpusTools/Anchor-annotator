@@ -233,3 +233,9 @@ Anchor can generate transcriptions for utterances either for validating their ex
 In the Transcription panel, the only option is for specifying the target number of ngrams for the per-speaker language models, which is not applicable if a pretrained language model is loaded.
 
 Once transcription completes, you can go the Utterances panel to inspect each utterance.  The utterance will have an extra tier below the text tier with the transcribed text (along with red background for words that count toward the word error rate of the utterance).  In the Utterances panel, you can sort based on the word error rate (WER) and character error rate (CER) to see where the utterance text and transcribed text differ the most.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   example

@@ -8,9 +8,9 @@ dependencies:
   - qt6-main
   - qt6-multimedia
   - pyqtgraph
+  - librosa
   - myst-parser
   - numpydoc
-  - librosa
   - pydata-sphinx-theme
   - sphinx-design
   - pip

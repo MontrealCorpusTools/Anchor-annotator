@@ -269,7 +269,6 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             query_alignment=(
                 self.corpus_model.has_alignments
                 or self.corpus_model.has_reference_alignments
-                or self.corpus_model.has_transcribed_alignments
             ),
             utterance_id=utterance_id,
             begin=begin,
@@ -2401,6 +2400,7 @@ class CorpusModel(TableModel):
         self.dictionary_model: Optional[DictionaryTableModel] = None
         self.corpus: Optional[Union[AcousticCorpus, AcousticCorpusWithPronunciations]] = None
         self.acoustic_model: Optional[AcousticModel] = None
+        self.transcription_acoustic_model: Optional[typing.Union[AcousticModel, str]] = None
         self.language_model: Optional[LanguageModel] = None
         self.ivector_extractor: Optional[IvectorExtractorModel] = None
         self.g2p_model: Optional[G2PModel] = None
@@ -2433,8 +2433,7 @@ class CorpusModel(TableModel):
         self.has_alignments = False
         self.has_reference_alignments = False
         self.has_transcribed_alignments = False
-        self.has_per_speaker_transcribed_alignments = False
-        self.has_transcript_verification_alignments = False
+        self.has_transcriptions = False
         self.latest_alignment_workflow = None
         self.language = None
 

@@ -698,7 +698,9 @@ class UtteranceView(QtWidgets.QWidget):
     def set_extra_tiers(self):
         self.extra_tiers = {}
         self.extra_tiers["Normalized text"] = "normalized_text"
-        self.extra_tiers["Transcription"] = "transcription_text"
+        if self.corpus_model.has_transcriptions or self.corpus_model.transcription_acoustic_model is not None:
+
+            self.extra_tiers["Transcription"] = "transcription_text"
         if self.corpus_model.has_alignments and "Words" not in self.extra_tiers:
             self.extra_tiers["Words"] = "word_intervals"
             self.extra_tiers["Phones"] = "phone_intervals"
