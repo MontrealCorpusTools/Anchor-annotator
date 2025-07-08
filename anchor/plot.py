@@ -10,7 +10,8 @@ from typing import Optional
 import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
-from Bio import pairwise2
+from kalpy.gmm.data import CtmInterval
+from _kalpy.util import align_intervals
 from montreal_forced_aligner.db import (
     PhoneInterval,
     Pronunciation,
@@ -600,6 +601,7 @@ class UtteranceView(QtWidgets.QWidget):
             tier.draggingLine.connect(self.audio_plot.update_drag_line)
             tier.lineDragFinished.connect(self.audio_plot.hide_drag_line)
             tier.receivedWheelEvent.connect(self.audio_plot.wheelEvent)
+            tier.receivedGestureEvent.connect(self.audio_plot.gestureEvent)
             tier.set_extra_tiers(self.extra_tiers)
             tier.setZValue(30)
             available_speakers[speaker_name] = speaker_id
@@ -1136,9 +1138,8 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
         if self.alignment:
             current_align_ind = 0
             for word_object in re.finditer(self.WORDS, text.lower()):
-                sb = self.alignment.seqB[current_align_ind]
-                sa = self.alignment.seqA[current_align_ind]
-                if sb == "-":
+                sa, sb = self.alignment[current_align_ind]
+                if sb.label == "-":
                     start = word_object.start() - 1
                     if start < 0:
                         start = 0
@@ -1148,19 +1149,18 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
                         count,
                         self.highlight_format,
                     )
-                    while sb != word_object.group():
+                    while sb.label != word_object.group():
                         current_align_ind += 1
-                        sb = self.alignment.seqB[current_align_ind]
-                        sa = self.alignment.seqA[current_align_ind]
-                if sb == word_object.group():
-                    if sb != sa:
+                        sa, sb = self.alignment[current_align_ind]
+                if sb.label == word_object.group():
+                    if sb.label != sa.label:
                         self.setFormat(
                             word_object.start(),
                             word_object.end() - word_object.start(),
                             self.highlight_format,
                         )
                     current_align_ind += 1
-            if current_align_ind < len(self.alignment.seqB):
+            if current_align_ind < len(self.alignment):
                 self.setFormat(
                     len(text) - 1,
                     1,
@@ -2652,16 +2652,9 @@ class UtteranceRegion(MfaRegion):
 
     def update_transcription_highlight(self):
         if self.item.normalized_text and self.item.transcription_text:
-            alignment = pairwise2.align.globalms(
-                self.item.normalized_text.lower().split(),
-                self.item.transcription_text.lower().split(),
-                0,
-                -2,
-                -1,
-                -1,
-                gap_char=["-"],
-                one_alignment_only=True,
-            )[0]
+            ref_intervals = [CtmInterval(0.0, 0.0, w) for w in self.item.normalized_text.lower().split()]
+            test_intervals = [CtmInterval(0.0, 0.0, w) for w in self.item.transcription_text.lower().split()]
+            alignment = align_intervals(ref_intervals, test_intervals, "<eps>", {})
             self.transcription_text.highlighter.set_alignment(alignment)
 
     def set_search_term(self, term):
@@ -3264,6 +3257,7 @@ class AudioPlots(pg.GraphicsObject):
         self.wave_form.setParentItem(self)
         self.spectrogram.setParentItem(self)
         self.pitch_track.setParentItem(self)
+        self.grabGesture(QtCore.Qt.PinchGesture)
         color = self.plot_theme.selected_range_color
         color.setAlphaF(0.25)
         self.selection_brush = pg.mkBrush(color)
@@ -3317,6 +3311,20 @@ class AudioPlots(pg.GraphicsObject):
 
     def hide_drag_line(self):
         self.update_line.hide()
+
+    def sceneEvent(self, ev):
+        if ev.type() == QtCore.QEvent.Gesture:
+            return self.gestureEvent(ev)
+        return super().sceneEvent(ev)
+
+    def gestureEvent(self, ev):
+        ev.accept()
+        pinch = ev.gesture(QtCore.Qt.PinchGesture)
+        if pinch is not None:
+            delta = pinch.scaleFactor()
+            sc = delta
+            center = self.getViewBox().mapToView(pinch.centerPoint())
+            self.selection_model.zoom(sc, center.x())
 
     def wheelEvent(self, ev: QtWidgets.QGraphicsSceneWheelEvent):
         ev.accept()
@@ -3446,6 +3454,7 @@ class AudioPlots(pg.GraphicsObject):
 
 class SpeakerTier(pg.GraphicsObject):
     receivedWheelEvent = QtCore.Signal(object)
+    receivedGestureEvent = QtCore.Signal(object)
     draggingLine = QtCore.Signal(object)
     lineDragFinished = QtCore.Signal(object)
 
@@ -3499,9 +3508,21 @@ class SpeakerTier(pg.GraphicsObject):
         self.selection_model.model().utterancesReady.connect(self.refresh)
         self.available_speakers = {}
         self.painter_path_cache = {}
+        self.grabGesture(QtCore.Qt.PinchGesture)
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
+
+    def sceneEvent(self, ev):
+        if ev.type() == QtCore.QEvent.Gesture:
+            return self.gestureEvent(ev)
+        return super().sceneEvent(ev)
+
+    def gestureEvent(self, ev):
+        ev.accept()
+        pinch = ev.gesture(QtCore.Qt.PinchGesture)
+        if pinch is not None:
+            self.receivedGestureEvent.emit(ev)
 
     def create_utterance(self, begin, end):
         self.file_model.create_utterance(self.speaker_id, begin, end)

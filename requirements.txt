@@ -12,5 +12,4 @@ pyyaml
 scipy
 scikit-learn
 pynini
-biopython
 kalpy
