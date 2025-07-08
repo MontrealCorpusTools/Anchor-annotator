@@ -6,6 +6,9 @@ from montreal_forced_aligner.helper import configure_logger
 
 from anchor.main import Application, MainWindow
 
+if sys.platform == 'darwin':
+    os.environ["QT_MEDIA_BACKEND"] = "darwin"
+
 
 def main(debug=False):
     configure_logger("anchor")
