@@ -3768,7 +3768,12 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                 self.corpus.initialize_jobs()
 
                 self.corpus.normalize_text()
-                self.corpus.load_alignment_lexicon_compilers()
+                try:
+                    self.corpus.load_alignment_lexicon_compilers()
+                except Exception:
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    error_text = "\n".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+                    logger.debug(error_text)
             with self.corpus.session() as session:
                 session.execute(
                     sqlalchemy.text(
@@ -3982,6 +3987,7 @@ class ImportAcousticModelWorker(FunctionWorker):  # pragma: no cover
     def run(self):
         if not self.model_path:
             return
+        for_transcription = True
         try:
             if str(self.model_path) == "whisper":
                 cuda = self.settings.value(self.settings.CUDA)
@@ -4019,14 +4025,15 @@ class ImportAcousticModelWorker(FunctionWorker):  # pragma: no cover
                     vad_options=vad_options,
                 )
             elif str(self.model_path) == "speechbrain":
-                pass
+                acoustic_model = "speechbrain"
             else:
+                for_transcription = False
                 acoustic_model = AcousticModel(self.model_path)
         except Exception:
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
         else:
-            self.signals.result.emit(acoustic_model)  # Return the result of the processing
+            self.signals.result.emit((acoustic_model, for_transcription))  # Return the result of the processing
         finally:
             self.signals.finished.emit()  # Done
 

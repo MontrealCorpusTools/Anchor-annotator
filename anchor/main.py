@@ -1548,9 +1548,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.check_actions()
         self.ui.loadDictionaryAct.setEnabled(True)
 
-    def finalize_load_acoustic_model(self, model: AcousticModel):
+    def finalize_load_acoustic_model(self, result):
+        if result is None:
+            model = result
+            for_transcription = False
+        else:
+            model, for_transcription = result
         self.acoustic_model = model
-        self.corpus_model.set_acoustic_model(model)
+        self.corpus_model.set_acoustic_model(model, for_transcription)
         self.check_actions()
         self.ui.acousticModelMenu.setEnabled(True)
 
