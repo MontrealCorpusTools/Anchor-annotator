@@ -2669,8 +2669,11 @@ class CorpusModel(TableModel):
             self.editable = True
             self.editableChanged.emit(self.editable)
 
-    def set_acoustic_model(self, acoustic_model: AcousticModel):
-        self.acoustic_model = acoustic_model
+    def set_acoustic_model(self, acoustic_model: AcousticModel, for_transcription=False):
+        if for_transcription:
+            self.transcription_acoustic_model = acoustic_model
+        else:
+            self.acoustic_model = acoustic_model
         self.acousticModelChanged.emit()
 
     def set_ivector_extractor(self, ivector_extractor: IvectorExtractorModel):

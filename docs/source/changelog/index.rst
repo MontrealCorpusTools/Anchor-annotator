@@ -6,6 +6,17 @@ Changelog
 
    Alpha releases
 
+0.9.3
+-----
+
+- Fix issue in transcription fields not showing up
+- Fix issue in transcription errors not highlighting correctly
+
+0.9.0
+-----
+
+- Fixed issues when running Anchor on MacOSX
+
 0.8.1
 -----
 

@@ -1132,7 +1132,7 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
             self.rehighlight()
 
     def set_alignment(self, alignment):
-        if alignment != self.alignment:
+        if self.alignment is None or [(x.label, y.label) for x, y in alignment] != [(x.label, y.label) for x, y in self.alignment]:
             self.alignment = alignment
             self.rehighlight()
 
