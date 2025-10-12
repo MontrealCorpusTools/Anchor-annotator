@@ -228,9 +228,12 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
     def finalize_loading_utterances(self, results):
         if self.closing:
             return
-        utterances, file_id, self.cached_begin, self.cached_end = results
+        utterances, file_id, self.cached_begin, self.cached_end, speaker_ordering = results
         if file_id != self.file.id:
             return
+        for s in speaker_ordering:
+            if s not in self.speakers:
+                self.speakers.append(s)
         self.utterances = utterances
         for i, u in enumerate(utterances):
             if u.speaker_id not in self.speakers:
@@ -267,8 +270,7 @@ class FileUtterancesModel(QtCore.QAbstractListModel):
             self.corpus_model.session,
             self.file.id,
             query_alignment=(
-                self.corpus_model.has_alignments
-                or self.corpus_model.has_reference_alignments
+                self.corpus_model.has_alignments or self.corpus_model.has_reference_alignments
             ),
             utterance_id=utterance_id,
             begin=begin,
@@ -1381,7 +1383,11 @@ class DictionaryTableModel(TableModel):
 
     @property
     def phones(self):
-        phones = [x.phone for x in self.corpus_model.phones.values() if x.phone_type == PhoneType.non_silence]
+        phones = [
+            x.phone
+            for x in self.corpus_model.phones.values()
+            if x.phone_type == PhoneType.non_silence
+        ]
         if self.corpus_model.corpus.position_dependent_phones:
             phones = sorted(set(x.rsplit("_", maxsplit=1)[0] for x in phones))
         return phones
@@ -2323,6 +2329,7 @@ class CorpusModel(TableModel):
     editableChanged = QtCore.Signal(object)
     filesRefreshed = QtCore.Signal(object)
     speakersRefreshed = QtCore.Signal(object)
+    speakerNameChanged = QtCore.Signal(object, object)
     changeCommandFired = QtCore.Signal()
     dictionaryChanged = QtCore.Signal()
     acousticModelChanged = QtCore.Signal()
@@ -2788,6 +2795,13 @@ class CorpusModel(TableModel):
         self.filesRefreshed.emit(self.files)
         if self.fully_loaded:
             self.corpusLoaded.emit()
+
+    def update_speaker_name(self, speaker_id, old_speaker_name, new_speaker_name):
+        self.speakers[new_speaker_name] = self.speakers[old_speaker_name]
+        del self.speakers[old_speaker_name]
+        self.speaker_id_mapping[speaker_id] = new_speaker_name
+        self.speakerNameChanged.emit(speaker_id, new_speaker_name)
+        self.speakersRefreshed.emit(self.speakers)
 
     def finish_update_speakers(self, result):
         self.speakers, self.speaker_id_mapping = result

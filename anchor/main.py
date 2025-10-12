@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 import subprocess
 import sys
@@ -54,6 +55,8 @@ from anchor.ui_error_dialog import Ui_ErrorDialog
 from anchor.ui_main_window import Ui_MainWindow
 from anchor.ui_preferences import Ui_PreferencesDialog
 from anchor.widgets import MediaPlayer, ProgressWidget, ScrollableMenuStyle
+
+logger = logging.getLogger("anchor")
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -444,7 +447,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif function == "Merging speakers":
             self.set_application_state("loading")
             worker = workers.MergeSpeakersWorker(self.corpus_model.session, **extra_args[0])
-            worker.signals.finished.connect(finished_function)
+            worker.signals.result.connect(finished_function)
         elif function == "Reassigning utterances":
             worker = workers.MismatchedUtterancesWorker(self.corpus_model.session, **extra_args[0])
             self.set_application_state("loading")
@@ -658,6 +661,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.closeG2PAct.setEnabled(True)
         self.ui.saveDictionaryAct.setEnabled(True)
         self.ui.closeIvectorExtractorAct.setEnabled(True)
+        self.ui.diarizationWidget.refresh_ivectors_action.setEnabled(True)
+        self.ui.diarizationWidget.calculate_plda_action.setEnabled(True)
+        self.ui.diarizationWidget.reset_ivectors_action.setEnabled(True)
+        self.ui.diarizationWidget.reassign_all_action.setEnabled(True)
+        self.ui.diarizationWidget.search_action.setEnabled(True)
         if self.corpus_model.language_model is None:
             self.ui.closeLanguageModelAct.setEnabled(False)
         if self.corpus_model.g2p_model is None:
@@ -668,6 +676,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.loadReferenceAlignmentsAct.setEnabled(False)
             self.ui.evaluateAlignmentsAct.setEnabled(False)
             self.ui.closeAcousticModelAct.setEnabled(False)
+        if self.corpus_model.ivector_extractor is None:
+            self.ui.diarizationWidget.refresh_ivectors_action.setEnabled(False)
+            self.ui.diarizationWidget.calculate_plda_action.setEnabled(False)
+            self.ui.diarizationWidget.reset_ivectors_action.setEnabled(False)
+            self.ui.diarizationWidget.reassign_all_action.setEnabled(False)
+            self.ui.diarizationWidget.search_action.setEnabled(False)
         if self.corpus_model.corpus is None:
             self.ui.alignCorpusAct.setEnabled(False)
             self.ui.transcribeCorpusAct.setEnabled(False)
@@ -1002,6 +1016,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def finish_merging(self, result=None):
         if result is not None:
+            logger.debug(f"Merged {result} speakers.")
             self.update_status_message(f"Merged {result} speakers.")
             self.corpus_model.runFunction.emit(
                 "Recalculating speaker ivectors",
@@ -1213,7 +1228,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             for m in (
                 session.query(anchor.db.Dictionary)
-                .filter(anchor.db.Dictionary.path != '.')
+                .filter(anchor.db.Dictionary.path != ".")
                 .filter_by(available_locally=True)
                 .order_by(anchor.db.Dictionary.last_used.desc())
             ):
@@ -1839,9 +1854,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.loadingScreen.setVisible(False)
             self.ui.titleScreen.setVisible(False)
 
-            self.ui.utteranceDockWidget.setVisible(
-                True
-            )
+            self.ui.utteranceDockWidget.setVisible(True)
             self.ui.dictionaryDockWidget.setVisible(
                 self.settings.value(AnchorSettings.DICTIONARY_VISIBLE)
             )

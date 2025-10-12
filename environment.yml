@@ -3,13 +3,13 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - python>=3.13
+  - python>=3.12
   - pip
   - montreal-forced-aligner
   - kalpy
   - pyside6
-  - qt6-main
-  - qt6-multimedia
+  - qt6-main =6.9.0
+  - qt6-multimedia =6.9.0
   - pyqtgraph
   - pytorch
   - torchaudio

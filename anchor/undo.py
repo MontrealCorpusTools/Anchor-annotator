@@ -417,18 +417,21 @@ class UpdateUtteranceTimesCommand(FileCommand):
         self.utterance.xvector = None
         self.utterance.ivector = None
         self.utterance.features = None
-        if self.utterance.phone_intervals:
-            self.utterance.phone_intervals[0].begin = begin
-            self.utterance.phone_intervals[-1].end = end
-        if self.utterance.word_intervals:
-            self.utterance.word_intervals[0].begin = begin
-            self.utterance.word_intervals[-1].end = end
-        if self.utterance.reference_phone_intervals:
-            self.utterance.reference_phone_intervals[0].begin = begin
-            self.utterance.reference_phone_intervals[-1].end = end
-        if self.utterance.reference_word_intervals:
-            self.utterance.reference_word_intervals[0].begin = begin
-            self.utterance.reference_word_intervals[-1].end = end
+        try:
+            if self.utterance.phone_intervals:
+                self.utterance.phone_intervals[0].begin = begin
+                self.utterance.phone_intervals[-1].end = end
+            if self.utterance.word_intervals:
+                self.utterance.word_intervals[0].begin = begin
+                self.utterance.word_intervals[-1].end = end
+            if self.utterance.reference_phone_intervals:
+                self.utterance.reference_phone_intervals[0].begin = begin
+                self.utterance.reference_phone_intervals[-1].end = end
+            if self.utterance.reference_word_intervals:
+                self.utterance.reference_word_intervals[0].begin = begin
+                self.utterance.reference_word_intervals[-1].end = end
+        except sqlalchemy.orm.exc.DetachedInstanceError:
+            pass
         session.merge(self.utterance)
 
     def _redo(self, session) -> None:
@@ -504,7 +507,7 @@ class UpdatePhoneBoundariesCommand(FileCommand):
             self.first_phone_interval.word_interval_id
             != self.second_phone_interval.word_interval_id
         )
-        if True or self.at_word_boundary:
+        if self.at_word_boundary:
             if isinstance(self.first_phone_interval, PhoneInterval):
                 word_intervals = utterance.word_intervals
             else:
@@ -1276,11 +1279,16 @@ class UpdateSpeakerCommand(SpeakerCommand):
         session.query(Speaker).filter(Speaker.id == self.speaker_id).update(
             {Speaker.name: self.new_name}
         )
+        self.speaker_model.corpus_model.update_speaker_name(self.speaker_id, self.new_name)
 
     def _undo(self, session) -> None:
         session.query(Speaker).filter(Speaker.id == self.speaker_id).update(
             {Speaker.name: self.old_name}
         )
+        self.speaker_model.corpus_model.update_speaker_name(self.speaker_id, self.old_name)
+
+    def update_data(self):
+        super().update_data()
 
 
 class UpdateUtteranceSpeakerCommand(FileCommand):

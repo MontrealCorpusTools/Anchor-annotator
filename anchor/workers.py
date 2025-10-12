@@ -54,8 +54,8 @@ from montreal_forced_aligner.db import (
     Dictionary,
     Dictionary2Job,
     File,
-    Phone,
     Job,
+    Phone,
     PhoneInterval,
     Pronunciation,
     ReferencePhoneInterval,
@@ -2700,6 +2700,7 @@ class MergeSpeakersWorker(Worker):
         speaker_counts = collections.Counter()
         deleted = set()
         with self.session() as session:
+            speaker_plda = None
             if self.metric is not DistanceMetric.plda:
                 self.plda = None
             elif self.speaker_plda is None:
@@ -2765,7 +2766,6 @@ class MergeSpeakersWorker(Worker):
                             .distinct()
                         ]
                         merged_count += 1
-                        logger.debug(f"Merged {merged_count} total speaker so far")
                         session.query(Utterance).filter(Utterance.speaker_id == s_id).update(
                             {Utterance.speaker_id: suggested_id}
                         )
@@ -3225,7 +3225,9 @@ class QueryDictionaryWorker(Worker):
 
 
 class ExportLexiconWorker(Worker):
-    def __init__(self, corpus: AcousticCorpusWithPronunciations, dictionary_id: int, use_mp=False, **kwargs):
+    def __init__(
+        self, corpus: AcousticCorpusWithPronunciations, dictionary_id: int, use_mp=False, **kwargs
+    ):
         super().__init__(use_mp=use_mp, **kwargs)
         self.corpus = corpus
         self.dictionary_id = dictionary_id
@@ -3410,6 +3412,12 @@ class SpeakerTierWorker(Worker):  # pragma: no cover
             return
         with self.session() as session:
             file = session.get(File, self.file_id)
+            speaker_ordering = [
+                x[0]
+                for x in session.query(SpeakerOrdering.columns.speaker_id)
+                .filter(SpeakerOrdering.columns.file_id == self.file_id)
+                .order_by(SpeakerOrdering.columns.index, SpeakerOrdering.columns.speaker_id)
+            ]
             show_phones = self.settings.value(
                 self.settings.TIER_ALIGNED_PHONES_VISIBLE
             ) or self.settings.value(self.settings.TIER_REFERENCE_PHONES_VISIBLE)
@@ -3453,6 +3461,11 @@ class SpeakerTierWorker(Worker):  # pragma: no cover
                 cached_begin = None
                 cached_end = None
             utterances = utterances.all()
+            extra_speakers = set()
+            for u in utterances:
+                if u.speaker_id not in speaker_ordering:
+                    extra_speakers.add(u.speaker_id)
+            speaker_ordering += sorted(extra_speakers)
             if (
                 file.duration > 500
                 and self.begin is not None
@@ -3461,7 +3474,9 @@ class SpeakerTierWorker(Worker):  # pragma: no cover
             ):
                 cached_begin = min(cached_begin, utterances[0].begin)
                 cached_end = max(cached_end, utterances[-1].end)
-            self.signals.result.emit((utterances, self.file_id, cached_begin, cached_end))
+            self.signals.result.emit(
+                (utterances, self.file_id, cached_begin, cached_end, speaker_ordering)
+            )
 
 
 class SpectrogramWorker(Worker):  # pragma: no cover
@@ -3772,7 +3787,9 @@ class ImportCorpusWorker(FunctionWorker):  # pragma: no cover
                     self.corpus.load_alignment_lexicon_compilers()
                 except Exception:
                     exc_type, exc_value, exc_traceback = sys.exc_info()
-                    error_text = "\n".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+                    error_text = "\n".join(
+                        traceback.format_exception(exc_type, exc_value, exc_traceback)
+                    )
                     logger.debug(error_text)
             with self.corpus.session() as session:
                 session.execute(
@@ -3905,7 +3922,7 @@ class ImportDictionaryWorker(FunctionWorker):  # pragma: no cover
 
     def set_params(self, corpus: AcousticCorpus, dictionary_path: str):
         self.corpus = corpus
-        self.dictionary_path = dictionary_path
+        self.dictionary_path = Path(dictionary_path)
 
     def run(self):
         self.corpus_temp_dir = os.path.join(self.settings.temp_directory, "corpus")
@@ -3923,7 +3940,7 @@ class ImportDictionaryWorker(FunctionWorker):  # pragma: no cover
                 session.query(Phone).delete()
                 session.execute(sqlalchemy.update(Speaker).values(dictionary_id=None))
                 session.flush()
-                d = session.query(Dictionary).filter(Dictionary.name=='.').first()
+                d = session.query(Dictionary).filter(Dictionary.name == ".").first()
                 if d is not None:
                     d.delete()
                 session.flush()
@@ -3937,13 +3954,15 @@ class ImportDictionaryWorker(FunctionWorker):  # pragma: no cover
                 session.commit()
             corpus.dictionary_setup()
             with corpus.session() as session:
-                d = session.query(Dictionary).filter(Dictionary.name==self.dictionary_path.stem).first()
+                d = (
+                    session.query(Dictionary)
+                    .filter(Dictionary.name == self.dictionary_path.stem)
+                    .first()
+                )
                 jobs = session.query(Job).all()
                 for j in jobs:
                     j.dictionaries = [d]
-                session.execute(
-                    sqlalchemy.update(Speaker).values(dictionary_id=d.id)
-                )
+                session.execute(sqlalchemy.update(Speaker).values(dictionary_id=d.id))
                 session.commit()
             corpus.text_normalized = False
             corpus.normalize_text()
@@ -4033,7 +4052,9 @@ class ImportAcousticModelWorker(FunctionWorker):  # pragma: no cover
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
         else:
-            self.signals.result.emit((acoustic_model, for_transcription))  # Return the result of the processing
+            self.signals.result.emit(
+                (acoustic_model, for_transcription)
+            )  # Return the result of the processing
         finally:
             self.signals.finished.emit()  # Done
 
@@ -4070,7 +4091,7 @@ class ImportG2PModelWorker(FunctionWorker):  # pragma: no cover
         if not self.model_path:
             return
         try:
-            generator = Generator(g2p_model_path=self.model_path, num_pronunciations=5)
+            generator = Generator(g2p_model_path=self.model_path, num_pronunciations=1)
             generator.setup()
         except shutil.ReadError:
             self.signals.result.emit(None)
@@ -4441,15 +4462,17 @@ class ComputeIvectorWorker(FunctionWorker):  # pragma: no cover
 
     def run(self):
         self.settings.sync()
-        diarizer = SpeakerDiarizer(
-            ivector_extractor_path=self.corpus_model.ivector_extractor.source
-            if self.corpus_model.ivector_extractor not in {"speechbrain", "pyannote"}
-            else self.corpus_model.ivector_extractor,
-            corpus_directory=self.corpus_model.corpus.corpus_directory,
-            cuda=self.settings.value(self.settings.CUDA),
-            **self.parameters,
-        )
         try:
+            if self.corpus_model.ivector_extractor is None:
+                raise Exception("Ivector extractor is not specified")
+            diarizer = SpeakerDiarizer(
+                ivector_extractor_path=self.corpus_model.ivector_extractor.source
+                if self.corpus_model.ivector_extractor not in {"speechbrain", "pyannote"}
+                else self.corpus_model.ivector_extractor,
+                corpus_directory=self.corpus_model.corpus.corpus_directory,
+                cuda=self.settings.value(self.settings.CUDA),
+                **self.parameters,
+            )
             logger.debug("Beginning ivector computation")
             if self.reset:
                 logger.info("Resetting ivectors...")
@@ -4562,7 +4585,7 @@ class ClusterUtterancesWorker(FunctionWorker):  # pragma: no cover
         self.parameters["cluster_type"] = "kmeans"
         self.parameters["distance_threshold"] = None
         self.parameters["metric"] = self.settings.value(self.settings.CLUSTERING_METRIC)
-        self.parameters["expected_num_speakers"] = self.corpus.num_speakers
+        self.parameters["expected_num_speakers"] = 152
         diarizer = SpeakerDiarizer(
             ivector_extractor_path=self.ivector_extractor.source
             if self.ivector_extractor not in {"speechbrain", "pyannote"}
@@ -4586,7 +4609,7 @@ class ClusterUtterancesWorker(FunctionWorker):  # pragma: no cover
                 diarizer.create_new_current_workflow(WorkflowType.speaker_diarization)
             diarizer.cluster_utterances()
             with diarizer.session() as session:
-                session.query(File).update(modified=True)
+                session.query(File).update({File.modified: True})
                 session.commit()
         except Exception:
             exctype, value = sys.exc_info()[:2]

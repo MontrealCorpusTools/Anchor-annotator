@@ -10,8 +10,8 @@ from typing import Optional
 import numpy as np
 import pyqtgraph as pg
 import sqlalchemy
-from kalpy.gmm.data import CtmInterval
 from _kalpy.util import align_intervals
+from kalpy.gmm.data import CtmInterval
 from montreal_forced_aligner.db import (
     PhoneInterval,
     Pronunciation,
@@ -571,6 +571,21 @@ class UtteranceView(QtWidgets.QWidget):
         self.finalize_loading_pitch_track()
         self.finalize_loading_spectrogram()
 
+    def get_minimum_per_tier_height(self):
+        visible_tiers = self.settings.visible_tiers
+        fm = QtGui.QFontMetrics(self.settings.font)
+        minimum_height = 25 + 10  # y margins for base box
+        minimum_height += fm.height() * 3
+        for tier in self.extra_tiers.keys():
+            if not visible_tiers.get(tier, False):
+                continue
+            if tier in {"Normalized text", "Transcription"}:
+                minimum_height += 25 + 10
+                minimum_height += fm.height() * 3
+            else:
+                minimum_height += fm.height() * 2
+        return minimum_height
+
     def finalize_loading_utterances(self):
         if self.file_model.file is None:
             return
@@ -579,10 +594,9 @@ class UtteranceView(QtWidgets.QWidget):
         self.speaker_tier_items = {}
         self.speaker_tier_layout.clear()
         available_speakers = {}
-        num_visible_speakers = min(
-            len(self.file_model.speakers), self.settings.value(self.settings.TIER_MAX_SPEAKERS)
-        )
-        speaker_tier_height = (self.separator_point - self.bottom_point) / num_visible_speakers
+        height = self.speaker_tier_layout.height()
+        pixel_size = (self.separator_point - self.bottom_point) / height
+        speaker_tier_height = self.get_minimum_per_tier_height() * pixel_size
         for i, speaker_id in enumerate(self.file_model.speakers):
             speaker_name = self.corpus_model.get_speaker_name(speaker_id)
             top_point = i * speaker_tier_height
@@ -621,10 +635,7 @@ class UtteranceView(QtWidgets.QWidget):
             if tier.speaker_id == self.default_speaker_id:
                 scroll_to = i
         row_height = self.tier_scroll_area.height()
-        self.speaker_tier_layout.setFixedHeight(
-            len(self.speaker_tiers) * row_height / num_visible_speakers
-        )
-        if len(self.file_model.speakers) > num_visible_speakers:
+        if len(self.speaker_tiers) * self.get_minimum_per_tier_height() > height:
             self.tier_scroll_area.verticalScrollBar().setSingleStep(row_height)
             self.tier_scroll_area.verticalScrollBar().setPageStep(row_height)
             self.tier_scroll_area.verticalScrollBar().setMinimum(0)
@@ -698,8 +709,10 @@ class UtteranceView(QtWidgets.QWidget):
     def set_extra_tiers(self):
         self.extra_tiers = {}
         self.extra_tiers["Normalized text"] = "normalized_text"
-        if self.corpus_model.has_transcriptions or self.corpus_model.transcription_acoustic_model is not None:
-
+        if (
+            self.corpus_model.has_transcriptions
+            or self.corpus_model.transcription_acoustic_model is not None
+        ):
             self.extra_tiers["Transcription"] = "transcription_text"
         if self.corpus_model.has_alignments and "Words" not in self.extra_tiers:
             self.extra_tiers["Words"] = "word_intervals"
@@ -1132,7 +1145,9 @@ class TranscriberErrorHighlighter(QtGui.QSyntaxHighlighter):
             self.rehighlight()
 
     def set_alignment(self, alignment):
-        if self.alignment is None or [(x.label, y.label) for x, y in alignment] != [(x.label, y.label) for x, y in self.alignment]:
+        if self.alignment is None or [(x.label, y.label) for x, y in alignment] != [
+            (x.label, y.label) for x, y in self.alignment
+        ]:
             self.alignment = alignment
             self.rehighlight()
 
@@ -2654,8 +2669,12 @@ class UtteranceRegion(MfaRegion):
 
     def update_transcription_highlight(self):
         if self.item.normalized_text and self.item.transcription_text:
-            ref_intervals = [CtmInterval(0.0, 0.0, w) for w in self.item.normalized_text.lower().split()]
-            test_intervals = [CtmInterval(0.0, 0.0, w) for w in self.item.transcription_text.lower().split()]
+            ref_intervals = [
+                CtmInterval(0.0, 0.0, w) for w in self.item.normalized_text.lower().split()
+            ]
+            test_intervals = [
+                CtmInterval(0.0, 0.0, w) for w in self.item.transcription_text.lower().split()
+            ]
             alignment = align_intervals(ref_intervals, test_intervals, "<eps>", {})
             self.transcription_text.highlighter.set_alignment(alignment)
 
@@ -3511,6 +3530,13 @@ class SpeakerTier(pg.GraphicsObject):
         self.available_speakers = {}
         self.painter_path_cache = {}
         self.grabGesture(QtCore.Qt.PinchGesture)
+        self.corpus_model.speakerNameChanged.connect(self.change_speaker_label)
+
+    def change_speaker_label(self, speaker_id, speaker_name):
+        if self.speaker_id != speaker_id:
+            return
+        self.speaker_name = speaker_name
+        self.speaker_label.setText(speaker_name)
 
     def wheelEvent(self, ev):
         self.receivedWheelEvent.emit(ev)
